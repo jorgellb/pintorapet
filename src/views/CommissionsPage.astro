@@ -23,6 +23,14 @@ const sent = Astro.url.searchParams.get('sent') === '1';
 const sentReference = sent ? (Astro.url.searchParams.get('ref') ?? '').slice(0, 40) : '';
 const configError = Astro.url.searchParams.get('error') === 'config';
 
+// The home invitation sends the companion's name (?pet=Luna) to start the message.
+const pet = (Astro.url.searchParams.get('pet') ?? '').trim().slice(0, 40);
+const startMessage = pet
+  ? es
+    ? `Me gustaría un retrato de ${pet}.`
+    : `I would love a portrait of ${pet}.`
+  : '';
+
 const drawingOf = (id: string) =>
   works.find((w) => w.id === id)?.data.assets.find((a) => a.role === 'drawing' && a.src)?.src ??
   null;
@@ -332,7 +340,7 @@ const sizeChoices = [
               rows="5"
               required
               maxlength="5000"
-              placeholder={copy.messagePlaceholder}></textarea>
+              placeholder={copy.messagePlaceholder}>{startMessage}</textarea>
           </label>
 
           <div class="paper__actions">
