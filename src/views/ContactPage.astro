@@ -1,7 +1,8 @@
 ---
+import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
-import { getPageCopy } from '@/lib/content/pages';
+import { localizedPath } from '@/i18n/routes';
 import { getFeedbackImages } from '@/lib/content/siteExtras';
 
 interface Props {
@@ -10,65 +11,167 @@ interface Props {
 
 const { locale } = Astro.props;
 const dict = t(locale);
-const migrated = await getPageCopy('contact', locale);
-const feedbacks = await getFeedbackImages();
-const title = migrated.title ?? dict.contact.title;
-const intro =
-  migrated.paragraphs.length > 0 ? migrated.paragraphs : [dict.contact.lead];
+const feedbacks = (await getFeedbackImages()).filter((item) => item.publicUrl);
+
+// Set by /api/contact when the form was posted without JavaScript.
+const sent = Astro.url.searchParams.get('sent') === '1';
+const configError = Astro.url.searchParams.get('error') === 'config';
+
+const channels = [
+  {
+    label: dict.contact.email,
+    value: 'info@petsdrawings.com',
+    href: 'mailto:info@petsdrawings.com',
+  },
+  {
+    label: dict.contact.whatsapp,
+    value: '+34 636 386 531',
+    href: 'https://wa.me/34636386531',
+    external: true,
+    extra: { label: dict.contact.phone, href: 'tel:+34636386531' },
+  },
+  {
+    label: dict.contact.instagram,
+    value: '@petsdrawings_meili',
+    href: 'https://www.instagram.com/petsdrawings_meili/',
+    external: true,
+  },
+  {
+    label: dict.contact.facebook,
+    value: 'Pets Drawings by Meili',
+    href: 'https://www.facebook.com/people/Pets-Drawings-by-Meili/100089998232163/',
+    external: true,
+  },
+];
 ---
 
-<PublicLayout locale={locale} title={title} description={intro[0]}>
-  <section class="section">
-    <div class="site-shell layout">
-      <div>
-        <h1 class="display h1-display">{title}</h1>
-        {intro.map((p) => <p class="lead">{p}</p>)}
-        <p>
-          <strong>{dict.contact.email}:</strong>
-          <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a><br />
-          <strong>{dict.contact.phone}:</strong>
-          <a href="tel:+34636386531">+34 636 386 531</a><br />
-          <strong>{dict.contact.whatsapp}:</strong>
-          <a href="https://wa.me/34636386531">WhatsApp</a>
-        </p>
-        <p class="social">
-          <a href="https://www.instagram.com/petsdrawings_meili/" rel="noopener noreferrer" target="_blank">Instagram</a>
-          ·
-          <a href="https://www.facebook.com/people/Pets-Drawings-by-Meili/100089998232163/" rel="noopener noreferrer" target="_blank">Facebook</a>
-        </p>
-      </div>
-      <form class="form" method="post" action="/api/contact/">
-        <h2>{dict.contact.formTitle}</h2>
+<PublicLayout locale={locale} title={dict.contact.title} description={dict.contact.lead}>
+  <section class="section contact">
+    <div class="site-shell contact__grid">
+      <header class="contact__head">
+        <p class="page-eyebrow">{dict.contact.eyebrow}</p>
+        <h1 class="display contact__title">{dict.contact.heading}</h1>
+        <p class="contact__lead">{dict.contact.lead}</p>
+      </header>
+
+      <form
+        id="form"
+        class="paper contact__form"
+        method="post"
+        action="/api/contact/"
+        data-enhance
+        data-msg-sending={dict.contact.sending}
+        data-msg-error={dict.forms.error}
+        data-msg-invalid={dict.forms.errorInvalid}
+        data-msg-not-configured={dict.forms.errorNotConfigured}
+      >
         <input type="hidden" name="locale" value={locale} />
-        <label>
-          {dict.forms.name}
-          <input name="name" required maxlength="120" />
-        </label>
-        <label>
-          {dict.forms.email}
-          <input name="email" type="email" required maxlength="254" />
-        </label>
-        <label>
-          {dict.forms.reason}
-          <input name="reason" maxlength="120" />
-        </label>
-        <label>
-          {dict.forms.message}
-          <textarea name="message" rows="5" required maxlength="5000"></textarea>
-        </label>
-        <button class="btn" type="submit">{dict.contact.submit}</button>
+
+        <div class="paper__fields" data-form-fields hidden={sent}>
+          <h2 class="paper__title">{dict.contact.formTitle}</h2>
+
+          <div class="paper__row">
+            <label class="field">
+              <span class="field__label">{dict.forms.name}</span>
+              <input name="name" autocomplete="name" required maxlength="120" />
+            </label>
+            <label class="field">
+              <span class="field__label">{dict.forms.email}</span>
+              <input name="email" type="email" autocomplete="email" required maxlength="254" />
+            </label>
+          </div>
+
+          <fieldset class="field">
+            <legend class="field__label">
+              {dict.forms.reasonOptional} <small>{dict.forms.optional}</small>
+            </legend>
+            <div class="chips">
+              {
+                dict.contact.reasons.map((reason) => (
+                  <label class="chip-option">
+                    <input type="radio" name="reason" value={reason} />
+                    <span>{reason}</span>
+                  </label>
+                ))
+              }
+            </div>
+          </fieldset>
+
+          <label class="field">
+            <span class="field__label">{dict.forms.message}</span>
+            <textarea
+              name="message"
+              rows="6"
+              required
+              maxlength="5000"
+              placeholder={dict.contact.messagePlaceholder}></textarea>
+          </label>
+
+          <div class="paper__actions">
+            <button class="btn" type="submit">{dict.contact.submit}</button>
+            <p class="paper__status" role="status" data-form-status data-tone={configError ? 'error' : 'info'}>
+              {configError ? dict.forms.errorNotConfigured : ''}
+            </p>
+          </div>
+        </div>
+
+        <div class="paper__done" data-form-done hidden={!sent}>
+          <svg class="paper__done-mark" viewBox="0 0 52 52" aria-hidden="true">
+            <path d="M6 28 C 12 32, 16 38, 20 43 C 27 28, 36 17, 47 8" pathLength="1"></path>
+          </svg>
+          <h3 tabindex="-1">{dict.contact.sentTitle}</h3>
+          <p>{dict.contact.sentBody}</p>
+          <button type="button" class="btn btn--ghost" data-form-reset>{dict.contact.sendAnother}</button>
+        </div>
       </form>
+
+      <aside class="contact__aside" aria-labelledby="channels-title">
+        <h2 id="channels-title" class="contact__aside-title">{dict.contact.channelsTitle}</h2>
+        <ul class="channels">
+          {
+            channels.map((channel) => (
+              <li class="channel">
+                <span class="channel__label">{channel.label}</span>
+                <a
+                  class="channel__value"
+                  href={channel.href}
+                  {...(channel.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                >
+                  {channel.value}
+                </a>
+                {channel.extra && (
+                  <a class="channel__extra" href={channel.extra.href}>
+                    {channel.extra.label}
+                  </a>
+                )}
+              </li>
+            ))
+          }
+        </ul>
+
+        <p class="contact__commission">
+          <span>{dict.contact.commissionHint}</span>
+          <a class="text-link" href={localizedPath(locale, 'commissions')}>
+            {dict.contact.commissionLink}
+          </a>
+        </p>
+      </aside>
     </div>
   </section>
 
   {
     feedbacks.length > 0 && (
-      <section class="section feedbacks">
+      <section class="section feedbacks" aria-labelledby="feedbacks-title">
         <div class="site-shell">
-          <h2 class="display h2-display">{dict.contact.feedbacks}</h2>
+          <header class="feedbacks__head">
+            <h2 id="feedbacks-title" class="display h2-display">
+              {dict.contact.feedbacks}
+            </h2>
+            <p class="muted">{dict.contact.feedbacksLead}</p>
+          </header>
           <ul class="feedback-grid">
             {feedbacks.map((item, index) => (
-              <li>
+              <li style={`--i:${index}`}>
                 <a href={item.publicUrl!} target="_blank" rel="noopener noreferrer">
                   <img
                     src={item.publicUrl!}
@@ -88,54 +191,177 @@ const intro =
 </PublicLayout>
 
 <style>
-  .layout {
+  .contact__grid {
     display: grid;
-    gap: 2.5rem;
+    gap: clamp(2.5rem, 5vw, 4rem);
   }
 
-  .lead {
-    max-width: 36rem;
+  .contact__title {
+    margin: 0 0 1.25rem;
+    font-size: clamp(3rem, 7vw, 6.5rem);
+    letter-spacing: -0.045em;
+    line-height: 0.95;
   }
 
-  .form {
+  .contact__lead {
+    margin: 0;
+    max-width: 34rem;
+    font-size: clamp(1.05rem, 1.2vw, 1.2rem);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  /* ——— Direct channels, labelled like the plaques beside the drawings ——— */
+  .contact__aside {
     display: grid;
-    gap: 0.85rem;
-    padding: 1.5rem;
-    background: rgb(255 255 255 / 0.86);
-    border: 0;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-art);
+    gap: 1.75rem;
+    align-content: start;
   }
 
-  label {
+  .contact__aside-title {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .channels {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+  }
+
+  .channel {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    column-gap: 1rem;
+    padding-block: 0.9rem 1rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .channel:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .channel__label {
+    grid-column: 1 / -1;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .channel__value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(1.25rem, 2vw, 1.55rem);
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 0.2em;
+    transition: text-decoration-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .channel__value:hover {
+    color: var(--ink);
+    text-decoration-color: currentColor;
+  }
+
+  .channel__extra {
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+    text-underline-offset: 0.3em;
+  }
+
+  .contact__commission {
+    margin: 0;
     display: grid;
     gap: 0.35rem;
-    font-weight: 600;
+    padding: 1.25rem 1.4rem;
+    background: var(--accent-soft);
+    color: var(--ink-soft);
   }
 
-  input,
-  textarea {
-    font: inherit;
-    padding: 0.65rem 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
+  /* ——— Kind words, pinned to the wall ——— */
+  .feedbacks {
+    border-top: 1px solid var(--line);
+  }
+
+  .feedbacks__head {
+    max-width: 36rem;
+    margin-bottom: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .feedbacks__head p {
+    margin: 0;
+    font-size: 1.08rem;
   }
 
   .feedback-grid {
     list-style: none;
-    margin: 1.5rem 0 0;
+    margin: 0;
     padding: 0;
     display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5rem;
+    justify-items: center;
+  }
+
+  .feedback-grid li {
+    --r: -1.6deg;
+    position: relative;
+    width: min(100%, 21rem);
+    rotate: var(--r);
+    transition: rotate 500ms var(--ease-out), translate 500ms var(--ease-out);
+  }
+
+  .feedback-grid li:nth-child(3n + 2) {
+    --r: 1.3deg;
+  }
+
+  .feedback-grid li:nth-child(3n) {
+    --r: -0.8deg;
+  }
+
+  .feedback-grid li::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: -0.65rem;
+    left: 50%;
+    width: 42%;
+    height: 1.3rem;
+    translate: -50% 0;
+    rotate: 3deg;
+    background: rgb(214 220 232 / 0.78);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+    pointer-events: none;
+  }
+
+  .feedback-grid li:hover {
+    rotate: 0deg;
+    translate: 0 -6px;
+  }
+
+  .feedback-grid a {
+    display: block;
+    background: var(--sheet);
+    padding: 0.55rem;
+    box-shadow: var(--shadow-art);
   }
 
   .feedback-grid img {
     width: 100%;
     height: auto;
-    object-fit: contain;
-    background: #fff;
-    border: 0;
+    box-shadow: none;
+    border-radius: 0;
   }
 
   .visually-hidden {
@@ -144,16 +370,50 @@ const intro =
     height: 1px;
     overflow: hidden;
     clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @media (min-width: 48rem) {
+    .feedback-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: start;
+      gap: clamp(1.5rem, 3vw, 3rem);
+    }
+
+    .feedback-grid li:nth-child(3n + 2) {
+      margin-top: 3rem;
+    }
+
+    .feedback-grid li:nth-child(3n) {
+      margin-top: 1.25rem;
+    }
   }
 
   @media (min-width: 64rem) {
-    .layout {
-      grid-template-columns: 1fr 1fr;
+    .contact__grid {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+      column-gap: clamp(3rem, 6vw, 6rem);
+      row-gap: clamp(2.5rem, 4vw, 3.5rem);
     }
 
-    .feedback-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1.5rem;
+    .contact__head {
+      grid-column: 1 / -1;
+    }
+
+    .contact__aside {
+      padding-top: 1rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .feedback-grid li:hover {
+      translate: none;
     }
   }
 </style>
+
+<script>
+  import { enhanceForm } from '@/scripts/enhanceForm';
+
+  document.querySelectorAll<HTMLFormElement>('form[data-enhance]').forEach(enhanceForm);
+</script>

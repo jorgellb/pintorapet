@@ -5,9 +5,11 @@ import { getLogoUrl } from '@/lib/content/siteExtras';
 
 interface Props {
   locale: Locale;
+  /** Same page in the other locale. */
+  alternateHref: string;
 }
 
-const { locale } = Astro.props;
+const { locale, alternateHref } = Astro.props;
 const dict = t(locale);
 const other: Locale = locale === 'en' ? 'es' : 'en';
 const logoUrl = await getLogoUrl();
@@ -23,7 +25,7 @@ const links: { key: RouteKey; label: string }[] = [
 ];
 
 const path = Astro.url.pathname;
-const otherPath = path.replace(`/${locale}/`, `/${other}/`);
+const otherPath = alternateHref;
 ---
 
 <header class="site-header" data-site-header>

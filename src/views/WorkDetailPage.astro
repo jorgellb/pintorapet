@@ -50,6 +50,7 @@ function roleLabel(role: string): string {
   seoTitle={entry.data.seo?.title[locale]}
   description={entry.data.seo?.description[locale] ?? entry.data.summary?.[locale]}
   image={drawing?.src}
+  alternatePath={workPath(es ? 'en' : 'es', entry.data.pathSlugs[es ? 'en' : 'es'])}
 >
   <article>
     <section class="piece">

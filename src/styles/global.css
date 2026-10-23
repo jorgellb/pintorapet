@@ -147,6 +147,7 @@ a:hover {
 
 .h2-display {
   font-size: clamp(2.3rem, 4.6vw, 4.4rem);
+  text-wrap: balance;
   margin: 0 0 0.75rem;
 }
 

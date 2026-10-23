@@ -4,7 +4,7 @@ import ProductImage from '@/components/shop/ProductImage.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath, productPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
-import { loadProductPage } from '@/lib/catalog/loadProducts';
+import { loadPublicCatalog, loadProductPage } from '@/lib/catalog/loadProducts';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
@@ -19,6 +19,13 @@ if (!page) {
   return Astro.redirect(localizedPath(locale, 'shop'));
 }
 const { product, options, selected } = page;
+
+// Product slugs are translated, so find this option's slug in the other locale.
+const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
+const otherSlug = (await loadPublicCatalog(otherLocale)).products.find((p) => p.id === selected.id)?.slug;
+const alternate = otherSlug
+  ? productPath(otherLocale, otherSlug)
+  : localizedPath(otherLocale, 'shop');
 
 const canAddOf = (p: ProductPublic) =>
   p.saleEnabled && p.availability !== 'sold_out' && p.availability !== 'unavailable';
@@ -51,6 +58,7 @@ const choices = options.map((option) => ({
   description={product.seoDescription ?? product.summary}
   image={product.coverImageUrl}
   canonicalPath={productPath(locale, product.slug)}
+  alternatePath={alternate}
 >
   <section class="section">
     <div class="site-shell product">

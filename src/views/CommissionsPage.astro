@@ -1,127 +1,222 @@
 ---
+import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
+import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
 import { t, type Locale } from '@/i18n';
-import { getPageCopy } from '@/lib/content/pages';
+import { loadWorks } from '@/lib/content/editorial';
 import { getCommissionExamples } from '@/lib/content/siteExtras';
+import { commissionPrices, MAX_SUBJECTS } from '@/lib/domain/commissionPricing';
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
+const es = locale === 'es';
 const dict = t(locale);
-const migrated = await getPageCopy('commissions', locale);
+const copy = dict.commissions;
 const examples = await getCommissionExamples();
-const title = migrated.title ?? dict.commissions.title;
-const intro =
-  migrated.paragraphs.length > 0
-    ? migrated.paragraphs
-    : [dict.commissions.lead];
+const works = await loadWorks();
+
+// Set by /api/commissions when the form was posted without JavaScript.
+const sent = Astro.url.searchParams.get('sent') === '1';
+const sentReference = sent ? (Astro.url.searchParams.get('ref') ?? '').slice(0, 40) : '';
+const configError = Astro.url.searchParams.get('error') === 'config';
+
+const drawingOf = (id: string) =>
+  works.find((w) => w.id === id)?.data.assets.find((a) => a.role === 'drawing' && a.src)?.src ??
+  null;
+const photoOf = (id: string) =>
+  works.find((w) => w.id === id)?.data.assets.find((a) => a.role === 'reference_photo' && a.src)
+    ?.src ?? null;
+
+// Starting prices are whole euros: "90 €", not "90,00 €".
+const formatEur = (cents: number, loc: Locale) =>
+  new Intl.NumberFormat(loc === 'es' ? 'es-ES' : 'en-GB', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+
+const cm = (value: number) => (es ? String(value).replace('.', ',') : String(value));
+
+// A4 portrait and A3 landscape share the 29.7 cm side, so on the wall they
+// stand at the same height and A3 is exactly twice as wide.
+const sizes = [
+  {
+    id: 'A4' as const,
+    width: 21,
+    height: 29.7,
+    price: formatEur(commissionPrices.A4, locale),
+    note: copy.sizeA4Note,
+    image: drawingOf('chester'),
+    alt: es ? 'Retrato a lápiz de Chester en A4' : 'Pencil portrait of Chester in A4',
+  },
+  {
+    id: 'A3' as const,
+    width: 42,
+    height: 29.7,
+    price: formatEur(commissionPrices.A3, locale),
+    note: copy.sizeA3Note,
+    image: drawingOf('dogs-a3-1'),
+    alt: es ? 'Retrato a lápiz de dos perros en A3' : 'Pencil portrait of two dogs in A3',
+  },
+];
+const extraPrice = formatEur(commissionPrices.extraSubject, locale);
 
 const examplePairs = [
   {
     id: 'kira-sox',
-    title: locale === 'es' ? 'Kira y Sox' : 'Kira & Sox',
-    drawing: examples.find((e) => e.id === 'kira-sox-drawing'),
-    photo: examples.find((e) => e.id === 'kira-sox-photo'),
+    title: es ? 'Kira y Sox' : 'Kira & Sox',
+    drawing: examples.find((e) => e.id === 'kira-sox-drawing')?.publicUrl,
+    photo: examples.find((e) => e.id === 'kira-sox-photo')?.publicUrl,
   },
   {
     id: 'frankie',
     title: 'Frankie',
-    drawing: examples.find((e) => e.id === 'frankie-drawing'),
-    photo: examples.find((e) => e.id === 'frankie-photo'),
+    drawing: examples.find((e) => e.id === 'frankie-drawing')?.publicUrl,
+    photo: examples.find((e) => e.id === 'frankie-photo')?.publicUrl,
   },
-].filter((p) => p.drawing?.publicUrl || p.photo?.publicUrl);
+].filter((p): p is typeof p & { drawing: string; photo: string } => Boolean(p.drawing && p.photo));
+
+const referencePhoto = photoOf('frankie') ?? examplePairs[0]?.photo ?? null;
+
+const sizeChoices = [
+  { value: 'A4', label: 'A4', detail: `${copy.sizeFrom} ${sizes[0].price}` },
+  { value: 'A3', label: 'A3', detail: `${copy.sizeFrom} ${sizes[1].price}` },
+  { value: 'undecided', label: copy.sizeUndecided, detail: copy.sizeUndecidedNote },
+];
 ---
 
-<PublicLayout locale={locale} title={title} description={intro[0]}>
-  <section class="section">
-    <div class="site-shell layout">
-      <div>
-        <h1 class="display h1-display">{dict.commissions.title}</h1>
-        {intro.map((p) => <p class="lead">{p}</p>)}
-        <ul class="prices">
-          <li>{dict.commissions.priceA4}</li>
-          <li>{dict.commissions.priceA3}</li>
-          <li>{dict.commissions.priceExtra}</li>
-        </ul>
-        <p class="muted">{dict.commissions.estimateNote}</p>
-        <p>
-          <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a>
-          ·
-          <a href="https://wa.me/34636386531">WhatsApp</a>
-        </p>
+<PublicLayout locale={locale} title={copy.title} description={copy.intro}>
+  <section class="section intro" aria-labelledby="commission-title">
+    <div class="site-shell intro__grid">
+      <div class="intro__copy">
+        <p class="page-eyebrow">{copy.eyebrow}</p>
+        <h1 id="commission-title" class="display intro__title">{copy.heading}</h1>
+        <p class="intro__lead">{copy.intro}</p>
+        <div class="intro__cta">
+          <a class="btn" href="#form">{copy.ctaRequest}</a>
+          <a class="text-link" href="#photo">{copy.photoTitle}</a>
+        </div>
       </div>
-      <form class="form" method="post" action="/api/commissions/">
-        <h2>{dict.commissions.formTitle}</h2>
-        <input type="hidden" name="locale" value={locale} />
-        <label>
-          {dict.forms.name}
-          <input name="name" required maxlength="120" />
-        </label>
-        <label>
-          {dict.forms.email}
-          <input name="email" type="email" required maxlength="254" />
-        </label>
-        <label>
-          {dict.forms.size}
-          <select name="size" required>
-            <option value="A4">A4</option>
-            <option value="A3">A3</option>
-            <option value="undecided">{locale === 'es' ? 'Por decidir' : 'Undecided'}</option>
-          </select>
-        </label>
-        <label>
-          {dict.forms.subjects}
-          <input name="subjects" type="number" min="1" max="10" value="1" required />
-        </label>
-        <label>
-          {dict.forms.message}
-          <textarea name="message" rows="5" required maxlength="5000"></textarea>
-        </label>
-        <button class="btn" type="submit">{dict.commissions.submit}</button>
-      </form>
+
+      <figure class="sizes" aria-labelledby="sizes-title">
+        <figcaption id="sizes-title" class="sizes__title">{copy.sizesTitle}</figcaption>
+        <div class="sizes__wall">
+          {
+            sizes.map((size) => (
+              <div class={`size size--${size.id.toLowerCase()}`} style={`--w:${size.width};--ar:${size.width} / ${size.height}`}>
+                <div class="size__sheet">
+                  {size.image ? (
+                    <img src={size.image} alt={size.alt} loading="eager" decoding="async" />
+                  ) : (
+                    <span class="size__blank display" aria-hidden="true">{size.id}</span>
+                  )}
+                </div>
+                <p class="size__measure" aria-hidden="true">
+                  <span>{cm(size.width)} cm</span>
+                </p>
+                <p class="size__plaque">
+                  <span class="size__name">{size.id}</span>
+                  <span class="size__dims">
+                    {cm(size.width)} × {cm(size.height)} cm
+                  </span>
+                  <span class="size__price">
+                    {copy.sizeFrom} <strong class="price">{size.price}</strong>
+                  </span>
+                  <span class="size__note">{size.note}</span>
+                </p>
+              </div>
+            ))
+          }
+        </div>
+        <p class="sizes__extra">
+          <span>+ {extraPrice}</span>
+          {copy.extraSubject}
+        </p>
+        <p class="sizes__fine muted">{copy.estimateNote}</p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section steps" aria-labelledby="steps-title">
+    <div class="site-shell">
+      <h2 id="steps-title" class="display h2-display steps__title">{copy.stepsTitle}</h2>
+      <ol class="steps__list">
+        {
+          copy.steps.map((step, index) => (
+            <li class="step">
+              <span class="step__number display" aria-hidden="true">{index + 1}</span>
+              <h3 class="step__title">{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section id="photo" class="section photo" aria-labelledby="photo-title">
+    <div class="site-shell photo__grid">
+      {
+        referencePhoto && (
+          <figure class="polaroid">
+            <img
+              src={referencePhoto}
+              alt={es ? 'Fotografía de referencia de Frankie' : 'Reference photograph of Frankie'}
+              loading="lazy"
+              decoding="async"
+            />
+            <figcaption>{copy.photoCaption}</figcaption>
+          </figure>
+        )
+      }
+      <div class="photo__copy">
+        <h2 id="photo-title" class="display h2-display">{copy.photoTitle}</h2>
+        <p class="photo__lead">{copy.photoLead}</p>
+        <ul class="tips">
+          {
+            copy.photoTips.map((tip) => (
+              <li>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 13 C 6 15, 8 17, 10 20 C 13 13, 17 8, 22 4" />
+                </svg>
+                {tip}
+              </li>
+            ))
+          }
+        </ul>
+        <p class="photo__send">
+          <span class="photo__send-label">{copy.photoSend}</span>
+          <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a>
+        </p>
+        <p class="muted photo__note">{copy.photoSendNote}</p>
+      </div>
     </div>
   </section>
 
   {
     examplePairs.length > 0 && (
-      <section class="section examples">
+      <section class="section examples" aria-labelledby="examples-title">
         <div class="site-shell">
-          <h2 class="display h2-display">{dict.commissions.examples}</h2>
-          <p class="muted">{dict.commissions.examplesLead}</p>
+          <header class="examples__head">
+            <h2 id="examples-title" class="display h2-display">{copy.examples}</h2>
+            <p class="muted">{copy.examplesLead}</p>
+          </header>
           <div class="example-list">
             {examplePairs.map((pair) => (
               <article class="example">
-                <h3 class="display">{pair.title}</h3>
-                <ul>
-                  {pair.photo?.publicUrl && (
-                    <li>
-                      <img
-                        src={pair.photo.publicUrl}
-                        alt={pair.photo.label?.[locale] ?? pair.title}
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <p class="muted">
-                        {locale === 'es' ? 'Fotografía' : 'Photograph'}
-                      </p>
-                    </li>
-                  )}
-                  {pair.drawing?.publicUrl && (
-                    <li>
-                      <img
-                        src={pair.drawing.publicUrl}
-                        alt={pair.drawing.label?.[locale] ?? pair.title}
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <p class="muted">
-                        {locale === 'es' ? 'Dibujo' : 'Drawing'}
-                      </p>
-                    </li>
-                  )}
-                </ul>
+                <PhotoDrawingCompare
+                  photoSrc={pair.photo}
+                  drawingSrc={pair.drawing}
+                  photoAlt={`${pair.title}: ${dict.art.photo}`}
+                  drawingAlt={`${pair.title}: ${dict.art.drawing}`}
+                  photoLabel={dict.art.photo}
+                  drawingLabel={dict.art.drawing}
+                  hint={dict.art.compareHint}
+                />
+                <h3 class="example__title display">{pair.title}</h3>
               </article>
             ))}
           </div>
@@ -129,82 +224,909 @@ const examplePairs = [
       </section>
     )
   }
+
+  <section class="section request" aria-labelledby="request-title">
+    <div class="site-shell request__grid">
+      <form
+        id="form"
+        class="paper request__form"
+        method="post"
+        action="/api/commissions/"
+        data-enhance
+        data-commission-form
+        data-locale={locale}
+        data-msg-sending={copy.sending}
+        data-msg-error={dict.forms.error}
+        data-msg-invalid={dict.forms.errorInvalid}
+        data-msg-not-configured={dict.forms.errorNotConfigured}
+      >
+        <input type="hidden" name="locale" value={locale} />
+
+        <div class="paper__fields" data-form-fields hidden={sent}>
+          <div>
+            <h2 id="request-title" class="paper__title">{copy.formTitle}</h2>
+            <p class="paper__lead">{copy.formLead}</p>
+          </div>
+
+          <div class="paper__row">
+            <label class="field">
+              <span class="field__label">{dict.forms.name}</span>
+              <input name="name" autocomplete="name" required maxlength="120" />
+            </label>
+            <label class="field">
+              <span class="field__label">{dict.forms.email}</span>
+              <input name="email" type="email" autocomplete="email" required maxlength="254" />
+            </label>
+          </div>
+
+          <fieldset class="field">
+            <legend class="field__label">{dict.forms.size}</legend>
+            <div class="size-choices">
+              {
+                sizeChoices.map((choice) => (
+                  <label class={`size-choice size-choice--${choice.value.toLowerCase()}`}>
+                    <input
+                      type="radio"
+                      name="size"
+                      value={choice.value}
+                      required
+                      checked={choice.value === 'A4'}
+                    />
+                    <span class="size-choice__card">
+                      <span class="size-choice__glyph" aria-hidden="true"></span>
+                      <span class="size-choice__label">{choice.label}</span>
+                      <span class="size-choice__detail">{choice.detail}</span>
+                    </span>
+                  </label>
+                ))
+              }
+            </div>
+          </fieldset>
+
+          <div class="paper__row request__counts">
+            <div class="field">
+              <label class="field__label" for="subjects">{dict.forms.subjects}</label>
+              <div class="stepper">
+                <button type="button" class="stepper__btn" data-step="-1" aria-label={copy.subjectsLess}>
+                  <span aria-hidden="true">−</span>
+                </button>
+                <input
+                  id="subjects"
+                  name="subjects"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max={MAX_SUBJECTS}
+                  value="1"
+                  required
+                  aria-describedby="subjects-hint"
+                />
+                <button type="button" class="stepper__btn" data-step="1" aria-label={copy.subjectsMore}>
+                  <span aria-hidden="true">+</span>
+                </button>
+              </div>
+              <p id="subjects-hint" class="field__hint">{copy.subjectsHint}</p>
+            </div>
+
+            <div class="estimate" aria-live="polite">
+              <span class="field__label">{copy.estimate}</span>
+              <output
+                class="estimate__value display"
+                data-estimate
+                data-open={copy.estimateOpen}
+                data-a4={commissionPrices.A4}
+                data-a3={commissionPrices.A3}
+                data-extra={commissionPrices.extraSubject}
+                data-max={MAX_SUBJECTS}
+              >
+                {sizes[0].price}
+              </output>
+              <p class="field__hint">{copy.estimateNote}</p>
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="field__label">{dict.forms.message}</span>
+            <textarea
+              name="message"
+              rows="5"
+              required
+              maxlength="5000"
+              placeholder={copy.messagePlaceholder}></textarea>
+          </label>
+
+          <div class="paper__actions">
+            <button class="btn" type="submit">{copy.submit}</button>
+            <p class="paper__status" role="status" data-form-status data-tone={configError ? 'error' : 'info'}>
+              {configError ? dict.forms.errorNotConfigured : ''}
+            </p>
+          </div>
+        </div>
+
+        <div class="paper__done" data-form-done hidden={!sent}>
+          <svg class="paper__done-mark" viewBox="0 0 52 52" aria-hidden="true">
+            <path d="M6 28 C 12 32, 16 38, 20 43 C 27 28, 36 17, 47 8" pathLength="1"></path>
+          </svg>
+          <h3 tabindex="-1">{copy.sentTitle}</h3>
+          <p>{copy.sentBody}</p>
+          <p class="reference" data-form-reference-row hidden={!sentReference}>
+            <span class="field__label">{copy.sentReference}</span>
+            <strong data-form-reference>{sentReference}</strong>
+            <span class="field__hint">{copy.sentReferenceNote}</span>
+          </p>
+        </div>
+      </form>
+
+      <aside class="request__aside">
+        <h2 class="request__aside-title">{copy.directTitle}</h2>
+        <ul class="direct">
+          <li>
+            <span>{dict.contact.email}</span>
+            <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a>
+          </li>
+          <li>
+            <span>{dict.contact.whatsapp}</span>
+            <a href="https://wa.me/34636386531" target="_blank" rel="noopener noreferrer">+34 636 386 531</a>
+          </li>
+        </ul>
+      </aside>
+    </div>
+  </section>
 </PublicLayout>
 
 <style>
-  .layout {
+  /* ——— Intro: the two paper sizes, hung to scale ——— */
+  .intro {
+    overflow: clip;
+  }
+
+  .intro__grid {
     display: grid;
-    gap: 2.5rem;
+    gap: clamp(3rem, 6vw, 5rem);
   }
 
-  .example-list {
+  .intro__title {
+    margin: 0 0 1.25rem;
+    font-size: clamp(3rem, 6.5vw, 6.5rem);
+    letter-spacing: -0.045em;
+    line-height: 0.93;
+    text-wrap: balance;
+  }
+
+  .intro__lead {
+    margin: 0;
+    max-width: 30rem;
+    font-size: clamp(1.05rem, 1.2vw, 1.2rem);
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .intro__cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 1.75rem;
+    margin-top: 2rem;
+  }
+
+  .sizes {
+    margin: 0;
     display: grid;
-    gap: 2.5rem;
-    margin-top: 1.5rem;
+    gap: 1rem;
   }
 
-  .example h3 {
-    font-size: 1.6rem;
-    margin: 0 0 0.75rem;
+  .sizes__title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
 
-  .example ul {
+  .sizes__wall {
+    display: flex;
+    align-items: flex-start;
+    gap: clamp(1rem, 3vw, 2.5rem);
+    padding-top: 1rem;
+  }
+
+  .size {
+    flex: var(--w) 1 0;
+    min-width: 0;
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .size__sheet {
+    position: relative;
+    aspect-ratio: var(--ar);
+    background: var(--sheet);
+    padding: clamp(0.3rem, 0.8vw, 0.6rem);
+    box-shadow: var(--shadow-art);
+    rotate: var(--r, 0deg);
+  }
+
+  .size--a4 .size__sheet {
+    --r: -1.2deg;
+  }
+
+  .size--a3 .size__sheet {
+    --r: 0.8deg;
+  }
+
+  .size__sheet::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: -0.65rem;
+    left: 50%;
+    width: clamp(3rem, 40%, 7rem);
+    height: 1.25rem;
+    translate: -50% 0;
+    rotate: -3deg;
+    background: rgb(214 220 232 / 0.78);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+  }
+
+  .size__sheet img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  .size__blank {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    font-size: 2.5rem;
+    color: var(--line-strong);
+  }
+
+  /* A measuring line under each sheet, like a dimension on a drawing */
+  .size__measure {
+    position: relative;
+    margin: 0.35rem 0 0;
+    height: 1rem;
+    display: grid;
+    place-items: center;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .size__measure::before {
+    content: '';
+    position: absolute;
+    inset: 50% 0 auto;
+    height: 0.55rem;
+    translate: 0 -50%;
+    border-inline: 1px solid var(--line-strong);
+    background: linear-gradient(var(--line-strong), var(--line-strong)) center / 100% 1px no-repeat;
+  }
+
+  .size__measure span {
+    position: relative;
+    padding-inline: 0.5rem;
+    background: var(--paper);
+  }
+
+  .size__plaque {
+    margin: 0;
+    display: grid;
+    gap: 0.1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+
+  .size__name {
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 2.6vw, 2.2rem);
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+
+  .size__dims {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .size__price {
+    color: var(--ink-soft);
+  }
+
+  .size__price strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-style: italic;
+    font-size: 1.25rem;
+    color: var(--ink);
+  }
+
+  .sizes__extra {
+    margin: 0.5rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    color: var(--ink-soft);
+  }
+
+  .sizes__extra span {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.35rem;
+    color: var(--ink);
+  }
+
+  .sizes__fine {
+    margin: 0;
+    font-size: 0.88rem;
+    max-width: 34rem;
+  }
+
+  @media (max-width: 39.99rem) {
+    .size__note {
+      display: none;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .intro__grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      align-items: center;
+    }
+  }
+
+  /* ——— Steps: a real sequence, so they are numbered ——— */
+  .steps {
+    background: var(--paper-deep);
+  }
+
+  .steps__title {
+    max-width: 16ch;
+    margin-bottom: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .steps__list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 1rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.25rem;
+    counter-reset: step;
   }
 
-  .example img {
+  .step {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 1.25rem;
+    align-items: baseline;
+  }
+
+  .step__number {
+    grid-row: span 2;
+    font-size: clamp(3rem, 5vw, 4.5rem);
+    font-style: italic;
+    line-height: 0.8;
+    color: var(--accent);
+  }
+
+  .step__title {
+    margin: 0 0 0.4rem;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.4rem;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  .step p {
+    margin: 0;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 48rem) {
+    .steps__list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: 3rem;
+    }
+  }
+
+  @media (min-width: 72rem) {
+    .steps__list {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      column-gap: 2.5rem;
+    }
+
+    .step {
+      grid-template-columns: 1fr;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .step__number {
+      grid-row: auto;
+      margin-bottom: 1rem;
+    }
+  }
+
+  /* ——— Photo guidance ——— */
+  .photo__grid {
+    display: grid;
+    gap: clamp(3rem, 6vw, 6rem);
+    align-items: center;
+  }
+
+  .polaroid {
+    position: relative;
+    justify-self: center;
+    width: min(100%, 24rem);
+    margin: 0;
+    padding: 0.8rem 0.8rem 3.4rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    rotate: -3.5deg;
+  }
+
+  .polaroid::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: -0.7rem;
+    left: 50%;
+    width: 40%;
+    height: 1.4rem;
+    translate: -50% 0;
+    rotate: 2deg;
+    background: rgb(214 220 232 / 0.78);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+  }
+
+  .polaroid img {
     width: 100%;
-    height: auto;
-    object-fit: contain;
-    background: #fff;
-    border: 0;
+    aspect-ratio: 1;
+    object-fit: cover;
+    box-shadow: none;
+    border-radius: 0;
   }
 
-  .lead {
-    max-width: 36rem;
+  .polaroid figcaption {
+    position: absolute;
+    inset: auto 0 1rem;
+    text-align: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.2rem;
+    color: var(--ink-soft);
   }
 
-  .prices {
-    padding-left: 1.1rem;
-    color: var(--ink);
+  .photo__lead {
+    margin: 0 0 1.75rem;
+    max-width: 32rem;
+    font-size: 1.12rem;
+    color: var(--ink-soft);
   }
 
-  .form {
+  .tips {
+    list-style: none;
+    margin: 0 0 2.25rem;
+    padding: 0;
     display: grid;
     gap: 0.85rem;
-    padding: 1.5rem;
-    background: rgb(255 255 255 / 0.86);
-    border: 0;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-art);
   }
 
-  label {
+  .tips li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.85rem;
+    font-family: var(--font-display);
+    font-size: clamp(1.2rem, 1.8vw, 1.45rem);
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+  }
+
+  .tips svg {
+    flex: none;
+    width: 1.3rem;
+    height: 1.3rem;
+    translate: 0 0.2rem;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .photo__send {
+    margin: 0;
     display: grid;
-    gap: 0.35rem;
-    font-weight: 600;
-    font-size: 0.92rem;
+    gap: 0.2rem;
   }
 
-  input,
-  select,
-  textarea {
-    font: inherit;
-    padding: 0.65rem 0.75rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: #fff;
+  .photo__send-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .photo__send a {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+    letter-spacing: -0.03em;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  .photo__note {
+    margin: 0.75rem 0 0;
+    font-size: 0.92rem;
+    max-width: 30rem;
   }
 
   @media (min-width: 64rem) {
-    .layout {
-      grid-template-columns: 1.1fr 0.9fr;
-      align-items: start;
+    .photo__grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    }
+  }
+
+  /* ——— Examples ——— */
+  .examples {
+    border-top: 1px solid var(--line);
+  }
+
+  .examples__head {
+    max-width: 36rem;
+    margin-bottom: clamp(2rem, 4vw, 3rem);
+  }
+
+  .examples__head p {
+    margin: 0;
+  }
+
+  .example-list {
+    display: grid;
+    gap: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .example {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .example :global(.compare__stage) {
+    aspect-ratio: 3 / 2;
+  }
+
+  .example :global(.compare__base),
+  .example :global(.compare__overlay) {
+    object-fit: cover;
+  }
+
+  .example__title {
+    order: -1;
+    margin: 0 0 0.6rem;
+    font-size: 1.6rem;
+    font-style: italic;
+    letter-spacing: -0.02em;
+  }
+
+  @media (min-width: 56rem) {
+    .example-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* ——— Request form ——— */
+  .request {
+    background: var(--paper-deep);
+  }
+
+  .request__grid {
+    display: grid;
+    gap: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .size-choices {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+  }
+
+  .size-choice {
+    position: relative;
+    display: flex;
+  }
+
+  .size-choice input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .size-choice__card {
+    flex: 1;
+    display: grid;
+    align-content: end;
+    gap: 0.15rem;
+    padding: 0.9rem 0.9rem 0.85rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-dialog);
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      background var(--dur-ui) var(--ease-soft),
+      box-shadow var(--dur-ui) var(--ease-soft);
+  }
+
+  /* Glyphs keep the true A4 : A3 proportion */
+  .size-choice__glyph {
+    display: block;
+    height: 2.2rem;
+    aspect-ratio: 210 / 297;
+    margin-bottom: 0.6rem;
+    border: 1px solid var(--ink-soft);
+    background: var(--paper);
+  }
+
+  .size-choice--a3 .size-choice__glyph {
+    aspect-ratio: 420 / 297;
+  }
+
+  .size-choice--undecided .size-choice__glyph {
+    aspect-ratio: 1;
+    border-style: dashed;
+    border-color: var(--line-strong);
+    border-radius: 50%;
+  }
+
+  .size-choice__label {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .size-choice__detail {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .size-choice input:hover + .size-choice__card {
+    border-color: var(--ink);
+  }
+
+  .size-choice input:checked + .size-choice__card {
+    border-color: var(--ink);
+    background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  .size-choice input:checked + .size-choice__card .size-choice__glyph {
+    background: var(--accent-soft);
+    border-color: var(--accent-deep);
+  }
+
+  .size-choice input:focus-visible + .size-choice__card {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 29.99rem) {
+    .size-choices {
+      grid-template-columns: 1fr;
+    }
+
+    .size-choice__card {
+      grid-template-columns: 2.6rem auto 1fr;
+      align-items: center;
+      column-gap: 0.75rem;
+    }
+
+    .size-choice__glyph {
+      height: 1.7rem;
+      margin: 0;
+      justify-self: center;
+    }
+
+    .size-choice__detail {
+      text-align: right;
+    }
+  }
+
+  .request__counts {
+    align-items: start;
+  }
+
+  .stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+  }
+
+  .stepper__btn {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 1.3rem;
+    cursor: pointer;
+    transition: border-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .stepper__btn:hover {
+    border-color: var(--ink);
+  }
+
+  .stepper__btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .paper .stepper input {
+    width: 3.5rem;
+    text-align: center;
+    border-bottom: 0;
+    font-size: 1.8rem;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  .stepper input::-webkit-outer-spin-button,
+  .stepper input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .estimate {
+    display: grid;
+    gap: 0.2rem;
+    align-content: start;
+  }
+
+  .estimate__value {
+    font-size: clamp(2rem, 3.4vw, 2.6rem);
+    font-style: italic;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    color: var(--accent-deep);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .reference {
+    display: grid;
+    gap: 0.2rem;
+    padding: 1rem 1.25rem;
+    background: var(--accent-soft);
+  }
+
+  .reference[hidden] {
+    display: none;
+  }
+
+  .reference strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.6rem;
+    letter-spacing: 0.02em;
+  }
+
+  .request__aside {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+
+  .request__aside-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .direct {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .direct li {
+    display: grid;
+    gap: 0.1rem;
+    padding-block: 0.85rem;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .direct span {
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .direct a {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.3rem;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  @media (min-width: 64rem) {
+    .request__grid {
+      grid-template-columns: minmax(0, 8fr) minmax(0, 3fr);
+      column-gap: clamp(3rem, 5vw, 5rem);
+    }
+
+    .request__aside {
+      position: sticky;
+      top: 2rem;
+      padding-top: 2rem;
     }
   }
 </style>
+
+<script>
+  import { enhanceForm } from '@/scripts/enhanceForm';
+
+  document.querySelectorAll<HTMLFormElement>('form[data-enhance]').forEach(enhanceForm);
+
+  const form = document.querySelector<HTMLFormElement>('[data-commission-form]');
+  const output = form?.querySelector<HTMLOutputElement>('[data-estimate]');
+  const subjects = form?.querySelector<HTMLInputElement>('input[name="subjects"]');
+
+  if (form && output && subjects) {
+    const { a4, a3, extra, max, open } = output.dataset;
+    const money = new Intl.NumberFormat(form.dataset.locale === 'es' ? 'es-ES' : 'en-GB', {
+      style: 'currency',
+      currency: 'EUR',
+      maximumFractionDigits: 0,
+    });
+    const limit = Number(max) || 10;
+    const less = form.querySelector<HTMLButtonElement>('[data-step="-1"]');
+    const more = form.querySelector<HTMLButtonElement>('[data-step="1"]');
+
+    const count = () => Math.min(limit, Math.max(1, Math.trunc(Number(subjects.value)) || 1));
+
+    const update = () => {
+      const size = form.querySelector<HTMLInputElement>('input[name="size"]:checked')?.value;
+      const base = size === 'A4' ? Number(a4) : size === 'A3' ? Number(a3) : null;
+      output.textContent =
+        base === null ? (open ?? '') : money.format((base + (count() - 1) * Number(extra)) / 100);
+      if (less) less.disabled = count() <= 1;
+      if (more) more.disabled = count() >= limit;
+    };
+
+    form.querySelectorAll<HTMLButtonElement>('[data-step]').forEach((button) => {
+      button.addEventListener('click', () => {
+        subjects.value = String(Math.min(limit, Math.max(1, count() + Number(button.dataset.step))));
+        update();
+      });
+    });
+    subjects.addEventListener('change', () => {
+      subjects.value = String(count());
+      update();
+    });
+    form.addEventListener('input', update);
+    form.addEventListener('change', update);
+    update();
+  }
+</script>

@@ -46,6 +46,15 @@ for (const locale of locales) {
       );
     });
 
+    test('language switch keeps the same section', async ({ page }) => {
+      const other = locales.find((l) => l.code !== locale.code)!;
+      for (const key of ['contact', 'commissions', 'about', 'shop'] as const) {
+        await page.goto(locale[key]);
+        await page.locator('header .lang').click();
+        await expect(page).toHaveURL(new RegExp(`${other[key]}$`));
+      }
+    });
+
     test('about shows interleaved studio images', async ({ page }) => {
       await page.goto(locale.about);
       await expect(page.locator('.about__figure img')).toHaveCount(4);

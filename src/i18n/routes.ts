@@ -48,6 +48,31 @@ export function productPath(locale: Locale, slug: string): string {
   return localizedPath(locale, 'shop', slug);
 }
 
+/**
+ * Same page in another locale, read from the current path. Section segments
+ * are translated (contact ↔ contacto) and a trailing slug is kept as is.
+ * Pages whose slug differs per locale (shop products) pass their own path.
+ */
+export function alternatePath(pathname: string, targetLocale: Locale): string {
+  const [first = '', ...rest] = pathname.split('/').filter(Boolean);
+  if (!isLocale(first)) return localizedPath(targetLocale, 'home');
+
+  const remainder = rest.join('/');
+  const keys = (Object.keys(routeMap) as RouteKey[])
+    .filter((key) => key !== 'home')
+    .sort((a, b) => routeMap[b][first].length - routeMap[a][first].length);
+
+  for (const key of keys) {
+    const segment = routeMap[key][first];
+    if (remainder === segment) return localizedPath(targetLocale, key);
+    if (remainder.startsWith(`${segment}/`)) {
+      return localizedPath(targetLocale, key, remainder.slice(segment.length + 1));
+    }
+  }
+
+  return localizedPath(targetLocale, 'home');
+}
+
 /** Build equivalent URL for the other locale, keeping a known slug pair when provided. */
 export function switchLocalePath(
   _currentLocale: Locale,
