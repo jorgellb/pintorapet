@@ -49,11 +49,16 @@ export const passwordSchema = z.string().min(8).max(72);
  */
 export function safeNext(next: string | null | undefined, fallback: string): string {
   if (!next || !next.startsWith('/') || /[\u0000-\u001F\u007F\\]/.test(next)) return fallback;
+  // No empty or dot segments: normalising "/.//x" would turn it into "//x".
+  const path = next.split(/[?#]/)[0];
+  if (path.includes('//') || /\/\.{1,2}(\/|$)/.test(path)) return fallback;
   const base = 'https://petsdrawings.invalid';
   try {
     const url = new URL(next, base);
-    if (url.origin !== base) return fallback;
-    return `${url.pathname}${url.search}${url.hash}`;
+    const result = `${url.pathname}${url.search}${url.hash}`;
+    // Check what is returned, not only what was parsed.
+    if (url.origin !== base || result.startsWith('//') || result.startsWith('/\\')) return fallback;
+    return result;
   } catch {
     return fallback;
   }

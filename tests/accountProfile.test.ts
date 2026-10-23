@@ -65,6 +65,10 @@ describe('safeNext', () => {
     expect(safeNext('/\n/evil.example/', '/es/cuenta/')).toBe('/es/cuenta/');
     expect(safeNext('/\\evil.example/', '/es/cuenta/')).toBe('/es/cuenta/');
     expect(safeNext('/es/cuenta/pedidos/PD-1/?a=1#x', '/es/cuenta/')).toBe('/es/cuenta/pedidos/PD-1/?a=1#x');
+    expect(safeNext('/.//evil.example/', '/es/cuenta/')).toBe('/es/cuenta/');
+    expect(safeNext('/a/..//evil.example/', '/es/cuenta/')).toBe('/es/cuenta/');
+    expect(safeNext('/%2e//evil.example/', '/es/cuenta/')).toBe('/es/cuenta/');
+    expect(safeNext('/es/cuenta/?next=//x', '/es/cuenta/')).toBe('/es/cuenta/?next=//x');
   });
 });
 
