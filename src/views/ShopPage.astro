@@ -1,199 +1,926 @@
 ---
 import PublicLayout from '@/layouts/PublicLayout.astro';
-import ProductImage from '@/components/shop/ProductImage.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
 import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
+import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
+const es = locale === 'es';
 const dict = t(locale);
 const catalog = await loadPublicCatalog(locale);
 const { source } = catalog;
 const products = topLevelProducts(catalog.products);
+
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+// Breed names as people say them; unknown motifs fall back to the stored motif.
+const breedNames: Record<string, { en: string; es: string }> = {
+  'springer-spaniel': { en: 'Springer Spaniel', es: 'Springer Spaniel' },
+  'labrador-retriever-black': { en: 'Black Labrador', es: 'Labrador negro' },
+  'golden-retriever': { en: 'Golden Retriever', es: 'Golden Retriever' },
+  dachshund: { en: 'Dachshund', es: 'Teckel' },
+  'border-collie': { en: 'Border Collie', es: 'Border Collie' },
+  'jack-russell-terrier': { en: 'Jack Russell', es: 'Jack Russell' },
+};
+
+const categoryOrder = ['greeting-cards', 'coasters', 'mugs'] as const;
+const categoryNames: Record<string, { en: string; es: string }> = {
+  'greeting-cards': { en: 'Card', es: 'Tarjeta' },
+  coasters: { en: 'Coaster', es: 'Posavasos' },
+  mugs: { en: 'Mug', es: 'Taza' },
+};
+const categoryPlural: Record<string, { en: string; es: string }> = {
+  'greeting-cards': { en: 'Cards', es: 'Tarjetas' },
+  coasters: { en: 'Coasters', es: 'Posavasos' },
+  mugs: { en: 'Mugs', es: 'Tazas' },
+};
+
 const category = Astro.url.searchParams.get('category') ?? 'all';
-const filtered =
-  category === 'all'
-    ? products
-    : products.filter((p) => p.category === category);
+const breed = Astro.url.searchParams.get('breed') ?? 'all';
+
+const canAdd = (p: ProductPublic) =>
+  p.saleEnabled && p.availability !== 'sold_out' && p.availability !== 'unavailable';
+const statusOf = (p: ProductPublic) =>
+  p.availability === 'sold_out'
+    ? dict.shop.soldOut
+    : p.availability === 'unavailable'
+      ? dict.shop.unavailable
+      : dict.shop.unverified;
+
+type StallSet = {
+  id: string;
+  name: string;
+  portrait: string | null;
+  items: ProductPublic[];
+};
+
+// One set per drawing: the same portrait on a card, a coaster and a mug.
+const allSets: StallSet[] = [];
+for (const product of products) {
+  const id = slugify(product.motif || product.title);
+  let set = allSets.find((s) => s.id === id);
+  if (!set) {
+    set = { id, name: breedNames[id]?.[locale] ?? product.motif, portrait: null, items: [] };
+    allSets.push(set);
+  }
+  set.items.push(product);
+}
+for (const set of allSets) {
+  set.items.sort(
+    (a, b) =>
+      categoryOrder.indexOf(a.category as (typeof categoryOrder)[number]) -
+      categoryOrder.indexOf(b.category as (typeof categoryOrder)[number]),
+  );
+  // The coaster photo shows the drawing flat and centred: the best portrait.
+  set.portrait =
+    set.items.find((p) => p.category === 'coasters')?.coverImageUrl ??
+    set.items.find((p) => p.coverImageUrl)?.coverImageUrl ??
+    null;
+}
+
+const sets = allSets
+  .filter((s) => breed === 'all' || s.id === breed)
+  .map((s) => ({
+    ...s,
+    items: s.items.filter((p) => category === 'all' || p.category === category),
+  }))
+  .filter((s) => s.items.length > 0);
+
+const shopPath = localizedPath(locale, 'shop');
+const filterHref = (next: { category?: string; breed?: string }) => {
+  const params = new URLSearchParams();
+  const c = next.category ?? category;
+  const b = next.breed ?? breed;
+  if (c !== 'all') params.set('category', c);
+  if (b !== 'all') params.set('breed', b);
+  const query = params.toString();
+  return `${shopPath}${query ? `?${query}` : ''}#stall`;
+};
 
 const categories = [
   { id: 'all', label: dict.shop.all },
-  { id: 'greeting-cards', label: locale === 'es' ? 'Tarjetas' : 'Cards' },
-  { id: 'coasters', label: locale === 'es' ? 'Posavasos' : 'Coasters' },
-  { id: 'mugs', label: locale === 'es' ? 'Tazas' : 'Mugs' },
+  ...categoryOrder.map((id) => ({ id, label: categoryPlural[id][locale] })),
 ];
+
+const swing = [-6, 4, -3, 7, -5, 3];
 ---
 
 <PublicLayout locale={locale} title={dict.shop.title} description={dict.shop.lead}>
-  <section class="section">
-    <div class="site-shell">
-      <h1 class="display h1-display">{dict.shop.title}</h1>
-      <p class="muted lead">{dict.shop.lead}</p>
-      {
-        source === 'empty' && (
-          <p class="notice">
-            {locale === 'es'
-              ? 'Catálogo pendiente (Supabase o migration/products.json).'
-              : 'Catalogue pending (Supabase or migration/products.json).'}
-          </p>
-        )
-      }
+  <div class="canopy" aria-hidden="true">
+    <span class="canopy__valance"></span>
+  </div>
 
-      <div class="filters" role="navigation" aria-label={dict.shop.filterCategory}>
+  <section class="section stall-head" aria-labelledby="shop-title">
+    <div class="site-shell stall-head__grid">
+      <div>
+        <p class="eyebrow">{dict.shop.title}</p>
+        <h1 id="shop-title" class="display stall-head__title">
+          {es ? 'El puesto' : 'Meili’s'}
+          <em>{es ? 'de Meili' : 'stall'}</em>
+        </h1>
+      </div>
+      <p class="stall-head__lead">
+        {es
+          ? 'Tarjetas, posavasos y tazas con sus retratos a lápiz, las mismas piezas que lleva a los mercados.'
+          : 'Cards, coasters and mugs printed with her pencil portraits, the same pieces she takes to local markets.'}
+      </p>
+    </div>
+
+    {
+      source === 'empty' && (
+        <p class="site-shell notice">
+          {es
+            ? 'Catálogo pendiente (Supabase o migration/products.json).'
+            : 'Catalogue pending (Supabase or migration/products.json).'}
+        </p>
+      )
+    }
+
+    <!-- ——— Choose a drawing ——— -->
+    <nav class="site-shell breeds" aria-label={dict.shop.filterMotif}>
+      <p class="breeds__label">{es ? 'Elige un retrato' : 'Choose a portrait'}</p>
+      <ul class="breeds__list">
+        {
+          allSets.map((set, i) => (
+            <li style={`--i:${i}`}>
+              <a
+                class="medallion"
+                href={filterHref({ breed: breed === set.id ? 'all' : set.id })}
+                aria-current={breed === set.id ? 'true' : undefined}
+              >
+                <span
+                  class="medallion__face"
+                  style={set.portrait ? `background-image:url('${set.portrait}')` : undefined}
+                />
+                <span class="medallion__name">{set.name}</span>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </section>
+
+  <section id="stall" class="stall" aria-label={dict.shop.title}>
+    <div class="site-shell">
+      <div class="kinds" role="navigation" aria-label={dict.shop.filterCategory}>
         {
           categories.map((c) => (
             <a
-              class:list={['chip', { 'chip--active': category === c.id }]}
-              href={`${localizedPath(locale, 'shop')}?category=${c.id}`}
+              class:list={['kind', { 'is-active': category === c.id }]}
+              href={filterHref({ category: c.id })}
+              aria-current={category === c.id ? 'true' : undefined}
             >
+              {c.id === 'greeting-cards' && (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 4h11l3 3v13H5z" />
+                  <path d="M16 4v3h3" />
+                </svg>
+              )}
+              {c.id === 'coasters' && (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="4" width="16" height="14" rx="3" />
+                  <path d="M6 20.5h12" />
+                </svg>
+              )}
+              {c.id === 'mugs' && (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 6h11v10a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z" />
+                  <path d="M16 9h1.5a2.5 2.5 0 0 1 0 5H16" />
+                </svg>
+              )}
               {c.label}
             </a>
           ))
         }
+        {
+          breed !== 'all' && (
+            <a class="kind kind--clear" href={filterHref({ breed: 'all' })}>
+              {es ? 'Ver todas las razas' : 'All breeds'}
+            </a>
+          )
+        }
       </div>
 
       {
-        filtered.length === 0 ? (
-          <p class="muted">{dict.shop.empty}</p>
+        sets.length === 0 ? (
+          <p class="muted empty">{dict.shop.empty}</p>
         ) : (
-          <ul class="grid">
-            {filtered.map((product) => (
-              <li>
-                <article class="card">
-                  <a class="card__media" href={localizedPath(locale, 'shop', product.slug)}>
-                    <ProductImage
-                      class="card__img"
-                      src={product.coverImageUrl}
-                      alt={product.title}
-                    />
-                  </a>
-                  <div class="card__body">
-                    <h2>
-                      <a href={localizedPath(locale, 'shop', product.slug)}>{product.title}</a>
-                    </h2>
-                    <p class="meta muted">{product.motif}</p>
-                    <p class="price">{formatEur(product.priceCents, locale)}</p>
-                    <p class="avail muted">{dict.shop.unverified}</p>
-                    <button
-                      type="button"
-                      class="btn btn--ghost"
-                      data-add-to-cart
-                      data-product-id={product.id}
-                      disabled={!product.saleEnabled}
-                    >
-                      {product.saleEnabled ? dict.shop.addToCart : dict.shop.unverified}
-                    </button>
-                  </div>
-                </article>
-              </li>
-            ))}
-          </ul>
+          sets.map((set, setIndex) => (
+            <article class="set" aria-labelledby={`set-${set.id}`}>
+              <header class="set__head">
+                <span
+                  class="set__portrait"
+                  style={set.portrait ? `background-image:url('${set.portrait}')` : undefined}
+                  aria-hidden="true"
+                />
+                <div>
+                  <h2 id={`set-${set.id}`} class="display set__name">
+                    {set.name}
+                  </h2>
+                  <p class="set__meta">
+                    {es ? 'Un retrato de Meili, en ' : 'One portrait by Meili, as '}
+                    {set.items.map((p, i) => (
+                      <>
+                        {i > 0 && (i === set.items.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
+                        {(categoryNames[p.category]?.[locale] ?? p.category).toLowerCase()}
+                      </>
+                    ))}
+                  </p>
+                </div>
+              </header>
+
+              <ul class="set__table">
+                {set.items.map((product, i) => {
+                  const href = localizedPath(locale, 'shop', product.slug);
+                  const alt = product.imageUrls[1];
+                  const addable = canAdd(product);
+                  return (
+                    <li class="item" style={`--r:${swing[(setIndex * 3 + i) % swing.length]}deg`}>
+                      <a class="item__frame" href={href} aria-label={product.title}>
+                        {product.coverImageUrl ? (
+                          <img
+                            class="item__img"
+                            src={product.coverImageUrl}
+                            alt={product.title}
+                            loading={setIndex === 0 ? 'eager' : 'lazy'}
+                            decoding="async"
+                          />
+                        ) : (
+                          <span class="item__ph" />
+                        )}
+                        {alt && (
+                          <img class="item__img item__img--alt" src={alt} alt="" loading="lazy" decoding="async" />
+                        )}
+                      </a>
+
+                      <span class="tag" aria-hidden="true">
+                        <span class="tag__string" />
+                        <span class="tag__card">
+                          <span class="tag__kind">{categoryNames[product.category]?.[locale]}</span>
+                          <span class="tag__price">{formatEur(product.priceCents, locale)}</span>
+                        </span>
+                      </span>
+
+                      <div class="item__body">
+                        <h3 class="item__title">
+                          <a href={href}>{categoryNames[product.category]?.[locale] ?? product.title}</a>
+                        </h3>
+                        <p class="item__price price">{formatEur(product.priceCents, locale)}</p>
+                        {addable ? (
+                          <button
+                            type="button"
+                            class="btn item__add"
+                            data-add-to-cart
+                            data-product-id={product.id}
+                            data-done={es ? 'Añadido' : 'Added'}
+                          >
+                            {dict.shop.addToCart}
+                          </button>
+                        ) : (
+                          <p class="item__status">
+                            {statusOf(product)} ·{' '}
+                            <a href={localizedPath(locale, 'contact')}>{es ? 'pregunta a Meili' : 'ask Meili'}</a>
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </article>
+          ))
         )
       }
+    </div>
+  </section>
+
+  <section class="section missing" aria-labelledby="missing-title">
+    <div class="site-shell missing__inner">
+      <h2 id="missing-title" class="display missing__title">
+        {es ? '¿No está tu compañero?' : 'Your companion isn’t here?'}
+      </h2>
+      <p>
+        {es
+          ? 'Cada pieza de la tienda nace de un retrato a lápiz. El tuyo puede ser el siguiente.'
+          : 'Every piece in the shop starts as a pencil portrait. Yours could be next.'}
+      </p>
+      <a class="btn" href={localizedPath(locale, 'commissions')}>{dict.home.ctaCommission}</a>
     </div>
   </section>
 </PublicLayout>
 
 <style>
-  .lead {
-    max-width: 40rem;
-    font-size: 1.1rem;
+  /* ——— The awning of her market tent ——— */
+  .canopy {
+    position: relative;
+    z-index: 2;
+    margin-top: -1.5rem;
+    height: 4.4rem;
+    overflow-x: clip;
+    filter: drop-shadow(0 12px 10px rgb(22 23 26 / 0.1));
+    pointer-events: none;
+  }
+
+  /* fabric stripes, each with the soft shading of a fold */
+  .canopy__valance {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      #ffffff 0,
+      #f4f4f1 3.6rem,
+      #e4e9f3 4rem,
+      #d6deec 7.6rem,
+      #ffffff 8rem
+    );
+    -webkit-mask:
+      linear-gradient(#000, #000) top / 100% 2.4rem no-repeat,
+      radial-gradient(circle 2rem at 50% 2.4rem, #000 97%, transparent 100%) 0 0 / 4rem 4.4rem repeat-x;
+    mask:
+      linear-gradient(#000, #000) top / 100% 2.4rem no-repeat,
+      radial-gradient(circle 2rem at 50% 2.4rem, #000 97%, transparent 100%) 0 0 / 4rem 4.4rem repeat-x;
+    transform-origin: 50% 0;
+    animation: breeze 7s ease-in-out infinite;
+  }
+
+  /* a hem stitched along the top */
+  .canopy::after {
+    content: '';
+    position: absolute;
+    inset: 1.9rem 0 auto;
+    border-top: 1px dashed rgb(63 79 115 / 0.25);
+  }
+
+  @keyframes breeze {
+    0%,
+    100% {
+      transform: scaleY(1) skewX(0deg);
+    }
+    35% {
+      transform: scaleY(1.05) skewX(0.6deg);
+    }
+    70% {
+      transform: scaleY(0.98) skewX(-0.4deg);
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .canopy {
+      margin-top: -3rem;
+    }
+  }
+
+  /* ——— Head ——— */
+  .stall-head {
+    padding-top: clamp(2.5rem, 6vw, 4.5rem);
+    padding-bottom: clamp(2rem, 5vw, 3.5rem);
+  }
+
+  .stall-head__grid {
+    display: grid;
+    gap: 1.5rem;
+    align-items: end;
+  }
+
+  .eyebrow {
+    margin: 0 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .eyebrow::before {
+    content: '';
+    width: 2.25rem;
+    height: 1px;
+    background: currentColor;
+  }
+
+  .stall-head__title {
+    margin: 0;
+    display: grid;
+    font-size: clamp(3.4rem, 9vw, 8.5rem);
+    line-height: 0.9;
+    letter-spacing: -0.055em;
+  }
+
+  .stall-head__title em {
+    padding-left: 0.45em;
+    font-style: italic;
+    color: var(--accent-deep);
+  }
+
+  .stall-head__lead {
+    margin: 0;
+    max-width: 26rem;
+    font-size: clamp(1.05rem, 1.3vw, 1.2rem);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    text-wrap: pretty;
   }
 
   .notice {
     padding: var(--space-4);
     border: 1px solid var(--line);
     background: var(--accent-soft);
-    max-width: 40rem;
-    margin: 1rem 0 0;
-  }
-
-  .filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    margin: 1.75rem 0 2.25rem;
-  }
-
-  .chip {
-    padding: 0.45rem 0.9rem;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--radius);
-    text-decoration: none;
-    color: var(--ink);
-    font-size: 0.95rem;
-    font-weight: 500;
-  }
-
-  .chip--active {
-    background: var(--ink);
-    color: var(--surface);
-    border-color: var(--ink);
-  }
-
-  .grid {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.25rem;
-  }
-
-  .card {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .card__media :global(.card__img),
-  .card__media :global(.ph) {
-    aspect-ratio: 1;
-    width: 100%;
-  }
-
-  .card__body h2 {
-    font-family: var(--font-display);
-    font-size: 1.35rem;
-    margin: 0;
-    font-weight: 500;
-  }
-
-  .card__body h2 a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .meta {
-    margin: 0.25rem 0;
-    font-size: 0.85rem;
-  }
-
-  .price {
-    font-weight: 600;
-    margin: 0.35rem 0;
-  }
-
-  .avail {
-    font-size: 0.85rem;
-  }
-
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
+    margin-top: 1.5rem;
   }
 
   @media (min-width: 64rem) {
-    .grid {
+    .stall-head__grid {
+      grid-template-columns: 1fr auto;
+    }
+
+    .stall-head__lead {
+      padding-bottom: 1rem;
+    }
+  }
+
+  /* ——— Portrait medallions ——— */
+  .breeds {
+    margin-top: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .breeds__label {
+    margin: 0 0 1.1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .breeds__list {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem 0 1rem;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(6.5rem, 1fr);
+    gap: clamp(0.75rem, 2vw, 1.75rem);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .breeds__list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .breeds__list li {
+    scroll-snap-align: start;
+    animation: medal-in 700ms var(--ease-out) both;
+    animation-delay: calc(150ms + var(--i) * 70ms);
+  }
+
+  .medallion {
+    display: grid;
+    justify-items: center;
+    gap: 0.7rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+
+  .medallion__face {
+    width: clamp(5.5rem, 9vw, 7.5rem);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background-color: var(--sheet);
+    background-size: 210%;
+    background-position: 52% 33%;
+    box-shadow:
+      0 0 0 0.35rem var(--sheet),
+      0 0 0 calc(0.35rem + 1px) var(--line),
+      var(--shadow-art);
+    transition:
+      transform 500ms var(--ease-out),
+      box-shadow 500ms var(--ease-out),
+      background-size 900ms var(--ease-out);
+  }
+
+  .medallion__name {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.05rem;
+    text-align: center;
+    line-height: 1.15;
+  }
+
+  .medallion:hover .medallion__face {
+    transform: translateY(-5px) rotate(-3deg);
+    background-size: 235%;
+  }
+
+  .medallion:hover {
+    color: var(--ink);
+  }
+
+  .medallion[aria-current='true'] .medallion__face {
+    box-shadow:
+      0 0 0 0.35rem var(--sheet),
+      0 0 0 calc(0.35rem + 2px) var(--accent-deep),
+      var(--shadow-art);
+  }
+
+  .medallion[aria-current='true'] .medallion__name {
+    color: var(--accent-deep);
+  }
+
+  .medallion:focus-visible {
+    outline: none;
+  }
+
+  .medallion:focus-visible .medallion__face {
+    outline: 2px solid var(--accent);
+    outline-offset: 0.6rem;
+  }
+
+  @keyframes medal-in {
+    from {
+      opacity: 0;
+      transform: translateY(1rem) scale(0.92);
+    }
+  }
+
+  /* ——— Kinds of piece ——— */
+  .stall {
+    padding-bottom: clamp(3rem, 7vw, 6rem);
+    scroll-margin-top: 1rem;
+  }
+
+  .kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.6rem;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      background var(--dur-ui) var(--ease-soft),
+      color var(--dur-ui) var(--ease-soft);
+  }
+
+  .kind svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .kind:hover {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+
+  .kind.is-active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--light);
+  }
+
+  .kind--clear {
+    border-style: dashed;
+  }
+
+  .empty {
+    padding-block: 3rem;
+  }
+
+  /* ——— A set: one drawing on the stall table ——— */
+  .set {
+    display: grid;
+    gap: clamp(1.5rem, 3vw, 2.5rem);
+    padding-block: clamp(3rem, 6vw, 5rem);
+  }
+
+  .set + .set {
+    border-top: 1px solid var(--line);
+  }
+
+  .set__head {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+  }
+
+  .set__portrait {
+    flex: none;
+    width: 4.25rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background-color: var(--sheet);
+    background-size: 210%;
+    background-position: 52% 33%;
+    box-shadow:
+      0 0 0 0.25rem var(--sheet),
+      0 0 0 calc(0.25rem + 1px) var(--line),
+      0 10px 20px -10px rgb(22 23 26 / 0.3);
+  }
+
+  .set__name {
+    margin: 0;
+    font-size: clamp(2.2rem, 4.5vw, 3.8rem);
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+  }
+
+  .set__meta {
+    margin: 0.4rem 0 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  /* the pieces of one drawing, side by side; a swipeable row on phones */
+  .set__table {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 2.25rem 0 0;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(15rem, 78%);
+    gap: clamp(1.25rem, 3vw, 2.5rem);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .set__table::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    .set__table {
+      grid-auto-flow: row;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 2rem;
+      overflow: visible;
+    }
+  }
+
+  .item {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 1rem;
+    scroll-snap-align: start;
+  }
+
+  .item__frame {
+    position: relative;
+    display: block;
+    padding: 0.55rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    transition:
+      transform 600ms var(--ease-out),
+      box-shadow 600ms var(--ease-out);
+  }
+
+  .item__img,
+  .item__ph {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    box-shadow: none;
+    border-radius: 0;
+    background: var(--paper-deep);
+  }
+
+  .item__img--alt {
+    position: absolute;
+    inset: 0.55rem;
+    width: calc(100% - 1.1rem);
+    opacity: 0;
+    transition: opacity 600ms var(--ease-soft);
+  }
+
+  .item:hover .item__frame {
+    transform: translateY(-6px);
+    box-shadow:
+      0 1px 2px rgb(22 23 26 / 0.06),
+      0 20px 34px -12px rgb(22 23 26 / 0.16),
+      0 60px 90px -36px rgb(22 23 26 / 0.28);
+  }
+
+  .item:hover .item__img--alt {
+    opacity: 1;
+  }
+
+  /* ——— Kraft price tags on a string ——— */
+  .tag {
+    position: absolute;
+    z-index: 3;
+    top: -1.1rem;
+    right: 1.1rem;
+    display: grid;
+    justify-items: center;
+    transform-origin: 50% 0;
+    rotate: var(--r);
+    pointer-events: none;
+    filter: drop-shadow(0 6px 6px rgb(22 23 26 / 0.18));
+  }
+
+  .tag::before {
+    /* the pin on the wall */
+    content: '';
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-bottom: -0.2rem;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #8e9bbb, var(--accent-deep));
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.35);
+  }
+
+  .tag__string {
+    width: 1px;
+    height: 1.6rem;
+    background: #8d7a5c;
+  }
+
+  .tag__card {
+    display: grid;
+    justify-items: center;
+    gap: 0.1rem;
+    min-width: 4.6rem;
+    margin-top: -0.55rem;
+    padding: 1.15rem 0.55rem 0.6rem;
+    background:
+      radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.25), transparent 60%),
+      #dcc39b;
+    clip-path: polygon(50% 0, 100% 1.1rem, 100% 100%, 0 100%, 0 1.1rem);
+    -webkit-mask: radial-gradient(circle 0.2rem at 50% 0.85rem, transparent 96%, #000 100%);
+    mask: radial-gradient(circle 0.2rem at 50% 0.85rem, transparent 96%, #000 100%);
+    color: #3b2f1c;
+    text-align: center;
+  }
+
+  .tag__kind {
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+
+  .tag__price {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.3rem;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+
+  .item:hover .tag {
+    animation: swing 1.6s cubic-bezier(0.3, 0.6, 0.4, 1);
+  }
+
+  @keyframes swing {
+    0% {
+      rotate: var(--r);
+    }
+    18% {
+      rotate: calc(var(--r) * -1 + 6deg);
+    }
+    40% {
+      rotate: calc(var(--r) - 5deg);
+    }
+    62% {
+      rotate: calc(var(--r) * -0.5 + 3deg);
+    }
+    82% {
+      rotate: calc(var(--r) - 1deg);
+    }
+    100% {
+      rotate: var(--r);
+    }
+  }
+
+  .item__body {
+    display: grid;
+    gap: 0.35rem;
+    justify-items: start;
+  }
+
+  .item__title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.35rem;
+    letter-spacing: -0.02em;
+  }
+
+  .item__title a {
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .item__title a:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+  }
+
+  .item__price {
+    margin: 0;
+    color: var(--ink-soft);
+  }
+
+  .item__add {
+    margin-top: 0.4rem;
+    min-height: 2.6rem;
+    padding: 0.5rem 1.2rem;
+  }
+
+  .item__status {
+    margin: 0.2rem 0 0;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+
+  .item__status a {
+    color: var(--ink-soft);
+  }
+
+  /* ——— Missing companion ——— */
+  .missing {
+    text-align: center;
+    background:
+      radial-gradient(ellipse 50% 70% at 50% 0%, #fff, transparent 70%),
+      var(--paper-deep);
+  }
+
+  .missing__inner {
+    display: grid;
+    justify-items: center;
+    gap: 1.25rem;
+  }
+
+  .missing__title {
+    margin: 0;
+    max-width: 14ch;
+    font-size: clamp(2.6rem, 6vw, 5rem);
+    font-style: italic;
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+  }
+
+  .missing p {
+    margin: 0 0 0.75rem;
+    max-width: 30rem;
+    color: var(--ink-soft);
+    font-size: 1.1rem;
+  }
+
+  /* the copy that flies to the cart */
+  :global(.flying-piece) {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    object-fit: cover;
+    border-radius: 4px;
+    box-shadow: var(--shadow-art);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canopy__valance,
+    .item:hover .tag {
+      animation: none;
     }
   }
 </style>
@@ -201,24 +928,71 @@ const categories = [
 <script>
   import { addItem, openCart } from '@/stores/cart';
 
-  document.querySelectorAll('[data-add-to-cart]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (!(btn instanceof HTMLButtonElement) || btn.disabled) return;
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  // The piece flies from the stall to the cart in the header.
+  const fly = async (from: HTMLImageElement | null) => {
+    // The header cart when it is on screen, otherwise the floating cart button.
+    const onScreen = (el: HTMLElement) => {
+      if (el.hidden || el.offsetParent === null) return false;
+      const r = el.getBoundingClientRect();
+      return r.bottom > 0 && r.top < window.innerHeight && r.width > 0;
+    };
+    const target = [
+      ...document.querySelectorAll<HTMLElement>('.site-header [data-cart-link], [data-cart-fab]'),
+    ].find(onScreen);
+    if (!from || calm.matches || !('animate' in from)) return;
+    const a = from.getBoundingClientRect();
+    // with no cart on screen, fly towards the top-right corner where it lives
+    const b = target?.getBoundingClientRect() ?? {
+      left: window.innerWidth - 72,
+      top: 16,
+      width: 40,
+      height: 40,
+    };
+    const ghost = from.cloneNode() as HTMLImageElement;
+    ghost.className = 'flying-piece';
+    Object.assign(ghost.style, {
+      left: `${a.left}px`,
+      top: `${a.top}px`,
+      width: `${a.width}px`,
+      height: `${a.height}px`,
+    });
+    document.body.append(ghost);
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+    const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+    await ghost.animate(
+      [
+        { transform: 'translate(0, 0) scale(1) rotate(0deg)', opacity: 1 },
+        {
+          transform: `translate(${dx * 0.55}px, ${dy * 0.55 - 80}px) scale(0.45) rotate(-12deg)`,
+          opacity: 1,
+          offset: 0.6,
+        },
+        { transform: `translate(${dx}px, ${dy}px) scale(0.06) rotate(-20deg)`, opacity: 0.3 },
+      ],
+      { duration: 900, easing: 'cubic-bezier(0.5, 0, 0.3, 1)' },
+    ).finished;
+    ghost.remove();
+    target?.animate(
+      [{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }],
+      { duration: 400, easing: 'ease-out' },
+    );
+  };
+
+  document.querySelectorAll<HTMLButtonElement>('[data-add-to-cart]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
       const id = btn.dataset.productId;
-      if (!id) return;
-      const uuid =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!uuid.test(id)) {
-        window.alert('Invalid product id.');
-        return;
-      }
+      if (btn.disabled || !id || !uuid.test(id)) return;
       addItem(id, 1);
-      openCart();
       const label = btn.textContent;
-      btn.textContent = '✓';
+      btn.textContent = btn.dataset.done ?? '✓';
+      await fly(btn.closest('.item')?.querySelector<HTMLImageElement>('.item__img') ?? null);
+      openCart();
       window.setTimeout(() => {
         if (label) btn.textContent = label;
-      }, 900);
+      }, 1200);
     });
   });
 </script>
