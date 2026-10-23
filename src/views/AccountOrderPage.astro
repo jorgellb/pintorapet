@@ -1,0 +1,812 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import type { Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { loadPublicCatalog } from '@/lib/catalog/loadProducts';
+import { formatEur } from '@/lib/domain/money';
+import { customerStatus } from '@/lib/domain/orderStatus';
+import { countryOptions } from '@/lib/domain/countries';
+import { getOrder, loadProfile } from '@/lib/server/account';
+import { trackingUrl } from '@/lib/server/shipping/correos';
+
+interface Props {
+  locale: Locale;
+  reference: string;
+}
+
+const { locale, reference } = Astro.props;
+const es = locale === 'es';
+const session = Astro.locals.customer!;
+const order = await getOrder(session, reference);
+
+const catalog = order ? await loadPublicCatalog(locale) : { products: [] };
+const images = new Map(catalog.products.map((p) => [p.id, p.coverImageUrl]));
+const status = order ? customerStatus(order.payment_status, order.fulfillment_status, locale) : null;
+const date = new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+const names = new Intl.DisplayNames([locale], { type: 'region' });
+const address = order?.shipping_address ?? null;
+const track =
+  order?.carrier === 'correos' && order.tracking_code ? trackingUrl(order.tracking_code, locale) : null;
+// The invoice that counts is the full one that replaced the simplified, if any.
+const invoices = order?.invoices ?? [];
+const current = invoices.find((i) => i.replaces_invoice_id) ?? invoices[invoices.length - 1] ?? null;
+const replaced = current?.replaces_invoice_id ? invoices.find((i) => i.id === current.replaces_invoice_id) : null;
+const canAskFull = order?.payment_status === 'paid' && current?.kind !== 'full' && !order?.invoice_customer;
+const waitingFull = Boolean(order?.invoice_customer) && current?.kind !== 'full';
+
+// The request form starts from what was typed (after an error), or the profile.
+const flash = Astro.locals.flash ?? null;
+const profile = canAskFull ? await loadProfile(session).catch(() => null) : null;
+let billing = profile?.billing ?? null;
+try {
+  if (flash?.draft) billing = JSON.parse(flash.draft);
+} catch {
+  // keep the profile
+}
+const invoiceNotice = Astro.url.searchParams.get('invoice');
+const countries = countryOptions(locale);
+
+const copy = es
+  ? {
+      back: 'Tus pedidos',
+      eyebrow: 'Pedido',
+      placed: 'Hecho el',
+      steps: [
+        { title: 'Pagado', body: 'Pago confirmado.' },
+        { title: 'Preparando', body: 'Meili lo revisa y lo envuelve a mano.' },
+        { title: 'En camino', body: 'Ya ha salido del estudio.' },
+        { title: 'Entregado', body: 'En tu casa.' },
+      ],
+      track: 'Seguir el paquete',
+      trackCode: 'Número de seguimiento',
+      pieces: 'Piezas',
+      subtotal: 'Subtotal',
+      shipping: 'Envío',
+      free: 'Gratis',
+      total: 'Total',
+      address: 'Se envía a',
+      invoice: 'Factura',
+      invoicePending: 'La factura se emite al confirmar el pago. Si aún no aparece, estará lista en breve.',
+      simplified: 'Factura simplificada',
+      full: 'Factura completa',
+      replacedBy: 'Sustituida por la factura completa',
+      view: 'Ver',
+      download: 'Descargar PDF',
+      askTitle: '¿Necesitas factura con tu NIF?',
+      askLead: 'Emitimos una factura completa con tus datos que sustituye a la simplificada. El importe no cambia.',
+      taxId: 'NIF, NIE o CIF',
+      billingName: 'Nombre o razón social',
+      billingAddress: 'Dirección fiscal',
+      postal: 'Código postal',
+      city: 'Ciudad',
+      country: 'País',
+      saveBilling: 'Guardar estos datos en mi cuenta',
+      ask: 'Emitir factura completa',
+      waiting: 'Tenemos tus datos fiscales: la factura completa saldrá en cuanto se emita.',
+      notices: {
+        issued: 'Factura completa emitida. Ya puedes descargarla.',
+        saved: 'Datos guardados. La factura completa saldrá en cuanto se emita.',
+        already: 'Este pedido ya tiene factura completa.',
+      },
+      errors: {
+        invoice_fields: 'Revisa los datos: el NIF no es válido o falta algún campo.',
+        invoice_later: 'Ahora mismo no podemos emitirla. Lo intentaremos en breve; si es urgente, escríbenos.',
+        invoice_failed: 'No pudimos emitir la factura. Inténtalo de nuevo o escríbenos.',
+      },
+      notFound: 'No encontramos ese pedido en tu cuenta.',
+      help: '¿Algo no está bien?',
+      helpLink: 'Escribe a Meili',
+    }
+  : {
+      back: 'Your orders',
+      eyebrow: 'Order',
+      placed: 'Placed on',
+      steps: [
+        { title: 'Paid', body: 'Payment confirmed.' },
+        { title: 'Preparing', body: 'Meili checks it and wraps it by hand.' },
+        { title: 'On its way', body: 'It has left the studio.' },
+        { title: 'Delivered', body: 'At your home.' },
+      ],
+      track: 'Track the parcel',
+      trackCode: 'Tracking number',
+      pieces: 'Pieces',
+      subtotal: 'Subtotal',
+      shipping: 'Shipping',
+      free: 'Free',
+      total: 'Total',
+      address: 'Shipping to',
+      invoice: 'Invoice',
+      invoicePending: 'The invoice is issued once the payment is confirmed. If it is not here yet, it will be shortly.',
+      simplified: 'Simplified invoice',
+      full: 'Full invoice',
+      replacedBy: 'Replaced by the full invoice',
+      view: 'View',
+      download: 'Download PDF',
+      askTitle: 'Need an invoice with your tax ID?',
+      askLead: 'We issue a full invoice with your details that replaces the simplified one. The amount does not change.',
+      taxId: 'Tax ID (VAT number)',
+      billingName: 'Name or company name',
+      billingAddress: 'Billing address',
+      postal: 'Postcode',
+      city: 'Town',
+      country: 'Country',
+      saveBilling: 'Save these details to my account',
+      ask: 'Issue full invoice',
+      waiting: 'We have your tax details: the full invoice will be issued shortly.',
+      notices: {
+        issued: 'Full invoice issued. You can download it now.',
+        saved: 'Details saved. The full invoice will be issued shortly.',
+        already: 'This order already has a full invoice.',
+      },
+      errors: {
+        invoice_fields: 'Please check the details: the tax ID is not valid or a field is missing.',
+        invoice_later: 'We cannot issue it right now. We will shortly; if it is urgent, write to us.',
+        invoice_failed: 'We could not issue the invoice. Please try again or write to us.',
+      },
+      notFound: 'We could not find that order in your account.',
+      help: 'Something not right?',
+      helpLink: 'Write to Meili',
+    };
+
+const showJourney = Boolean(status) && !['refunded', 'review', 'processing'].includes(status!.key);
+---
+
+<PublicLayout locale={locale} title={`${copy.eyebrow} ${reference}`} noindex>
+  {!order || !status ? (
+    <section class="section order-page">
+      <div class="site-shell op">
+        <header class="op__head">
+          <a class="op__back" href={localizedPath(locale, 'account')}>← {copy.back}</a>
+          <h1 class="display op__title">{copy.notFound}</h1>
+        </header>
+      </div>
+    </section>
+  ) : (
+  <section class="section order-page">
+    <div class="site-shell op">
+      <header class="op__head">
+        <a class="op__back" href={localizedPath(locale, 'account')}>← {copy.back}</a>
+        <p class="op__eyebrow">{copy.eyebrow} <strong>{order.reference}</strong></p>
+        <h1 class="display op__title">{status.label}</h1>
+        <p class="op__date">{copy.placed} {date.format(new Date(order.paid_at ?? order.created_at))}</p>
+      </header>
+
+      {
+        showJourney && (
+          <ol class="journey" style={`--step:${status.step}`}>
+            {copy.steps.map((step, i) => (
+              <li class:list={['journey__stop', { 'is-done': i <= status.step, 'is-now': i === status.step }]}>
+                <span class="journey__dot" aria-hidden="true" />
+                <strong>{step.title}</strong>
+                <span>{step.body}</span>
+                {i === 2 && order.tracking_code && (
+                  <span class="journey__track">
+                    {copy.trackCode}: <b>{order.tracking_code}</b>
+                    {track && (
+                      <a href={track} target="_blank" rel="noopener noreferrer">
+                        {copy.track} ↗
+                      </a>
+                    )}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        )
+      }
+
+      <section class="op__items" aria-labelledby="items-title">
+        <h2 id="items-title" class="op__h2">{copy.pieces}</h2>
+        <ul>
+          {
+            order.items.map((item) => {
+              const src = item.product_id ? images.get(item.product_id) : null;
+              return (
+                <li>
+                  <span class="op__img" style={src ? `background-image:url('${src}')` : undefined} aria-hidden="true" />
+                  <span class="op__name">
+                    {item.title}
+                    <small>
+                      {item.quantity} × {formatEur(item.unit_price_cents, locale)}
+                    </small>
+                  </span>
+                  <span class="price">{formatEur(item.line_subtotal_cents, locale)}</span>
+                </li>
+              );
+            })
+          }
+        </ul>
+        <dl class="op__sums">
+          <div><dt>{copy.subtotal}</dt><dd>{formatEur(order.subtotal_cents, locale)}</dd></div>
+          <div>
+            <dt>{copy.shipping} {order.shipping_zone_name && <small>· {order.shipping_zone_name}</small>}</dt>
+            <dd>{order.shipping_cents === 0 ? copy.free : formatEur(order.shipping_cents, locale)}</dd>
+          </div>
+          <div class="op__total"><dt>{copy.total}</dt><dd>{formatEur(order.total_cents, locale)}</dd></div>
+        </dl>
+      </section>
+
+      <aside class="op__side">
+        {
+          address && (
+            <section class="op__label" aria-labelledby="address-title">
+              <h2 id="address-title" class="op__tag">{copy.address}</h2>
+              <address>
+                <strong>{address.name || order.customer_name}</strong>
+                {address.line1}{address.line2 && `, ${address.line2}`}<br />
+                {address.postal_code} {address.city}{address.state && `, ${address.state}`}<br />
+                {names.of(address.country) ?? address.country}
+              </address>
+            </section>
+          )
+        }
+
+        <section class="op__invoice" id="invoice" aria-labelledby="invoice-title" data-invoices>
+          <h2 id="invoice-title" class="op__h2">{copy.invoice}</h2>
+          {invoiceNotice && copy.notices[invoiceNotice as keyof typeof copy.notices] && (
+            <p class="op__notice" role="status">{copy.notices[invoiceNotice as keyof typeof copy.notices]}</p>
+          )}
+          {flash?.error && copy.errors[flash.error as keyof typeof copy.errors] && (
+            <p class="op__notice op__notice--error" role="alert">{copy.errors[flash.error as keyof typeof copy.errors]}</p>
+          )}
+          {
+            current ? (
+              <ul class="op__docs">
+                <li class="op__doc">
+                  <span class="op__doc-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 12h6M9 15.5h6M9 9h3" /></svg>
+                  </span>
+                  <span class="op__doc-name">
+                    {current.kind === 'full' ? copy.full : copy.simplified}
+                    <strong>{current.full_number}</strong>
+                  </span>
+                  <span class="op__doc-actions">
+                    <a href={`/api/account/invoices/${current.id}/`} target="_blank" rel="noopener">{copy.view}</a>
+                    <a href={`/api/account/invoices/${current.id}/?download=1`}>{copy.download}</a>
+                  </span>
+                </li>
+                {replaced && (
+                  <li class="op__doc op__doc--old">
+                    <span class="op__doc-name">
+                      {copy.simplified} <strong>{replaced.full_number}</strong>
+                      <small>{copy.replacedBy}</small>
+                    </span>
+                    <span class="op__doc-actions">
+                      <a href={`/api/account/invoices/${replaced.id}/`} target="_blank" rel="noopener">{copy.view}</a>
+                    </span>
+                  </li>
+                )}
+              </ul>
+            ) : (
+              <p class="muted">{copy.invoicePending}</p>
+            )
+          }
+          {waitingFull && invoiceNotice !== 'saved' && <p class="op__notice">{copy.waiting}</p>}
+          {
+            canAskFull && (
+              <details class="op__ask" open={Boolean(flash?.error)}>
+                <summary>{copy.askTitle}</summary>
+                <p>{copy.askLead}</p>
+                <form method="post" action="/api/account/invoice-request/" class="op__form">
+                  <input type="hidden" name="locale" value={locale} />
+                  <input type="hidden" name="reference" value={order.reference} />
+                  <label>
+                    <span>{copy.taxId}</span>
+                    <input name="tax_id" required maxlength="24" autocomplete="off" value={billing?.taxId ?? ''} />
+                  </label>
+                  <label>
+                    <span>{copy.billingName}</span>
+                    <input name="billing_name" required maxlength="160" autocomplete="organization" value={billing?.name ?? order.customer_name ?? ''} />
+                  </label>
+                  <label>
+                    <span>{copy.billingAddress}</span>
+                    <input name="billing_address" required maxlength="200" autocomplete="billing address-line1" value={billing?.address ?? (address ? [address.line1, address.line2].filter(Boolean).join(', ') : '')} />
+                  </label>
+                  <div class="op__form-row">
+                    <label>
+                      <span>{copy.postal}</span>
+                      <input name="billing_postal" required maxlength="12" autocomplete="billing postal-code" value={billing?.postalCode ?? address?.postal_code ?? ''} />
+                    </label>
+                    <label>
+                      <span>{copy.city}</span>
+                      <input name="billing_city" required maxlength="100" autocomplete="billing address-level2" value={billing?.city ?? address?.city ?? ''} />
+                    </label>
+                  </div>
+                  <label>
+                    <span>{copy.country}</span>
+                    <select name="billing_country" autocomplete="billing country">
+                      {countries.map((c) => (
+                        <option value={c.code} selected={(billing?.country ?? address?.country ?? 'ES') === c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label class="op__check">
+                    <input type="checkbox" name="save_billing" value="yes" checked />
+                    {copy.saveBilling}
+                  </label>
+                  <button class="btn" type="submit">{copy.ask}</button>
+                </form>
+              </details>
+            )
+          }
+        </section>
+
+        <p class="op__help">
+          {copy.help} <a href={localizedPath(locale, 'contact')}>{copy.helpLink}</a>
+        </p>
+      </aside>
+    </div>
+  </section>
+  )}
+</PublicLayout>
+
+<style>
+  .op {
+    display: grid;
+    gap: clamp(2rem, 4vw, 3rem);
+    grid-template-areas: 'head' 'journey' 'items' 'side';
+  }
+
+  .op__head {
+    grid-area: head;
+  }
+
+  .journey {
+    grid-area: journey;
+  }
+
+  .op__items {
+    grid-area: items;
+  }
+
+  .op__side {
+    grid-area: side;
+    display: grid;
+    gap: 1.75rem;
+    align-content: start;
+  }
+
+  @media (min-width: 64rem) {
+    .op {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+      column-gap: clamp(3rem, 5vw, 5rem);
+      grid-template-areas: 'head head' 'journey journey' 'items side';
+    }
+  }
+
+  .op__back {
+    display: inline-block;
+    margin-bottom: 1.25rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+
+  .op__eyebrow {
+    margin: 0 0 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .op__eyebrow strong {
+    color: var(--ink);
+  }
+
+  .op__title {
+    margin: 0 0 0.5rem;
+    font-size: clamp(2.6rem, 5.5vw, 4.6rem);
+    font-style: italic;
+    letter-spacing: -0.045em;
+    line-height: 0.95;
+    color: var(--accent-deep);
+  }
+
+  .op__date {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  /* ——— Journey ——— */
+  .journey {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 1.75rem;
+    display: grid;
+    gap: 1.25rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .journey__stop {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 0.15rem;
+    padding-left: 2rem;
+    color: var(--muted);
+  }
+
+  .journey__stop strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.2rem;
+    color: var(--ink-soft);
+  }
+
+  .journey__stop.is-done strong {
+    color: var(--ink);
+  }
+
+  .journey__dot {
+    position: absolute;
+    left: 0;
+    top: 0.35rem;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--line-strong);
+    background: var(--paper);
+  }
+
+  .journey__stop.is-done .journey__dot {
+    background: var(--accent-deep);
+    border-color: var(--accent-deep);
+  }
+
+  .journey__stop.is-now .journey__dot {
+    animation: beacon 2s ease-out infinite;
+  }
+
+  .journey__track {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.3rem;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  @media (min-width: 52rem) {
+    .journey {
+      grid-template-columns: repeat(4, 1fr);
+      padding: 2rem 2rem 1.75rem;
+    }
+
+    .journey::before {
+      content: '';
+      position: absolute;
+      top: 2.5rem;
+      left: 2.5rem;
+      right: 2.5rem;
+      border-top: 1.5px dashed var(--line-strong);
+    }
+
+    .journey::after {
+      content: '';
+      position: absolute;
+      top: 2.5rem;
+      left: 2.5rem;
+      width: calc((100% - 5rem) * var(--step) / 4);
+      border-top: 1.5px solid var(--accent-deep);
+    }
+
+    .journey__stop {
+      padding: 1.75rem 0 0;
+    }
+
+    .journey__dot {
+      top: 0;
+      z-index: 1;
+    }
+  }
+
+  /* ——— Items ——— */
+  .op__h2 {
+    margin: 0 0 1rem;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.6rem;
+    letter-spacing: -0.02em;
+  }
+
+  .op__items ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+  }
+
+  .op__items li {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr auto;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .op__img {
+    width: 4.5rem;
+    aspect-ratio: 1;
+    border: 0.25rem solid #fff;
+    background: var(--paper-deep) center / cover no-repeat;
+    box-shadow: 0 2px 6px rgb(22 23 26 / 0.18);
+  }
+
+  .op__name {
+    display: grid;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+  }
+
+  .op__name small {
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .op__sums {
+    display: grid;
+    gap: 0.4rem;
+    margin: 1.5rem 0 0;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--line-strong);
+  }
+
+  .op__sums div {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .op__sums dt {
+    color: var(--muted);
+  }
+
+  .op__sums dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .op__total {
+    margin-top: 0.4rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--line);
+    align-items: baseline;
+  }
+
+  .op__total dt {
+    color: var(--ink);
+  }
+
+  .op__total dd {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+  }
+
+  /* ——— Side: the address as a parcel label ——— */
+  .op__label {
+    padding: 1.5rem;
+    background:
+      radial-gradient(ellipse at 30% 20%, #e5cfa9, transparent 70%),
+      #d6b98c;
+    box-shadow: var(--shadow-art);
+    rotate: 1deg;
+  }
+
+  .op__label address {
+    display: grid;
+    padding: 1rem 1.25rem;
+    background: #fdfcf8;
+    font-style: italic;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    line-height: 1.5;
+    rotate: -1.5deg;
+    box-shadow: 0 2px 6px rgb(22 23 26 / 0.12);
+  }
+
+  .op__label strong {
+    font-weight: 400;
+  }
+
+  .op__tag {
+    margin: 0 0 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #3b2f1c;
+  }
+
+  .op__invoice {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .op__invoice .op__h2 {
+    margin: 0;
+  }
+
+  .op__notice {
+    margin: 0;
+    padding: 0.65rem 0.9rem;
+    border-left: 2px solid var(--success);
+    background: rgb(47 107 82 / 0.08);
+    color: var(--success);
+    font-size: 0.92rem;
+  }
+
+  .op__notice--error {
+    border-color: var(--danger);
+    background: rgb(156 59 69 / 0.07);
+    color: var(--danger);
+  }
+
+  .op__docs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .op__doc {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.4rem 0.9rem;
+    align-items: center;
+    padding: 0.9rem 1rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .op__doc-icon svg {
+    width: 1.8rem;
+    height: 1.8rem;
+    fill: none;
+    stroke: var(--accent-deep);
+    stroke-width: 1.3;
+    stroke-linejoin: round;
+  }
+
+  .op__doc-name {
+    display: grid;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .op__doc-name strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.2rem;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+  }
+
+  .op__doc-name small {
+    font-size: 0.78rem;
+  }
+
+  .op__doc-actions {
+    grid-column: 2;
+    display: flex;
+    gap: 1.25rem;
+    font-size: 0.92rem;
+  }
+
+  .op__doc--old {
+    grid-template-columns: 1fr;
+    background: transparent;
+    box-shadow: none;
+    border: 1px dashed var(--line-strong);
+    opacity: 0.85;
+  }
+
+  .op__doc--old .op__doc-actions {
+    grid-column: 1;
+  }
+
+  .op__ask {
+    padding: 1rem 1.1rem;
+    background: var(--accent-soft);
+  }
+
+  .op__ask summary {
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.15rem;
+    color: var(--accent-deep);
+  }
+
+  .op__ask p {
+    margin: 0.6rem 0 0;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  .op__form {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1rem;
+  }
+
+  .op__form label {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .op__form label > span {
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .op__form input:not([type='checkbox']),
+  .op__form select {
+    width: 100%;
+    padding: 0.3rem 0 0.4rem;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: transparent;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--ink);
+  }
+
+  .op__form-row {
+    display: grid;
+    grid-template-columns: 2fr 3fr;
+    gap: 0.9rem;
+  }
+
+  .op__form .op__check {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  .op__form .btn {
+    justify-self: start;
+  }
+
+  .op__invoice-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .op__invoice-row span {
+    display: grid;
+    color: var(--muted);
+  }
+
+  .op__invoice-row strong {
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+
+  .op__help {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  @keyframes beacon {
+    0% {
+      box-shadow: 0 0 0 0 rgb(63 79 115 / 0.45);
+    }
+    100% {
+      box-shadow: 0 0 0 0.7rem rgb(63 79 115 / 0);
+    }
+  }
+</style>

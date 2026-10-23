@@ -1,35 +1,892 @@
 ---
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
+const es = locale === 'es';
 const dict = t(locale);
-const reference = Astro.url.searchParams.get('ref')?.slice(0, 40) ?? '';
+// PayPal comes back with ?ref=; Stripe with ?session_id= (the reference is in sessionStorage).
+const reference = (Astro.url.searchParams.get('ref') ?? '').slice(0, 40);
+
+const today = new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { day: '2-digit', month: 'short' })
+  .format(new Date())
+  .toUpperCase()
+  .replace(/\./g, '');
+
+const copy = es
+  ? {
+      eyebrow: 'Pedido',
+      pendingTitle: 'Un momento,',
+      pendingItalic: 'confirmando tu pago',
+      pendingLead: 'Tu banco nos está dando el visto bueno. Suele tardar unos segundos; no cierres esta página.',
+      paidTitle: '¡Gracias{name}!',
+      paidItalic: 'tu pedido está confirmado',
+      paidLead: 'Meili ya lo tiene en su mesa. Te hemos enviado el resumen a {email}.',
+      paidLeadNoEmail: 'Meili ya lo tiene en su mesa. Te llegará un correo con el resumen.',
+      reviewTitle: 'Pago recibido,',
+      reviewItalic: 'lo revisamos a mano',
+      reviewLead: 'Hemos recibido el pago y Meili comprueba tu pedido antes de prepararlo. Te escribiremos en cuanto esté listo.',
+      failedTitle: 'El pago',
+      failedItalic: 'no se completó',
+      failedLead: 'No se ha hecho ningún cargo. Tu carrito sigue guardado para intentarlo de nuevo.',
+      slowTitle: 'Tu pago',
+      slowItalic: 'se está procesando',
+      slowLead: 'Está tardando más de lo normal. No hace falta que esperes aquí: te escribiremos en cuanto quede confirmado.',
+      unknownTitle: 'Estamos confirmando',
+      unknownItalic: 'tu pedido',
+      unknownLead: 'Te enviaremos un correo en cuanto el pago quede confirmado, con el resumen de tu pedido.',
+      studio: 'Estudio de Meili',
+      studioPlace: 'España',
+      home: 'Tu casa',
+      stamp: 'Confirmado',
+      next: 'Lo que pasa ahora',
+      steps: [
+        { title: 'Pago confirmado', body: 'Hoy. Tu pedido está reservado.' },
+        { title: 'Meili lo prepara', body: 'Lo revisa y lo envuelve a mano en su estudio.' },
+        { title: 'Sale hacia ti', body: 'Te enviamos el número de seguimiento por correo.' },
+        { title: 'Llega a casa', body: 'Directo a la dirección que nos diste.' },
+      ],
+      receipt: 'Tu recibo',
+      reference: 'Referencia',
+      subtotal: dict.cart.subtotal,
+      shipping: dict.shipping.label,
+      total: dict.shipping.total,
+      status: 'Ver el estado del pedido',
+      shop: 'Seguir en la tienda',
+      cart: 'Volver al carrito',
+      contact: 'Escribir a Meili',
+      portraitTitle: '¿Y si lo próximo es su retrato?',
+      portraitLink: 'Encargar un retrato',
+      keep: 'Guarda la referencia: te sirve para consultar el pedido.',
+    }
+  : {
+      eyebrow: 'Order',
+      pendingTitle: 'One moment,',
+      pendingItalic: 'confirming your payment',
+      pendingLead: 'Your bank is giving us the go-ahead. It usually takes a few seconds; please keep this page open.',
+      paidTitle: 'Thank you{name}!',
+      paidItalic: 'your order is confirmed',
+      paidLead: 'It is already on Meili’s desk. We have sent the summary to {email}.',
+      paidLeadNoEmail: 'It is already on Meili’s desk. An email with the summary is on its way.',
+      reviewTitle: 'Payment received,',
+      reviewItalic: 'we are checking it by hand',
+      reviewLead: 'We have your payment and Meili is checking the order before she prepares it. We will write as soon as it is ready.',
+      failedTitle: 'The payment',
+      failedItalic: 'did not go through',
+      failedLead: 'Nothing has been charged. Your cart is saved so you can try again.',
+      slowTitle: 'Your payment',
+      slowItalic: 'is still processing',
+      slowLead: 'It is taking longer than usual. No need to wait here: we will write as soon as it is confirmed.',
+      unknownTitle: 'We are confirming',
+      unknownItalic: 'your order',
+      unknownLead: 'We will email you as soon as the payment is confirmed, with a summary of your order.',
+      studio: 'Meili’s studio',
+      studioPlace: 'Spain',
+      home: 'Your home',
+      stamp: 'Confirmed',
+      next: 'What happens now',
+      steps: [
+        { title: 'Payment confirmed', body: 'Today. Your order is reserved.' },
+        { title: 'Meili prepares it', body: 'She checks it and wraps it by hand in her studio.' },
+        { title: 'It ships to you', body: 'We email you the tracking number.' },
+        { title: 'It arrives home', body: 'Straight to the address you gave us.' },
+      ],
+      receipt: 'Your receipt',
+      reference: 'Reference',
+      subtotal: dict.cart.subtotal,
+      shipping: dict.shipping.label,
+      total: dict.shipping.total,
+      status: 'See your order status',
+      shop: 'Back to the shop',
+      cart: 'Back to your cart',
+      contact: 'Write to Meili',
+      portraitTitle: 'Next, their portrait?',
+      portraitLink: 'Commission a portrait',
+      keep: 'Keep the reference: you need it to look up your order.',
+    };
+
+const statusHref = localizedPath(locale, 'orderStatus');
 ---
 
 <PublicLayout locale={locale} title={dict.checkout.successPending} noindex>
-  <section class="section">
-    <div class="site-shell prose">
-      <h1 class="display h1-display">{dict.checkout.successPending}</h1>
-      {
-        reference && (
+  <section
+    class="section done"
+    data-confirm
+    data-state="unknown"
+    data-locale={locale}
+    data-ref={reference}
+    data-status-href={statusHref}
+    data-paid-title={copy.paidTitle}
+    data-paid-lead={copy.paidLead}
+    data-paid-lead-no-email={copy.paidLeadNoEmail}
+  >
+    <div class="site-shell done__grid">
+      <header class="done__head">
+        <p class="done__eyebrow">
+          {copy.eyebrow} <strong data-ref-text>{reference}</strong>
+        </p>
+
+        <h1 class="display done__title" aria-live="polite">
+          <span data-when="pending">{copy.pendingTitle} <em>{copy.pendingItalic}</em></span>
+          <span data-when="paid"><span data-paid-title>{copy.paidTitle.replace('{name}', '')}</span> <em>{copy.paidItalic}</em></span>
+          <span data-when="review">{copy.reviewTitle} <em>{copy.reviewItalic}</em></span>
+          <span data-when="failed">{copy.failedTitle} <em>{copy.failedItalic}</em></span>
+          <span data-when="slow">{copy.slowTitle} <em>{copy.slowItalic}</em></span>
+          <span data-when="unknown">{copy.unknownTitle} <em>{copy.unknownItalic}</em></span>
+        </h1>
+
+        <p class="done__lead">
+          <span data-when="pending">
+            {copy.pendingLead}
+            <span class="dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+          </span>
+          <span data-when="paid" data-paid-lead>{copy.paidLeadNoEmail}</span>
+          <span data-when="review">{copy.reviewLead}</span>
+          <span data-when="failed">{copy.failedLead}</span>
+          <span data-when="slow">{copy.slowLead}</span>
+          <span data-when="unknown">{copy.unknownLead}</span>
+        </p>
+
+        <p class="done__actions">
+          <a class="btn" data-when="paid review slow unknown pending" data-status-link href={statusHref}>{copy.status}</a>
+          <a class="btn" data-when="failed" href={localizedPath(locale, 'cart')}>{copy.cart}</a>
+          <a class="text-link" data-when="paid review unknown slow" href={localizedPath(locale, 'shop')}>{copy.shop}</a>
+          <a class="text-link" data-when="failed" href={localizedPath(locale, 'contact')}>{copy.contact}</a>
+        </p>
+        <p class="done__keep" data-when="paid review slow unknown">{copy.keep}</p>
+      </header>
+
+      <!-- The journey from the studio to their home -->
+      <figure class="journey" aria-hidden="true">
+        <!-- Same proportions as the figure, so the path meets the parcel and the pin. -->
+        <svg class="journey__map" viewBox="0 0 600 345" preserveAspectRatio="none">
+          <path class="journey__ghost" d="M214 150 C 290 40, 380 50, 410 150 S 482 236, 517 152" />
+          <path class="journey__ink" pathLength="1" d="M214 150 C 290 40, 380 50, 410 150 S 482 236, 517 152" />
+        </svg>
+
+        <div class="pin pin--studio">
+          <svg viewBox="0 0 40 40">
+            <path d="M8 34V18l12-9 12 9v16z" />
+            <path d="M16 34v-9h8v9" />
+          </svg>
+          <span class="pin__name">{copy.studio}</span>
+          <span class="pin__place">{copy.studioPlace}</span>
+        </div>
+
+        <div class="pin pin--home">
+          <span class="pin__drop"></span>
+          <span class="pin__name" data-home-city>{copy.home}</span>
+          <span class="pin__place" data-home-country></span>
+        </div>
+
+        <div class="box">
+          <span class="box__tape"></span>
+          <span class="box__twine"></span>
+          <span class="box__postmark">
+            <svg viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="52" />
+              <circle cx="60" cy="60" r="40" />
+              <text x="60" y="56" text-anchor="middle" class="box__word">{copy.stamp}</text>
+              <text x="60" y="76" text-anchor="middle" class="box__date">{today}</text>
+            </svg>
+          </span>
+        </div>
+      </figure>
+
+      <!-- What happens now -->
+      <section class="next" data-when="paid review" aria-labelledby="next-title">
+        <h2 id="next-title" class="next__title">{copy.next}</h2>
+        <ol class="next__list">
+          {
+            copy.steps.map((step, i) => (
+              <li class:list={['next__step', { 'is-done': i === 0, 'is-now': i === 1 }]} style={`--i:${i}`}>
+                <span class="next__dot" aria-hidden="true" />
+                <strong>{step.title}</strong>
+                <span>{step.body}</span>
+              </li>
+            ))
+          }
+        </ol>
+      </section>
+
+      <!-- Receipt -->
+      <section class="receipt" data-when="paid review" aria-labelledby="receipt-title">
+        <header class="receipt__head">
+          <h2 id="receipt-title">{copy.receipt}</h2>
           <p>
-            {locale === 'es' ? 'Referencia del pedido: ' : 'Order reference: '}
-            <strong>{reference}</strong>
+            {copy.reference} <strong data-ref-text>{reference}</strong>
           </p>
-        )
-      }
-      <p class="muted">
-        {
-          locale === 'es'
-            ? 'Te enviaremos un correo en cuanto el pago quede confirmado, con el resumen de tu pedido.'
-            : 'We will email you as soon as the payment is confirmed, with a summary of your order.'
-        }
-      </p>
+        </header>
+        <ul class="receipt__lines" data-receipt-lines></ul>
+        <dl class="receipt__sums">
+          <div><dt>{copy.subtotal}</dt><dd data-receipt="subtotal">—</dd></div>
+          <div><dt>{copy.shipping} <small data-receipt="zone"></small></dt><dd data-receipt="shipping">—</dd></div>
+          <div class="receipt__total"><dt>{copy.total}</dt><dd data-receipt="total">—</dd></div>
+        </dl>
+      </section>
+
+      <aside class="portrait" data-when="paid" aria-labelledby="portrait-title">
+        <h2 id="portrait-title" class="display">{copy.portraitTitle}</h2>
+        <a class="text-link" href={localizedPath(locale, 'commissions')}>{copy.portraitLink}</a>
+      </aside>
     </div>
   </section>
 </PublicLayout>
+
+<style>
+  /* ——— States: only what belongs to the current one is shown ——— */
+  .done [data-when] {
+    display: none;
+  }
+
+  .done[data-state='pending'] [data-when~='pending'],
+  .done[data-state='paid'] [data-when~='paid'],
+  .done[data-state='review'] [data-when~='review'],
+  .done[data-state='failed'] [data-when~='failed'],
+  .done[data-state='slow'] [data-when~='slow'],
+  .done[data-state='unknown'] [data-when~='unknown'] {
+    display: revert;
+  }
+
+  .done[data-state='paid'] .next[data-when],
+  .done[data-state='review'] .next[data-when],
+  .done[data-state='paid'] .receipt[data-when],
+  .done[data-state='review'] .receipt[data-when],
+  .done[data-state='paid'] .portrait[data-when] {
+    display: grid;
+  }
+
+  .done__actions .btn[data-when] {
+    display: none;
+  }
+
+  .done[data-state='pending'] .done__actions [data-when~='pending'],
+  .done[data-state='paid'] .done__actions [data-when~='paid'],
+  .done[data-state='review'] .done__actions [data-when~='review'],
+  .done[data-state='failed'] .done__actions [data-when~='failed'],
+  .done[data-state='slow'] .done__actions [data-when~='slow'],
+  .done[data-state='unknown'] .done__actions [data-when~='unknown'] {
+    display: inline-flex;
+  }
+
+  /* ——— Layout ——— */
+  .done {
+    padding-top: clamp(1rem, 3vw, 2rem);
+    overflow-x: clip;
+  }
+
+  .done__grid {
+    display: grid;
+    gap: clamp(2.5rem, 5vw, 4rem);
+    grid-template-areas: 'head' 'journey' 'next' 'receipt' 'portrait';
+  }
+
+  .done__head {
+    grid-area: head;
+  }
+
+  .journey {
+    grid-area: journey;
+  }
+
+  .next {
+    grid-area: next;
+  }
+
+  .receipt {
+    grid-area: receipt;
+  }
+
+  .portrait {
+    grid-area: portrait;
+  }
+
+  @media (min-width: 64rem) {
+    .done__grid {
+      grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+      column-gap: clamp(3rem, 5vw, 5.5rem);
+      grid-template-areas:
+        'head    journey'
+        'next    receipt'
+        'portrait receipt';
+      align-items: start;
+    }
+
+    .done__head {
+      align-self: center;
+    }
+  }
+
+  /* ——— Head ——— */
+  .done__eyebrow {
+    margin: 0 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .done__eyebrow::before {
+    content: '';
+    width: 2.25rem;
+    height: 1px;
+    background: currentColor;
+  }
+
+  .done__eyebrow strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .done__title {
+    margin: 0 0 1.25rem;
+    font-size: clamp(2.8rem, 6.5vw, 5.8rem);
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+  }
+
+  .done__title em {
+    display: block;
+    font-style: italic;
+    color: var(--accent-deep);
+  }
+
+  .done__title > span {
+    animation: rise 900ms var(--ease-out) both;
+  }
+
+  .done__lead {
+    margin: 0;
+    max-width: 32rem;
+    font-size: 1.12rem;
+    line-height: 1.6;
+    color: var(--ink-soft);
+  }
+
+  .dots span {
+    display: inline-block;
+    animation: dot 1.4s ease-in-out infinite;
+  }
+
+  .dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  .done__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 1.5rem;
+    margin: 2rem 0 0;
+  }
+
+  .done__keep {
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .text-link {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 0.35em;
+  }
+
+  .text-link:hover {
+    color: var(--ink);
+    text-decoration-color: var(--ink);
+  }
+
+  /* ——— Journey ——— */
+  .journey {
+    position: relative;
+    margin: 0;
+    aspect-ratio: 600 / 345;
+    background:
+      radial-gradient(ellipse at 30% 30%, #fff, transparent 70%),
+      repeating-linear-gradient(0deg, transparent 0 27px, rgb(63 79 115 / 0.05) 27px 28px),
+      repeating-linear-gradient(90deg, transparent 0 27px, rgb(63 79 115 / 0.05) 27px 28px),
+      var(--sheet);
+    box-shadow: var(--shadow-art);
+    rotate: -0.8deg;
+  }
+
+  .journey::before {
+    content: '';
+    position: absolute;
+    z-index: 3;
+    top: -0.7rem;
+    left: 50%;
+    width: 30%;
+    height: 1.4rem;
+    translate: -50% 0;
+    rotate: 2deg;
+    background: rgb(214 220 232 / 0.8);
+  }
+
+  .journey__map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke-linecap: round;
+  }
+
+  .journey__ghost {
+    stroke: var(--line-strong);
+    stroke-width: 2;
+    stroke-dasharray: 2 9;
+  }
+
+  .journey__ink {
+    stroke: var(--accent-deep);
+    stroke-width: 2.4;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+
+  .done[data-state='paid'] .journey__ink,
+  .done[data-state='review'] .journey__ink {
+    animation: ink 2.4s cubic-bezier(0.45, 0.05, 0.3, 1) 700ms forwards;
+  }
+
+  .pin {
+    position: absolute;
+    display: grid;
+    justify-items: center;
+    gap: 0.1rem;
+    text-align: center;
+    translate: -50% 0;
+  }
+
+  .pin__name {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(0.95rem, 1.6vw, 1.15rem);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .pin__place {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .pin--studio {
+    left: 15%;
+    top: 74%;
+  }
+
+  .pin--studio svg {
+    position: absolute;
+    bottom: calc(100% + 0.2rem);
+    width: 2rem;
+    fill: var(--paper-deep);
+    stroke: var(--ink-soft);
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+  }
+
+  .pin--home {
+    left: 86.6%;
+    top: 40%;
+    opacity: 0.35;
+  }
+
+  .pin__drop {
+    width: 1.3rem;
+    height: 1.3rem;
+    margin-bottom: 0.3rem;
+    border-radius: 50% 50% 50% 0;
+    rotate: -45deg;
+    background: var(--danger);
+    box-shadow: inset 0 0 0 0.35rem #c1505c;
+  }
+
+  .done[data-state='paid'] .pin--home,
+  .done[data-state='review'] .pin--home {
+    animation: drop-pin 700ms cubic-bezier(0.3, 1.5, 0.5, 1) 2.8s both;
+  }
+
+  .box {
+    position: absolute;
+    left: 13%;
+    top: 28%;
+    width: 22%;
+    aspect-ratio: 1.15;
+    border-radius: 4px;
+    background:
+      repeating-linear-gradient(96deg, rgb(255 255 255 / 0.07) 0 2px, transparent 2px 7px),
+      radial-gradient(ellipse at 30% 20%, #e5cfa9, transparent 70%),
+      #d6b98c;
+    box-shadow:
+      inset 0 0 0 1px rgb(107 85 54 / 0.2),
+      0 14px 24px -12px rgb(22 23 26 / 0.4);
+    rotate: -4deg;
+  }
+
+  .done[data-state='pending'] .box,
+  .done[data-state='unknown'] .box,
+  .done[data-state='slow'] .box {
+    animation: wait 1.8s ease-in-out infinite;
+  }
+
+  .box__twine {
+    position: absolute;
+    inset: 0 auto 0 45%;
+    width: 4px;
+    background: repeating-linear-gradient(-45deg, #f2ead8 0 3px, #cdbf9f 3px 6px);
+  }
+
+  .box__tape {
+    position: absolute;
+    inset: 42% 0 auto;
+    height: 4px;
+    background: repeating-linear-gradient(45deg, #f2ead8 0 3px, #cdbf9f 3px 6px);
+  }
+
+  .box__postmark {
+    position: absolute;
+    left: 35%;
+    top: -22%;
+    width: 78%;
+    opacity: 0;
+    rotate: -16deg;
+  }
+
+  .box__postmark svg {
+    display: block;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .box__postmark circle {
+    fill: rgb(253 252 248 / 0.55);
+    stroke: rgb(44 56 84 / 0.8);
+    stroke-width: 3.5;
+  }
+
+  .box__postmark circle + circle {
+    fill: none;
+    stroke-width: 2;
+  }
+
+  .box__word {
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    fill: rgb(44 56 84 / 0.9);
+  }
+
+  .box__date {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 600;
+    fill: rgb(44 56 84 / 0.8);
+  }
+
+  .done[data-state='paid'] .box__postmark,
+  .done[data-state='review'] .box__postmark {
+    animation: stamp 560ms cubic-bezier(0.3, 1.6, 0.5, 1) 250ms forwards;
+  }
+
+  .done[data-state='failed'] .box {
+    filter: grayscale(0.6);
+    opacity: 0.6;
+  }
+
+  /* ——— What happens now ——— */
+  .next {
+    gap: 1.25rem;
+  }
+
+  .next__title,
+  .receipt__head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.6rem;
+    letter-spacing: -0.02em;
+  }
+
+  .next__list {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1.4rem;
+  }
+
+  .next__list::before {
+    content: '';
+    position: absolute;
+    left: 0.45rem;
+    top: 0.6rem;
+    bottom: 0.6rem;
+    border-left: 1.5px dashed var(--line-strong);
+  }
+
+  .next__step {
+    position: relative;
+    display: grid;
+    gap: 0.15rem;
+    padding-left: 2rem;
+    animation: rise 700ms var(--ease-out) both;
+    animation-delay: calc(900ms + var(--i) * 140ms);
+  }
+
+  .next__step strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.2rem;
+  }
+
+  .next__step span:last-child {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .next__dot {
+    position: absolute;
+    left: 0;
+    top: 0.35rem;
+    width: 0.95rem;
+    height: 0.95rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--line-strong);
+    background: var(--paper);
+  }
+
+  .next__step.is-done .next__dot {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .next__step.is-now .next__dot {
+    border-color: var(--accent-deep);
+    box-shadow: 0 0 0 0 rgb(63 79 115 / 0.4);
+    animation: beacon 2s ease-out infinite;
+  }
+
+  /* ——— Receipt ——— */
+  .receipt {
+    gap: 1rem;
+    padding: 1.6rem 1.6rem 2.2rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    -webkit-mask: radial-gradient(circle 0.45rem at 50% 100%, transparent 98%, #000) 0 0 / 1.1rem 100%;
+    mask: radial-gradient(circle 0.45rem at 50% 100%, transparent 98%, #000) 0 0 / 1.1rem 100%;
+  }
+
+  .receipt__head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem 1rem;
+  }
+
+  .receipt__head p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .receipt__head strong {
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+
+  .receipt__lines {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 1rem;
+    display: grid;
+    gap: 0.6rem;
+    border-bottom: 1px dashed var(--line-strong);
+  }
+
+  .receipt__lines :global(li) {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .receipt__lines :global(.qty) {
+    color: var(--muted);
+    margin-right: 0.35rem;
+  }
+
+  .receipt__lines :global(.amount) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .receipt__sums {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+  }
+
+  .receipt__sums div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .receipt__sums dt {
+    color: var(--muted);
+  }
+
+  .receipt__sums dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .receipt__sums .receipt__total {
+    margin-top: 0.4rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--line);
+    align-items: baseline;
+  }
+
+  .receipt__total dt {
+    color: var(--ink);
+  }
+
+  .receipt__total dd {
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    letter-spacing: -0.03em;
+  }
+
+  /* ——— A gentle next idea ——— */
+  .portrait {
+    gap: 0.6rem;
+    justify-items: start;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .portrait h2 {
+    margin: 0;
+    font-size: clamp(1.8rem, 3vw, 2.4rem);
+    font-style: italic;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+  }
+
+  @keyframes dot {
+    0%,
+    60%,
+    100% {
+      opacity: 0.2;
+    }
+    30% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ink {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes stamp {
+    0% {
+      opacity: 0;
+      scale: 1.8;
+    }
+    60% {
+      opacity: 1;
+      scale: 0.92;
+    }
+    100% {
+      opacity: 0.95;
+      scale: 1;
+    }
+  }
+
+  @keyframes drop-pin {
+    0% {
+      opacity: 0;
+      transform: translateY(-2.5rem);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes wait {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-6px) rotate(1.5deg);
+    }
+  }
+
+  @keyframes beacon {
+    0% {
+      box-shadow: 0 0 0 0 rgb(63 79 115 / 0.4);
+    }
+    100% {
+      box-shadow: 0 0 0 0.7rem rgb(63 79 115 / 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .done[data-state='paid'] .journey__ink,
+    .done[data-state='review'] .journey__ink {
+      stroke-dashoffset: 0;
+    }
+
+    .done[data-state='paid'] .box__postmark,
+    .done[data-state='review'] .box__postmark {
+      opacity: 0.95;
+    }
+
+    .done[data-state='paid'] .pin--home,
+    .done[data-state='review'] .pin--home {
+      opacity: 1;
+    }
+  }
+</style>
+
+<script>
+  import { initConfirmation } from '@/scripts/orderConfirmation';
+
+  const root = document.querySelector<HTMLElement>('[data-confirm]');
+  if (root) initConfirmation(root);
+</script>

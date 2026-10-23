@@ -34,3 +34,11 @@ describe('alternatePath', () => {
     expect(alternatePath('/admin/', 'es')).toBe('/es/');
   });
 });
+
+describe('account routes', () => {
+  it('translates the account area', () => {
+    expect(alternatePath('/en/account/', 'es')).toBe('/es/cuenta/');
+    expect(alternatePath('/es/cuenta/entrar/', 'en')).toBe('/en/account/sign-in/');
+    expect(alternatePath('/en/account/orders/PD-26-0001/', 'es')).toBe('/es/cuenta/pedidos/PD-26-0001/');
+  });
+});

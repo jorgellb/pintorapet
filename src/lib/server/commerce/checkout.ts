@@ -2,6 +2,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
 import type { CartItem } from '@/lib/domain/cart';
+import {
+  destinationMatches,
+  shippingAddressFrom,
+  type CheckoutCustomer,
+} from '@/lib/domain/checkoutCustomer';
 import { siteUrl } from '@/lib/server/env';
 import { loadPaymentConfig, type PaymentProvider } from '@/lib/server/payments/config';
 import { approveUrl, createPaypalOrder } from '@/lib/server/payments/paypal';
@@ -53,6 +58,7 @@ type Quote = {
   tax_cents: number;
   total_cents: number;
   shipping_country: string | null;
+  shipping_postal_code: string | null;
   shipping_zone_name: string | null;
 };
 
@@ -72,6 +78,10 @@ export async function createCheckout(
     cartOwnerHash: string;
     locale: 'en' | 'es';
     items?: CartItem[];
+    /** Contact and address typed on our checkout form. */
+    customer?: CheckoutCustomer;
+    /** Signed-in customer placing the order. */
+    customerId?: string;
   },
 ): Promise<{
   url: string;
@@ -89,6 +99,29 @@ export async function createCheckout(
 
   if (paypal) {
     await supabase.rpc('release_expired_paypal_attempts');
+  }
+
+  const { data: quoteRow, error: quoteErr } = await supabase
+    .from('checkout_quotes')
+    .select('lines, subtotal_cents, shipping_cents, tax_cents, total_cents, shipping_country, shipping_postal_code, shipping_zone_name')
+    .eq('id', opts.quoteId)
+    .maybeSingle();
+
+  if (quoteErr) throw mapPgError(quoteErr);
+  if (!quoteRow) {
+    throw new CommerceError('UNAVAILABLE', 'QUOTE_NOT_FOUND', 404);
+  }
+  const quote = quoteRow as Quote;
+
+  // The address must sit in the destination the shipping price was quoted for.
+  if (
+    opts.customer &&
+    !destinationMatches(opts.customer, {
+      country: quote.shipping_country,
+      postalCode: quote.shipping_postal_code,
+    })
+  ) {
+    throw new CommerceError('VALIDATION', 'ADDRESS_DESTINATION_MISMATCH', 400);
   }
 
   const hash = requestHash(opts);
@@ -111,18 +144,26 @@ export async function createCheckout(
     throw new CommerceError('INTERNAL', 'Reserve returned no order', 500);
   }
 
-  const { data: quoteRow, error: quoteErr } = await supabase
-    .from('checkout_quotes')
-    .select('lines, subtotal_cents, shipping_cents, tax_cents, total_cents, shipping_country, shipping_zone_name')
-    .eq('id', opts.quoteId)
-    .maybeSingle();
-
-  if (quoteErr) throw mapPgError(quoteErr);
-  if (!quoteRow) {
-    throw new CommerceError('UNAVAILABLE', 'QUOTE_NOT_FOUND', 404);
-  }
-  const quote = quoteRow as Quote;
   const reference = reserve.reference ?? (await orderReference(supabase, reserve.order_id));
+
+  if (opts.customer || opts.customerId) {
+    // Saved before payment; apply_payment keeps it unless the provider sends its own.
+    const { error: customerErr } = await supabase
+      .from('orders')
+      .update({
+        ...(opts.customer
+          ? {
+              customer_email: opts.customer.email,
+              customer_name: opts.customer.name,
+              shipping_address: shippingAddressFrom(opts.customer),
+            }
+          : {}),
+        ...(opts.customerId ? { customer_id: opts.customerId } : {}),
+      })
+      .eq('id', reserve.order_id)
+      .in('payment_status', ['pending_session', 'checkout_open']);
+    if (customerErr) throw mapPgError(customerErr);
+  }
 
   const opened = stripe
     ? await openStripe(supabase, stripe.secretKey, opts, reserve, quote, idempotencyKey)
@@ -155,7 +196,7 @@ async function orderReference(supabase: SupabaseClient, orderId: string): Promis
 async function openStripe(
   supabase: SupabaseClient,
   secretKey: string,
-  opts: { attemptId: string; quoteId: string; locale: 'en' | 'es' },
+  opts: { attemptId: string; quoteId: string; locale: 'en' | 'es'; customer?: CheckoutCustomer },
   reserve: ReserveResult,
   quote: Quote,
   idempotencyKey: string,
@@ -163,6 +204,7 @@ async function openStripe(
   const stripe = stripeFor(secretKey);
   const origin = siteUrl();
   const paths = checkoutPaths(opts.locale);
+  const shippingLabel = quote.shipping_zone_name || (opts.locale === 'es' ? 'Envío' : 'Shipping');
 
   const session = await stripe.checkout.sessions.create(
     {
@@ -171,38 +213,74 @@ async function openStripe(
       success_url: `${origin}${paths.success}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}${paths.cancel}`,
       locale: opts.locale === 'es' ? 'es' : 'en',
-      line_items: quote.lines.map((l) => ({
-        quantity: l.quantity,
-        price_data: {
-          currency: 'eur',
-          unit_amount: l.unit_price_cents,
-          product_data: {
-            name: l.title || l.product_id,
-            metadata: { product_id: l.product_id },
-          },
-        },
-      })),
-      ...(quote.shipping_country
-        ? {
-            shipping_address_collection: {
-              allowed_countries: [
-                quote.shipping_country as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry,
-              ],
+      line_items: [
+        ...quote.lines.map((l) => ({
+          quantity: l.quantity,
+          price_data: {
+            currency: 'eur',
+            unit_amount: l.unit_price_cents,
+            product_data: {
+              name: l.title || l.product_id,
+              metadata: { product_id: l.product_id },
             },
+          },
+        })),
+        // Without Stripe's own address step, shipping travels as a line.
+        ...(opts.customer && quote.shipping_cents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: 'eur',
+                  unit_amount: quote.shipping_cents,
+                  product_data: { name: shippingLabel },
+                },
+              },
+            ]
+          : []),
+      ],
+      ...(!opts.customer && quote.shipping_country
+        ? {
             shipping_options: [
               {
                 shipping_rate_data: {
                   type: 'fixed_amount' as const,
                   fixed_amount: { amount: quote.shipping_cents, currency: 'eur' },
-                  display_name:
-                    quote.shipping_zone_name ||
-                    (opts.locale === 'es' ? 'Envío' : 'Shipping'),
+                  display_name: shippingLabel,
                 },
               },
             ],
-            phone_number_collection: { enabled: true },
           }
         : {}),
+      ...(opts.customer
+        ? {
+            // Our form already has the address: Stripe only takes the payment.
+            customer_email: opts.customer.email,
+            payment_intent_data: {
+              shipping: {
+                name: opts.customer.name,
+                phone: opts.customer.phone,
+                address: {
+                  line1: opts.customer.line1,
+                  line2: opts.customer.line2 || undefined,
+                  city: opts.customer.city,
+                  state: shippingAddressFrom(opts.customer).state || undefined,
+                  postal_code: opts.customer.postalCode,
+                  country: opts.customer.country,
+                },
+              },
+            },
+          }
+        : quote.shipping_country
+          ? {
+              shipping_address_collection: {
+                allowed_countries: [
+                  quote.shipping_country as Stripe.Checkout.SessionCreateParams.ShippingAddressCollection.AllowedCountry,
+                ],
+              },
+              phone_number_collection: { enabled: true },
+            }
+          : {}),
       metadata: {
         attempt_id: opts.attemptId,
         order_id: reserve.order_id,
@@ -239,7 +317,7 @@ async function openStripe(
 async function openPaypal(
   supabase: SupabaseClient,
   creds: { mode: 'test' | 'live'; clientId: string; clientSecret: string },
-  opts: { attemptId: string; locale: 'en' | 'es' },
+  opts: { attemptId: string; locale: 'en' | 'es'; customer?: CheckoutCustomer },
   orderId: string,
   reference: string,
   quote: Quote,
@@ -269,6 +347,13 @@ async function openPaypal(
       shippingCents: quote.shipping_cents,
       taxCents: quote.tax_cents,
       totalCents: quote.total_cents,
+      customer: opts.customer
+        ? {
+            email: opts.customer.email,
+            name: opts.customer.name,
+            address: shippingAddressFrom(opts.customer),
+          }
+        : undefined,
       returnUrl: `${origin}/api/checkout/paypal/return/`,
       cancelUrl: `${origin}/api/checkout/paypal/cancel/`,
     },

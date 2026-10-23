@@ -15,12 +15,19 @@ if (!admin) return Astro.redirect('/admin/login/');
 
 const { data: order } = await admin.client
   .from('orders')
-  .select('*, order_items(product_title, product_sku, quantity, unit_price_cents, line_subtotal_cents)')
+  .select(
+    '*, order_items(product_title, product_sku, quantity, unit_price_cents, line_subtotal_cents), invoices(id, kind, full_number, issued_at, replaces_invoice_id)',
+  )
   .eq('id', Astro.params.id ?? '')
   .maybeSingle();
 if (!order) return Astro.redirect('/admin/orders/');
 
 const correos = await carrierRow(admin.client).catch(() => null);
+type InvoiceRef = { id: string; kind: 'simplified' | 'full'; full_number: string; issued_at: string; replaces_invoice_id: string | null };
+const invoiceRows = ((order.invoices ?? []) as InvoiceRef[]).sort((x, y) => x.issued_at.localeCompare(y.issued_at));
+const invoice = invoiceRows.find((i) => i.replaces_invoice_id) ?? invoiceRows[invoiceRows.length - 1] ?? null;
+const replacedInvoice = invoice?.replaces_invoice_id ? invoiceRows.find((i) => i.id === invoice.replaces_invoice_id) : null;
+const invoiceCustomer = (order.invoice_customer ?? null) as Record<string, string> | null;
 const names = Object.fromEntries(countryOptions('es').map((c) => [c.code, c.name]));
 const address = (order.shipping_address ?? null) as Record<string, string> | null;
 const pay = paymentLabel(order.payment_status);
@@ -120,6 +127,13 @@ const carrierName = (value: string | null) =>
           <p class="muted">La dirección llega cuando se confirma el pago.</p>
         )
       }
+      {
+        address?.note && (
+          <p class="customer-note">
+            <strong>Nota de la clienta:</strong> {address.note}
+          </p>
+        )
+      }
       <dl class="facts">
         <div><dt>Zona cobrada</dt><dd>{order.shipping_zone_name ?? '—'}</dd></div>
         <div>
@@ -131,6 +145,44 @@ const carrierName = (value: string | null) =>
         </div>
         <div><dt>Peso con embalaje</dt><dd>{order.shipping_weight_grams ? `${order.shipping_weight_grams} g` : '—'}</dd></div>
       </dl>
+    </section>
+
+    <section class="panel invoice-panel">
+      <h2>Factura</h2>
+      {
+        invoice ? (
+          <>
+            <p class="invoice-line">
+              <span>{invoice.kind === 'full' ? 'Completa' : 'Simplificada'}</span>
+              <strong>{invoice.full_number}</strong>
+              <span class="muted">· {shortDate(invoice.issued_at)}</span>
+            </p>
+            {replacedInvoice && (
+              <p class="muted">Sustituye a la simplificada {replacedInvoice.full_number} (pedida por la clienta).</p>
+            )}
+            <p>
+              <a href={`/api/admin/orders/${order.id}/invoice/`} target="_blank" rel="noopener">Abrir PDF</a>
+            </p>
+          </>
+        ) : paid ? (
+          <>
+            <p class="muted">Factura pendiente: se emite al completar los datos fiscales en Ajustes.</p>
+            <button type="button" class="btn--quiet" data-issue-invoice={order.id}>Emitir ahora</button>
+          </>
+        ) : (
+          <p class="muted">Se emite cuando se confirme el pago.</p>
+        )
+      }
+      {
+        invoiceCustomer && (
+          <p class="invoice-customer">
+            <strong>Datos fiscales de la clienta:</strong> {invoiceCustomer.name} · {invoiceCustomer.taxId}
+            <br />
+            {invoiceCustomer.address}, {invoiceCustomer.postalCode} {invoiceCustomer.city} ({invoiceCustomer.country})
+          </p>
+        )
+      }
+      <p class="status" data-invoice-status hidden></p>
     </section>
   </div>
 
@@ -243,6 +295,32 @@ const carrierName = (value: string | null) =>
 </AdminLayout>
 
 <style>
+  .invoice-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+    margin: 0 0 0.5rem;
+  }
+
+  .invoice-line strong {
+    font-size: 1.15rem;
+    letter-spacing: 0.02em;
+  }
+
+  .invoice-customer {
+    margin: 0.75rem 0 0;
+    font-size: 0.9rem;
+  }
+
+  .customer-note {
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0.8rem;
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
+    font-size: 0.92rem;
+  }
+
   .chips {
     display: flex;
     gap: 0.4rem;
@@ -380,6 +458,25 @@ const carrierName = (value: string | null) =>
 </style>
 
 <script>
+  document.querySelector<HTMLButtonElement>('[data-issue-invoice]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const status = document.querySelector<HTMLElement>('[data-invoice-status]');
+    button.disabled = true;
+    const res = await fetch(`/api/admin/orders/${button.dataset.issueInvoice}/invoice/`, { method: 'POST' }).catch(() => null);
+    if (res?.ok) {
+      location.reload();
+      return;
+    }
+    const data = await res?.json().catch(() => ({}));
+    if (status) {
+      status.hidden = false;
+      status.textContent = data?.error?.message?.includes('INVOICE_CONFIG_INCOMPLETE')
+        ? 'Faltan los datos fiscales: complétalos en Ajustes.'
+        : 'No se pudo emitir la factura.';
+    }
+    button.disabled = false;
+  });
+
   const panel = document.querySelector<HTMLElement>('[data-shipping-panel]');
   if (panel) {
     const id = panel.dataset.id!;

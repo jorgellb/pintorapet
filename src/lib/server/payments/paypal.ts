@@ -141,6 +141,19 @@ export async function createPaypalOrder(
     shippingCents: number;
     taxCents: number;
     totalCents: number;
+    /** Address typed on our checkout form; PayPal then shows it instead of asking. */
+    customer?: {
+      email: string;
+      name: string;
+      address: {
+        line1: string;
+        line2: string;
+        city: string;
+        state: string;
+        postal_code: string;
+        country: string;
+      };
+    };
     returnUrl: string;
     cancelUrl: string;
   },
@@ -173,15 +186,35 @@ export async function createPaypalOrder(
             unit_amount: money(line.unitPriceCents),
             category: 'PHYSICAL_GOODS',
           })),
+          ...(input.customer
+            ? {
+                shipping: {
+                  name: { full_name: input.customer.name.slice(0, 300) },
+                  address: {
+                    address_line_1: input.customer.address.line1.slice(0, 300),
+                    ...(input.customer.address.line2
+                      ? { address_line_2: input.customer.address.line2.slice(0, 300) }
+                      : {}),
+                    admin_area_2: input.customer.address.city.slice(0, 120),
+                    ...(input.customer.address.state
+                      ? { admin_area_1: input.customer.address.state.slice(0, 300) }
+                      : {}),
+                    postal_code: input.customer.address.postal_code.slice(0, 60),
+                    country_code: input.customer.address.country,
+                  },
+                },
+              }
+            : {}),
         },
       ],
       payment_source: {
         paypal: {
+          ...(input.customer ? { email_address: input.customer.email } : {}),
           experience_context: {
             brand_name: input.brandName.slice(0, 127),
             locale: input.locale === 'es' ? 'es-ES' : 'en-GB',
             user_action: 'PAY_NOW',
-            shipping_preference: 'GET_FROM_FILE',
+            shipping_preference: input.customer ? 'SET_PROVIDED_ADDRESS' : 'GET_FROM_FILE',
             return_url: input.returnUrl,
             cancel_url: input.cancelUrl,
           },

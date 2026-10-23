@@ -10,6 +10,8 @@ const pages = [
   '/en/shop/',
   '/en/contact/',
   '/en/cart/',
+  '/en/account/sign-in/',
+  '/en/account/register/',
   '/es/',
   '/es/sobre-mi/',
   '/es/obra/',
@@ -18,6 +20,8 @@ const pages = [
   '/es/tienda/',
   '/es/contacto/',
   '/es/carrito/',
+  '/es/cuenta/entrar/',
+  '/es/cuenta/recuperar/',
 ];
 
 for (const path of pages) {

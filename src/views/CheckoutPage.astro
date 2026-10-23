@@ -2,360 +2,1807 @@
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
+import { countryOptions } from '@/lib/domain/countries';
 import { hasServiceSupabase } from '@/lib/server/env';
 import { checkoutProviders } from '@/lib/server/payments/config';
-import ShippingEstimate from '@/components/shop/ShippingEstimate.astro';
+import { loadProfile } from '@/lib/server/account';
 
 interface Props {
   locale: Locale;
 }
 
 const { locale } = Astro.props;
+const es = locale === 'es';
 const dict = t(locale);
 const providers = hasServiceSupabase() ? await checkoutProviders() : [];
-const ready = providers.length > 0;
-const labels = {
-  stripe: locale === 'es' ? 'Pagar con tarjeta' : 'Pay by card',
-  paypal: locale === 'es' ? 'Pagar con PayPal' : 'Pay with PayPal',
-};
+// In development the form can be tried without a payment provider connected.
+const preview = providers.length === 0 && import.meta.env.DEV;
+const ready = providers.length > 0 || preview;
+const countries = countryOptions(locale);
+
+// A signed-in customer gets the form filled from their profile.
+const account = ready ? (Astro.locals.customer ?? null) : null;
+const profile = account ? await loadProfile(account).catch(() => null) : null;
+const accountPrefill = account
+  ? JSON.stringify({
+      email: account.user.email ?? '',
+      name: profile?.full_name ?? '',
+      phone: profile?.phone ?? '',
+      address: profile?.address ?? null,
+      billing: profile?.billing ?? null,
+    })
+  : undefined;
+const signInHref = `${localizedPath(locale, 'accountSignIn')}?next=${encodeURIComponent(Astro.url.pathname)}`;
+
+const today = new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+})
+  .format(new Date())
+  .toUpperCase()
+  .replace(/\./g, '');
+
+const copy = es
+  ? {
+      eyebrow: 'Finalizar compra',
+      haveAccount: '¿Tienes cuenta?',
+      signIn: 'Entra y se rellena solo',
+      buyingAs: 'Compras como',
+      saveProfile: 'Guardar estos datos en mi cuenta',
+      titleTop: 'Casi',
+      titleBottom: 'en camino',
+      lead: 'Tres pasos y tu pedido sale del estudio de Meili, envuelto a mano.',
+      steps: ['Tus datos', 'Envío', 'Pago'],
+      contactTitle: 'Tus datos',
+      contactLead: 'Para enviarte la confirmación y avisarte del envío.',
+      email: 'Email',
+      emailHint: 'Aquí llega la confirmación del pedido.',
+      emailError: 'Escribe un email válido, por ejemplo nombre@correo.com.',
+      didYouMean: '¿Querías decir',
+      phone: 'Teléfono',
+      phoneHint: 'Solo para la entrega del paquete.',
+      phoneError: 'Necesitamos un teléfono para la entrega.',
+      addressTitle: '¿A dónde lo enviamos?',
+      addressLead: 'Escribe la dirección como quieras que aparezca en el paquete.',
+      name: 'Nombre y apellidos',
+      nameError: '¿A nombre de quién va el paquete?',
+      country: 'País',
+      postalCode: 'Código postal',
+      postalError: 'El código postal tiene 5 cifras.',
+      postalMissing: 'Falta el código postal.',
+      city: 'Ciudad o localidad',
+      cityError: 'Falta la ciudad.',
+      line1: 'Dirección',
+      line1Placeholder: 'Calle, número',
+      line1Error: 'Escribe la calle y el número.',
+      line2: 'Piso, puerta, escalera',
+      optional: 'opcional',
+      state: 'Provincia o región',
+      stateAuto: 'según tu código postal',
+      noteToggle: 'Añadir una nota para Meili',
+      note: 'Nota',
+      notePlaceholder: 'Indicaciones para la entrega o lo que quieras contarle.',
+      invoiceTitle: 'Factura',
+      invoiceToggle: 'Necesito factura con NIF o CIF',
+      invoiceLead: 'Sin NIF recibes una factura simplificada, que sirve como justificante.',
+      taxId: 'NIF, NIE o CIF',
+      taxIdError: 'Revisa el número: la letra de control no cuadra.',
+      taxIdForeignError: 'Escribe tu número fiscal (de 4 a 20 letras o cifras).',
+      invoiceName: 'Nombre o razón social',
+      invoiceSame: 'Misma dirección que el envío',
+      invoiceAddress: 'Dirección de facturación',
+      payTitle: 'Pago',
+      payLead: 'Comprobamos precios y disponibilidad justo antes de abrir el pago seguro.',
+      card: 'Pagar con tarjeta',
+      paypal: 'Pagar con PayPal',
+      previewNote: 'Modo desarrollo: no hay ningún proveedor de pago conectado, así que el pago no se abrirá.',
+      legal: 'Al pagar aceptas las {terms} y la {privacy}.',
+      terms: 'condiciones de venta',
+      privacy: 'política de privacidad',
+      secure: 'Pago seguro y cifrado con',
+      fixErrors: 'Revisa los campos marcados.',
+      busy: 'Preparando tu pago seguro…',
+      sealed: 'Paquete listo. Abriendo el pago…',
+      error: 'No pudimos abrir el pago. Revisa la disponibilidad o inténtalo de nuevo.',
+      mismatch: 'La dirección no coincide con el destino del envío. Revisa el país y el código postal.',
+      unavailablePiece: 'Alguna pieza ya no está disponible. Revisa tu carrito.',
+      empty: 'Tu carrito está vacío.',
+      emptyLead: 'Elige alguna pieza en la tienda y vuelve aquí.',
+      summary: 'Tu pedido',
+      editCart: 'Editar',
+      vatNote: 'IVA no aplicable a tu destino',
+      vatTaken: 'ya descontados',
+      shippingPending: 'Según destino',
+      from: 'De',
+      to: 'Para',
+      fromName: 'Pets Drawings · Meili Stringfellow',
+      fromPlace: 'Estudio en España',
+      labelName: 'Tu nombre',
+      labelStreet: 'Tu dirección',
+      labelCity: 'Código postal y ciudad',
+      handle: 'Frágil · obra de arte',
+      soon: 'El pago en línea abrirá muy pronto. Mientras tanto, escríbenos y te ayudamos con tu pedido.',
+    }
+  : {
+      eyebrow: 'Checkout',
+      haveAccount: 'Have an account?',
+      signIn: 'Sign in and it fills itself in',
+      buyingAs: 'Buying as',
+      saveProfile: 'Save these details to my account',
+      titleTop: 'Almost',
+      titleBottom: 'on its way',
+      lead: 'Three steps and your order leaves Meili’s studio, wrapped by hand.',
+      steps: ['Your details', 'Delivery', 'Payment'],
+      contactTitle: 'Your details',
+      contactLead: 'To send your confirmation and let you know when it ships.',
+      email: 'Email',
+      emailHint: 'Your order confirmation arrives here.',
+      emailError: 'Enter a valid email, for example name@mail.com.',
+      didYouMean: 'Did you mean',
+      phone: 'Phone',
+      phoneHint: 'Only for the delivery of the parcel.',
+      phoneError: 'We need a phone number for the delivery.',
+      addressTitle: 'Where shall we send it?',
+      addressLead: 'Write the address as you would like it on the parcel.',
+      name: 'Full name',
+      nameError: 'Who is the parcel for?',
+      country: 'Country',
+      postalCode: 'Postcode',
+      postalError: 'Spanish postcodes have 5 digits.',
+      postalMissing: 'The postcode is missing.',
+      city: 'Town or city',
+      cityError: 'The town is missing.',
+      line1: 'Address',
+      line1Placeholder: 'Street and number',
+      line1Error: 'Enter the street and number.',
+      line2: 'Flat, floor, building',
+      optional: 'optional',
+      state: 'County, state or region',
+      stateAuto: 'from your postcode',
+      noteToggle: 'Add a note for Meili',
+      note: 'Note',
+      notePlaceholder: 'Delivery instructions, or anything you would like to tell her.',
+      invoiceTitle: 'Invoice',
+      invoiceToggle: 'I need an invoice with my tax ID',
+      invoiceLead: 'Without a tax ID you get a simplified invoice, valid as a receipt.',
+      taxId: 'Tax ID (VAT number)',
+      taxIdError: 'Check the number: the control letter does not match.',
+      taxIdForeignError: 'Enter your tax ID (4 to 20 letters or digits).',
+      invoiceName: 'Name or company name',
+      invoiceSame: 'Same address as delivery',
+      invoiceAddress: 'Billing address',
+      payTitle: 'Payment',
+      payLead: 'We confirm prices and stock right before opening the secure payment page.',
+      card: 'Pay by card',
+      paypal: 'Pay with PayPal',
+      previewNote: 'Development mode: no payment provider is connected, so payment will not open.',
+      legal: 'By paying you accept the {terms} and the {privacy}.',
+      terms: 'terms of sale',
+      privacy: 'privacy policy',
+      secure: 'Secure, encrypted payment with',
+      fixErrors: 'Please check the highlighted fields.',
+      busy: 'Preparing your secure payment…',
+      sealed: 'Parcel ready. Opening payment…',
+      error: 'Payment could not open. Check availability or try again.',
+      mismatch: 'The address does not match the delivery destination. Check the country and postcode.',
+      unavailablePiece: 'A piece is no longer available. Please review your cart.',
+      empty: 'Your cart is empty.',
+      emptyLead: 'Pick something in the shop and come back here.',
+      summary: 'Your order',
+      editCart: 'Edit',
+      vatNote: 'VAT not applicable to your destination',
+      vatTaken: 'already taken off',
+      shippingPending: 'Depends on destination',
+      from: 'From',
+      to: 'To',
+      fromName: 'Pets Drawings · Meili Stringfellow',
+      fromPlace: 'Studio in Spain',
+      labelName: 'Your name',
+      labelStreet: 'Your address',
+      labelCity: 'Postcode and town',
+      handle: 'Fragile · artwork',
+      soon: 'Online payment opens very soon. In the meantime, write to us and we will help with your order.',
+    };
+
+const [legalBefore, legalMiddle, legalAfter] = copy.legal.split(/\{terms\}|\{privacy\}/);
+const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
 ---
 
 <PublicLayout locale={locale} title={dict.cart.checkout} noindex>
-  <section class="section">
-    <div class="site-shell prose">
-      <h1 class="display h1-display">{dict.cart.checkout}</h1>
-      {
-        ready ? (
-          <div
-            data-checkout-root
-            data-locale={locale}
-            data-cart-href={localizedPath(locale, 'cart')}
-            data-empty={
-              locale === 'es' ? 'Tu carrito está vacío.' : 'Your cart is empty.'
-            }
-            data-busy={
-              locale === 'es' ? 'Preparando pago…' : 'Preparing checkout…'
-            }
-            data-error={
-              locale === 'es'
-                ? 'No se pudo iniciar el pago. Revisa disponibilidad o inténtalo de nuevo.'
-                : 'Checkout could not start. Check availability or try again.'
-            }
-            data-shipping-error={dict.shipping.unavailable}
-          >
-            <div class="checkout-grid">
-              <section class="checkout-step" aria-labelledby="checkout-dest">
-                <h2 id="checkout-dest" class="checkout-step__title">
-                  <span aria-hidden="true">1</span>
-                  {dict.shipping.destination}
-                </h2>
-                <ShippingEstimate locale={locale} expanded />
-                <p class="checkout-step__note">{dict.shipping.addressNote}</p>
-              </section>
+  <section class="section co">
+    {
+      !ready ? (
+        <div class="site-shell co-soon">
+          <h1 class="display co-title">{dict.cart.checkout}</h1>
+          <p class="muted">{copy.soon}</p>
+          <a class="btn btn--ghost" href={localizedPath(locale, 'contact')}>{dict.nav.contact}</a>
+        </div>
+      ) : (
+        <div
+          class="site-shell co-grid"
+          data-checkout
+          data-locale={locale}
+          data-preview={preview ? '1' : undefined}
+          data-msg-fix={copy.fixErrors}
+          data-msg-busy={copy.busy}
+          data-msg-sealed={copy.sealed}
+          data-msg-error={copy.error}
+          data-msg-mismatch={copy.mismatch}
+          data-msg-unavailable={copy.unavailablePiece}
+          data-msg-shipping={dict.shipping.unavailable}
+          data-msg-did-you-mean={copy.didYouMean}
+          data-msg-tax-foreign={copy.taxIdForeignError}
+          data-msg-tax-es={copy.taxIdError}
+          data-msg-postal-es={copy.postalError}
+          data-msg-postal-missing={copy.postalMissing}
+          data-msg-vat-taken={copy.vatTaken}
+          data-account={accountPrefill}
+        >
+          <header class="co-head">
+            <p class="co-eyebrow">{copy.eyebrow}</p>
+            <h1 class="display co-title">
+              {copy.titleTop} <em>{copy.titleBottom}</em>
+            </h1>
+            <p class="co-lead">{copy.lead}</p>
 
-              <section class="checkout-step checkout-step--pay" aria-labelledby="checkout-pay">
-                <h2 id="checkout-pay" class="checkout-step__title">
-                  <span aria-hidden="true">2</span>
-                  {locale === 'es' ? 'Pago' : 'Payment'}
-                </h2>
-                <dl class="checkout-total">
-                  <div>
-                    <dt>{dict.cart.subtotal}</dt>
-                    <dd data-checkout-subtotal>—</dd>
-                  </div>
-                  <div>
-                    <dt>{dict.shipping.label}</dt>
-                    <dd data-checkout-shipping>—</dd>
-                  </div>
-                  <div class="checkout-total__grand">
-                    <dt>{dict.shipping.total}</dt>
-                    <dd data-checkout-total>—</dd>
-                  </div>
-                </dl>
-                <p class="muted checkout-step__note" data-checkout-required>{dict.shipping.required}</p>
-                <div class="pay-options">
-                  {providers.map((provider, index) => (
-                    <button
-                      class:list={['btn', { 'btn--ghost': index > 0 }]}
-                      type="button"
-                      data-checkout-start={provider}
-                      disabled
-                    >
-                      {labels[provider]}
-                    </button>
-                  ))}
-                </div>
-                <p class="muted checkout-step__note">
-                  {
-                    locale === 'es'
-                      ? 'Confirmamos precios y stock justo antes de abrir la página de pago segura.'
-                      : 'We confirm prices and stock right before opening the secure payment page.'
-                  }
-                </p>
-                <p class="status muted" data-checkout-status hidden></p>
-              </section>
-            </div>
+            <ol class="route" aria-label={copy.eyebrow} data-route>
+              {
+                copy.steps.map((label, i) => (
+                  <li class="route__stop" data-route-stop={i}>
+                    <span class="route__dot" aria-hidden="true" />
+                    <span class="route__label">{label}</span>
+                  </li>
+                ))
+              }
+              <span class="route__parcel" aria-hidden="true" data-route-parcel>
+                <svg viewBox="0 0 32 28">
+                  <path d="M3 9 16 3l13 6v12l-13 6-13-6z" />
+                  <path d="M3 9l13 6 13-6M16 15v12" />
+                  <path d="M9.5 6 22.5 12" />
+                </svg>
+              </span>
+            </ol>
+          </header>
+
+          <div class="co-empty" data-empty hidden>
+            <p class="display">{copy.empty}</p>
+            <p class="muted">{copy.emptyLead}</p>
+            <a class="btn" href={localizedPath(locale, 'shop')}>{dict.nav.shop}</a>
           </div>
-        ) : (
-          <p class="muted">
-            {
-              locale === 'es'
-                ? 'El pago en línea abrirá muy pronto. Mientras tanto, escríbenos y te ayudamos con tu pedido.'
-                : 'Online payment opens very soon. In the meantime, write to us and we will help with your order.'
-            }
-          </p>
-        )
-      }
-      <p>
-        <a class="btn btn--ghost" href={localizedPath(locale, 'cart')}>
-          {dict.cart.title}
-        </a>
-      </p>
-    </div>
+
+          <form class="co-form" novalidate data-checkout-form>
+            <!-- 1 · Contact -->
+            <fieldset class="co-step co-step--contact" data-step="0">
+              <legend class="co-step__title">
+                <span class="co-step__num" aria-hidden="true">1</span>
+                {copy.contactTitle}
+              </legend>
+              <p class="co-step__lead">{copy.contactLead}</p>
+              {
+                account ? (
+                  <div class="account-bar">
+                    <span>
+                      {copy.buyingAs} <strong>{account.user.email}</strong>
+                    </span>
+                    <label class="check">
+                      <input type="checkbox" name="saveToProfile" checked />
+                      <span>{copy.saveProfile}</span>
+                    </label>
+                  </div>
+                ) : (
+                  <p class="account-bar">
+                    {copy.haveAccount} <a href={signInHref}>{copy.signIn}</a>
+                  </p>
+                )
+              }
+              <div class="row">
+                <div class="fld" data-field="email">
+                  <label for="co-email">{copy.email}</label>
+                  <input
+                    id="co-email"
+                    name="email"
+                    type="email"
+                    inputmode="email"
+                    autocomplete="email"
+                    required
+                    maxlength="254"
+                    aria-describedby="co-email-hint co-email-err"
+                  />
+                  <p class="fld__hint" id="co-email-hint">{copy.emailHint}</p>
+                  <p class="fld__suggest" data-email-suggest hidden></p>
+                  <p class="fld__err" id="co-email-err" data-err>{copy.emailError}</p>
+                </div>
+                <div class="fld" data-field="phone">
+                  <label for="co-phone">{copy.phone}</label>
+                  <input
+                    id="co-phone"
+                    name="phone"
+                    type="tel"
+                    inputmode="tel"
+                    autocomplete="tel"
+                    required
+                    maxlength="32"
+                    aria-describedby="co-phone-hint co-phone-err"
+                  />
+                  <p class="fld__hint" id="co-phone-hint">{copy.phoneHint}</p>
+                  <p class="fld__err" id="co-phone-err" data-err>{copy.phoneError}</p>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- 2 · Address -->
+            <fieldset class="co-step co-step--address" data-step="1">
+              <legend class="co-step__title">
+                <span class="co-step__num" aria-hidden="true">2</span>
+                {copy.addressTitle}
+              </legend>
+              <p class="co-step__lead">{copy.addressLead}</p>
+
+              <div class="fld" data-field="name">
+                <label for="co-name">{copy.name}</label>
+                <input
+                  id="co-name"
+                  name="name"
+                  autocomplete="shipping name"
+                  required
+                  maxlength="120"
+                  aria-describedby="co-name-err"
+                />
+                <p class="fld__err" id="co-name-err" data-err>{copy.nameError}</p>
+              </div>
+
+              <div class="row row--place">
+                <div class="fld" data-field="country">
+                  <label for="co-country">{copy.country}</label>
+                  <select id="co-country" name="country" autocomplete="shipping country" required>
+                    {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div class="fld" data-field="postalCode">
+                  <label for="co-postal">{copy.postalCode}</label>
+                  <input
+                    id="co-postal"
+                    name="postalCode"
+                    autocomplete="shipping postal-code"
+                    required
+                    maxlength="12"
+                    aria-describedby="co-postal-err"
+                  />
+                  <p class="fld__err" id="co-postal-err" data-err>{copy.postalMissing}</p>
+                </div>
+              </div>
+
+              <p class="ship-line" data-ship-line aria-live="polite" hidden></p>
+
+              <div class="fld" data-field="line1">
+                <label for="co-line1">{copy.line1}</label>
+                <input
+                  id="co-line1"
+                  name="line1"
+                  autocomplete="shipping address-line1"
+                  placeholder={copy.line1Placeholder}
+                  required
+                  maxlength="160"
+                  aria-describedby="co-line1-err"
+                />
+                <p class="fld__err" id="co-line1-err" data-err>{copy.line1Error}</p>
+              </div>
+
+              <div class="fld" data-field="line2">
+                <label for="co-line2">
+                  {copy.line2} <small>{copy.optional}</small>
+                </label>
+                <input id="co-line2" name="line2" autocomplete="shipping address-line2" maxlength="160" />
+              </div>
+
+              <div class="row">
+                <div class="fld" data-field="city">
+                  <label for="co-city">{copy.city}</label>
+                  <input
+                    id="co-city"
+                    name="city"
+                    autocomplete="shipping address-level2"
+                    required
+                    maxlength="100"
+                    aria-describedby="co-city-err"
+                  />
+                  <p class="fld__err" id="co-city-err" data-err>{copy.cityError}</p>
+                </div>
+                <div class="fld" data-field="state">
+                  <label for="co-state">
+                    {copy.state} <small data-state-optional>{copy.optional}</small>
+                  </label>
+                  <input id="co-state" name="state" autocomplete="shipping address-level1" maxlength="100" />
+                  <p class="fld__hint fld__hint--auto" data-state-auto hidden>✓ {copy.stateAuto}</p>
+                </div>
+              </div>
+
+              <details class="note" data-note>
+                <summary>{copy.noteToggle}</summary>
+                <div class="fld" data-field="note">
+                  <label class="visually-hidden" for="co-note">{copy.note}</label>
+                  <textarea id="co-note" name="note" rows="3" maxlength="500" placeholder={copy.notePlaceholder}></textarea>
+                </div>
+              </details>
+            </fieldset>
+
+            <!-- Invoice (optional) -->
+            <fieldset class="co-step co-step--invoice" data-step="invoice">
+              <legend class="co-step__title co-step__title--quiet">{copy.invoiceTitle}</legend>
+              <label class="switch">
+                <input type="checkbox" name="wantsInvoice" data-invoice-toggle />
+                <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+                <span>{copy.invoiceToggle}</span>
+              </label>
+              <p class="co-step__lead co-step__lead--small">{copy.invoiceLead}</p>
+
+              <div class="invoice" data-invoice hidden>
+                <div class="row">
+                  <div class="fld" data-field="taxId">
+                    <label for="co-tax">{copy.taxId}</label>
+                    <input id="co-tax" name="taxId" autocomplete="off" maxlength="24" aria-describedby="co-tax-err" />
+                    <p class="fld__err" id="co-tax-err" data-err>{copy.taxIdError}</p>
+                  </div>
+                  <div class="fld" data-field="invoiceName">
+                    <label for="co-inv-name">{copy.invoiceName}</label>
+                    <input id="co-inv-name" name="invoiceName" autocomplete="organization" maxlength="160" aria-describedby="co-inv-name-err" />
+                    <p class="fld__err" id="co-inv-name-err" data-err>{copy.nameError}</p>
+                  </div>
+                </div>
+                <label class="check">
+                  <input type="checkbox" name="invoiceSame" checked data-invoice-same />
+                  <span>{copy.invoiceSame}</span>
+                </label>
+                <div class="invoice__address" data-invoice-address hidden>
+                  <div class="fld" data-field="invoiceAddress">
+                    <label for="co-inv-address">{copy.invoiceAddress}</label>
+                    <input id="co-inv-address" name="invoiceAddress" autocomplete="billing address-line1" maxlength="200" aria-describedby="co-inv-address-err" />
+                    <p class="fld__err" id="co-inv-address-err" data-err>{copy.line1Error}</p>
+                  </div>
+                  <div class="row row--place">
+                    <div class="fld" data-field="invoiceCountry">
+                      <label for="co-inv-country">{copy.country}</label>
+                      <select id="co-inv-country" name="invoiceCountry" autocomplete="billing country">
+                        {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div class="fld" data-field="invoicePostal">
+                      <label for="co-inv-postal">{copy.postalCode}</label>
+                      <input id="co-inv-postal" name="invoicePostal" autocomplete="billing postal-code" maxlength="12" aria-describedby="co-inv-postal-err" />
+                      <p class="fld__err" id="co-inv-postal-err" data-err>{copy.postalMissing}</p>
+                    </div>
+                  </div>
+                  <div class="fld" data-field="invoiceCity">
+                    <label for="co-inv-city">{copy.city}</label>
+                    <input id="co-inv-city" name="invoiceCity" autocomplete="billing address-level2" maxlength="100" aria-describedby="co-inv-city-err" />
+                    <p class="fld__err" id="co-inv-city-err" data-err>{copy.cityError}</p>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- 3 · Pay -->
+            <fieldset class="co-step co-step--pay" data-step="2">
+              <legend class="co-step__title">
+                <span class="co-step__num" aria-hidden="true">3</span>
+                {copy.payTitle}
+              </legend>
+              <p class="co-step__lead">{copy.payLead}</p>
+              <p class="pay-total">
+                <span>{dict.shipping.total}</span>
+                <strong data-pay-total>—</strong>
+              </p>
+              <div class="pay-buttons">
+                {
+                  providers.map((provider, index) => (
+                    <button
+                      type="submit"
+                      class:list={['btn', 'pay-btn', { 'btn--ghost': index > 0 }]}
+                      name="provider"
+                      value={provider}
+                      data-pay={provider}
+                    >
+                      {provider === 'stripe' ? (
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <rect x="3" y="5.5" width="18" height="13" rx="2" />
+                          <path d="M3 10h18M7 15h4" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M8 20 10.5 4h6a4 4 0 0 1 0 8H12l-1.2 8z" />
+                        </svg>
+                      )}
+                      {payLabels[provider]}
+                    </button>
+                  ))
+                }
+                {
+                  preview && (
+                    <button type="submit" class="btn pay-btn" name="provider" value="stripe" data-pay="stripe">
+                      {copy.card}
+                    </button>
+                  )
+                }
+              </div>
+              {preview && <p class="co-preview">{copy.previewNote}</p>}
+              <p class="pay-status" role="status" aria-live="polite" data-pay-status></p>
+              <p class="legal">
+                {legalBefore}
+                <a href={localizedPath(locale, 'terms')}>{copy.terms}</a>
+                {legalMiddle}
+                <a href={localizedPath(locale, 'privacy')}>{copy.privacy}</a>
+                {legalAfter}
+              </p>
+              <p class="secure">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="5" y="10.5" width="14" height="9.5" rx="2" />
+                  <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+                </svg>
+                {copy.secure} {providers.length ? providers.map((p) => (p === 'stripe' ? 'Stripe' : 'PayPal')).join(' · ') : 'Stripe · PayPal'}
+              </p>
+            </fieldset>
+          </form>
+
+          <!-- The parcel and the order -->
+          <aside class="co-aside" aria-label={copy.summary}>
+            <figure class="parcel" data-parcel aria-hidden="true">
+              <div class="parcel__box">
+                <span class="parcel__twine parcel__twine--h"></span>
+                <span class="parcel__twine parcel__twine--v"></span>
+                <span class="parcel__tape" data-parcel-tape></span>
+                <div class="label">
+                  <div class="label__from">
+                    <span class="label__tag">{copy.from}</span>
+                    <span>{copy.fromName}</span>
+                    <span>{copy.fromPlace}</span>
+                  </div>
+                  <div class="label__stamp">
+                    <span class="stamp" data-parcel-stamp></span>
+                    <span class="postmark" data-postmark>
+                      <svg viewBox="0 0 120 120">
+                        <defs>
+                          <path id="pm-ring" d="M60 60 m-42 0 a42 42 0 1 1 84 0 a42 42 0 1 1 -84 0" />
+                        </defs>
+                        <circle cx="60" cy="60" r="50" />
+                        <circle cx="60" cy="60" r="34" />
+                        <text><textPath href="#pm-ring">PETS DRAWINGS · ESPAÑA · PETS DRAWINGS ·</textPath></text>
+                        <text x="60" y="64" text-anchor="middle" class="postmark__date">{today}</text>
+                      </svg>
+                      <svg class="postmark__waves" viewBox="0 0 160 40">
+                        <path d="M0 8 q10 -6 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0" />
+                        <path d="M0 20 q10 -6 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0" />
+                        <path d="M0 32 q10 -6 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0" />
+                      </svg>
+                    </span>
+                  </div>
+                  <div class="label__to">
+                    <span class="label__tag">{copy.to}</span>
+                    <span class="label__line" data-label="name" data-placeholder={copy.labelName}>{copy.labelName}</span>
+                    <span class="label__line" data-label="street" data-placeholder={copy.labelStreet}>{copy.labelStreet}</span>
+                    <span class="label__line" data-label="city" data-placeholder={copy.labelCity}>{copy.labelCity}</span>
+                    <span class="label__line label__line--country" data-label="country"></span>
+                  </div>
+                  <p class="label__handle">{copy.handle}</p>
+                </div>
+              </div>
+            </figure>
+
+            <section class="ticket" aria-labelledby="co-summary-title">
+              <header class="ticket__head">
+                <h2 id="co-summary-title">{copy.summary}</h2>
+                <a href={localizedPath(locale, 'cart')}>{copy.editCart}</a>
+              </header>
+              <ul class="ticket__lines" data-lines></ul>
+              <dl class="ticket__sums">
+                <div>
+                  <dt>{dict.cart.subtotal}</dt>
+                  <dd data-sum="subtotal">—</dd>
+                </div>
+                <div>
+                  <dt>
+                    {dict.shipping.label} <small data-sum="zone"></small>
+                  </dt>
+                  <dd data-sum="shipping">{copy.shippingPending}</dd>
+                </div>
+                <div class="ticket__vat" data-sum-vat hidden>
+                  <dt>{copy.vatNote}</dt>
+                  <dd data-sum="vat">—</dd>
+                </div>
+                <div class="ticket__total">
+                  <dt>{dict.shipping.total}</dt>
+                  <dd data-sum="total">—</dd>
+                </div>
+              </dl>
+            </section>
+          </aside>
+        </div>
+      )
+    }
   </section>
 </PublicLayout>
 
 <style>
-  .pay-options {
-    display: flex;
-    flex-wrap: wrap;
+  /* ——— Layout ——— */
+  .co {
+    padding-top: clamp(1rem, 3vw, 2rem);
+    overflow-x: clip;
+  }
+
+  .co-grid {
+    display: grid;
+    gap: clamp(2rem, 4vw, 3rem);
+    grid-template-areas:
+      'head'
+      'empty'
+      'contact'
+      'address'
+      'aside'
+      'invoice'
+      'pay';
+  }
+
+  /* the form's steps sit directly in the page grid */
+  .co-form {
+    display: contents;
+  }
+
+  .co-head {
+    grid-area: head;
+  }
+
+  .co-empty {
+    grid-area: empty;
+    display: grid;
     gap: 0.75rem;
-  }
-
-  .checkout-grid {
-    display: grid;
-    gap: 1.5rem;
-    margin: 1.5rem 0 2rem;
-  }
-
-  @media (min-width: 52rem) {
-    .checkout-grid {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      align-items: start;
-    }
-  }
-
-  .checkout-step {
-    display: grid;
-    gap: 1rem;
-    padding: 1.5rem;
-    border-radius: var(--radius-dialog, 1rem);
-    background: var(--surface);
+    justify-items: start;
+    padding: 2rem;
+    background: var(--sheet);
     box-shadow: var(--shadow-art);
   }
 
-  .checkout-step__title {
+  .co-grid .co-empty[hidden],
+  .co-grid .co-step[hidden],
+  .co-grid .co-aside[hidden],
+  .co-grid .route[hidden] {
+    display: none;
+  }
+
+  .co-empty .display {
+    margin: 0;
+    font-size: 2rem;
+  }
+
+  .co-step--contact {
+    grid-area: contact;
+  }
+
+  .co-step--address {
+    grid-area: address;
+  }
+
+  .co-step--invoice {
+    grid-area: invoice;
+  }
+
+  .co-step--pay {
+    grid-area: pay;
+  }
+
+  .co-aside {
+    grid-area: aside;
+    display: grid;
+    gap: 2rem;
+    align-content: start;
+  }
+
+  @media (min-width: 64rem) {
+    .co-grid {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+      column-gap: clamp(3rem, 5vw, 5.5rem);
+      grid-template-areas:
+        'head    aside'
+        'empty   aside'
+        'contact aside'
+        'address aside'
+        'invoice aside'
+        'pay     aside';
+      grid-template-rows: auto auto auto auto auto 1fr;
+    }
+
+    .co-aside {
+      position: sticky;
+      top: 1.5rem;
+      align-self: start;
+      padding-top: 1rem;
+    }
+  }
+
+  .co-soon {
+    display: grid;
+    gap: 1rem;
+    justify-items: start;
+  }
+
+  /* ——— Head ——— */
+  .co-eyebrow {
+    margin: 0 0 1rem;
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: 1.3rem;
+    font-size: 0.75rem;
     font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
 
-  .checkout-step__title span {
-    display: grid;
-    place-items: center;
-    width: 1.7rem;
-    height: 1.7rem;
-    border-radius: 50%;
-    background: var(--ink);
-    color: var(--surface);
-    font-family: var(--font-body, inherit);
-    font-size: 0.85rem;
+  .co-eyebrow::before {
+    content: '';
+    width: 2.25rem;
+    height: 1px;
+    background: currentColor;
   }
 
-  .checkout-step__note {
+  .co-title {
+    margin: 0 0 1rem;
+    font-size: clamp(3rem, 7vw, 6rem);
+    line-height: 0.92;
+    letter-spacing: -0.05em;
+  }
+
+  .co-title em {
+    font-style: italic;
+    color: var(--accent-deep);
+  }
+
+  .co-lead {
     margin: 0;
+    max-width: 30rem;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  /* ——— Route: a dotted path the parcel travels along ——— */
+  .route {
+    --progress: 0;
+    position: relative;
+    list-style: none;
+    margin: 2.25rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 30rem;
+  }
+
+  .route::before {
+    content: '';
+    position: absolute;
+    top: 0.45rem;
+    left: 0.45rem;
+    right: calc(33.3% - 0.45rem);
+    height: 0;
+    border-top: 1.5px dashed var(--line-strong);
+  }
+
+  .route::after {
+    content: '';
+    position: absolute;
+    top: 0.45rem;
+    left: 0.45rem;
+    width: calc((66.6% - 0.9rem) * var(--progress) / 2);
+    height: 0;
+    border-top: 1.5px solid var(--accent-deep);
+    transition: width 900ms var(--ease-out);
+  }
+
+  .route__stop {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 0.5rem;
+    justify-items: start;
+  }
+
+  .route__dot {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--line-strong);
+    background: var(--paper);
+    transition:
+      background 400ms var(--ease-out),
+      border-color 400ms var(--ease-out);
+  }
+
+  .route__stop.is-done .route__dot {
+    background: var(--accent-deep);
+    border-color: var(--accent-deep);
+  }
+
+  .route__label {
     font-size: 0.85rem;
     color: var(--muted);
   }
 
-  .checkout-total {
-    display: grid;
-    gap: 0.35rem;
-    margin: 0;
+  .route__stop.is-current .route__label {
+    color: var(--ink);
   }
 
-  .checkout-total div {
+  .route__parcel {
+    position: absolute;
+    top: -1.35rem;
+    left: calc((66.6% - 0.9rem) * var(--progress) / 2 - 0.55rem);
+    width: 2rem;
+    transition: left 900ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  .route__parcel svg {
+    display: block;
+    width: 100%;
+    fill: #dcc39b;
+    stroke: #6b5536;
+    stroke-width: 1.2;
+    stroke-linejoin: round;
+  }
+
+  .route__parcel svg path + path {
+    fill: none;
+  }
+
+  /* ——— Steps ——— */
+  .co-step {
+    min-width: 0;
+    margin: 0;
+    padding: clamp(1.5rem, 3vw, 2.25rem);
+    border: 0;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    display: grid;
+    gap: 1.25rem;
+    align-content: start;
+  }
+
+  .co-step--invoice {
+    background: transparent;
+    box-shadow: none;
+    padding-block: 0;
+    gap: 0.75rem;
+  }
+
+  .co-step__title {
+    float: left;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+
+  .co-step__title + * {
+    clear: both;
+  }
+
+  .co-step__title--quiet {
+    font-size: 1.35rem;
+  }
+
+  .co-step__num {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    border: 1px solid var(--ink);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.1rem;
+    transition:
+      background 400ms var(--ease-out),
+      color 400ms var(--ease-out);
+  }
+
+  .co-step.is-complete .co-step__num {
+    background: var(--ink);
+    color: var(--light);
+  }
+
+  .co-step__lead {
+    margin: -0.5rem 0 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .co-step__lead--small {
+    margin: 0;
+    font-size: 0.88rem;
+  }
+
+  .account-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    background: var(--accent-soft);
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+
+  .account-bar a {
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--accent-deep);
+  }
+
+  .account-bar .check {
+    font-size: 0.9rem;
+  }
+
+  .row {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  @media (min-width: 40rem) {
+    .row {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .row--place {
+      grid-template-columns: 3fr 2fr;
+    }
+  }
+
+  /* ——— Fields: floating labels over a writing line ——— */
+  .fld {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  .fld label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .fld label small {
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+
+  .fld input,
+  .fld select,
+  .fld textarea {
+    width: 100%;
+    margin: 0;
+    padding: 0.4rem 0 0.5rem;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: transparent;
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    color: var(--ink);
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      box-shadow var(--dur-ui) var(--ease-soft);
+  }
+
+  .fld select {
+    appearance: none;
+    padding-right: 1.5rem;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%233a3d44' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 0.2rem center / 0.75rem;
+    cursor: pointer;
+  }
+
+  .fld textarea {
+    font-size: 1.1rem;
+    line-height: 1.5;
+    resize: vertical;
+    border: 1px solid var(--line-strong);
+    padding: 0.6rem 0.75rem;
+  }
+
+  .fld input::placeholder,
+  .fld textarea::placeholder {
+    color: var(--muted);
+    opacity: 0.55;
+    font-style: italic;
+  }
+
+  .fld input:focus-visible,
+  .fld select:focus-visible,
+  .fld textarea:focus-visible {
+    outline: none;
+    border-bottom-color: var(--accent);
+    box-shadow: 0 1px 0 0 var(--accent);
+  }
+
+  .fld textarea:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  /* a small tick when the line is written correctly */
+  .fld.is-valid::after {
+    content: '';
+    position: absolute;
+    right: 0.1rem;
+    top: 1.75rem;
+    width: 0.85rem;
+    height: 0.45rem;
+    border-left: 1.6px solid var(--success);
+    border-bottom: 1.6px solid var(--success);
+    rotate: -45deg;
+    animation: tick 360ms var(--ease-out) both;
+  }
+
+  .fld[data-field='country'].is-valid::after,
+  .fld[data-field='note'].is-valid::after {
+    display: none;
+  }
+
+  .fld__hint {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .fld__hint--auto {
+    color: var(--success);
+  }
+
+  .fld__err {
+    display: none;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--danger);
+  }
+
+  .fld.is-invalid .fld__err {
+    display: block;
+    animation: err-in 260ms var(--ease-out);
+  }
+
+  .fld.is-invalid .fld__hint {
+    display: none;
+  }
+
+  .fld.is-invalid input,
+  .fld.is-invalid select {
+    border-bottom-color: var(--danger);
+  }
+
+  .fld.is-shaking {
+    animation: shake 420ms var(--ease-soft);
+  }
+
+  .fld__suggest {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+
+  .fld__suggest button {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--accent-deep);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    cursor: pointer;
+  }
+
+  @keyframes tick {
+    from {
+      opacity: 0;
+      scale: 0.4;
+    }
+  }
+
+  @keyframes err-in {
+    from {
+      opacity: 0;
+      translate: 0 -0.25rem;
+    }
+  }
+
+  @keyframes shake {
+    20%,
+    60% {
+      translate: -5px 0;
+    }
+    40%,
+    80% {
+      translate: 5px 0;
+    }
+  }
+
+  .ship-line {
+    margin: -0.25rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--accent-soft);
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+    animation: err-in 400ms var(--ease-out);
+  }
+
+  .ship-line[hidden] {
+    display: none;
+  }
+
+  .ship-line strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-style: italic;
+    font-size: 1.15rem;
+    color: var(--ink);
+  }
+
+  .ship-line.is-error {
+    background: rgb(156 59 69 / 0.07);
+    color: var(--danger);
+  }
+
+  .note summary {
+    cursor: pointer;
+    width: fit-content;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.05rem;
+    color: var(--accent-deep);
+    list-style: none;
+  }
+
+  .note summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .note summary::before {
+    content: '+ ';
+  }
+
+  .note[open] summary::before {
+    content: '− ';
+  }
+
+  .note[open] .fld {
+    margin-top: 0.75rem;
+  }
+
+  /* ——— Switch and checkbox ——— */
+  .switch,
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: fit-content;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .switch input,
+  .check input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+
+  .switch__track {
+    position: relative;
+    flex: none;
+    width: 2.6rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    background: var(--line-strong);
+    transition: background var(--dur-ui) var(--ease-soft);
+  }
+
+  .switch__thumb {
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: var(--sheet);
+    box-shadow: 0 1px 3px rgb(22 23 26 / 0.25);
+    transition: translate 300ms var(--ease-out);
+  }
+
+  .switch input:checked + .switch__track {
+    background: var(--accent-deep);
+  }
+
+  .switch input:checked + .switch__track .switch__thumb {
+    translate: 1.1rem 0;
+  }
+
+  .switch input:focus-visible + .switch__track,
+  .check input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .check span::before {
+    content: '';
+    display: inline-block;
+    width: 1.05rem;
+    height: 1.05rem;
+    margin-right: 0.6rem;
+    vertical-align: -0.15rem;
+    border: 1.5px solid var(--ink-soft);
+    border-radius: 3px;
+    background: var(--sheet);
+  }
+
+  .check input:checked + span::before {
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath d='M1 5l3.5 3.5L11 1' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E") no-repeat center / 0.7rem,
+      var(--ink);
+    border-color: var(--ink);
+  }
+
+  .invoice {
+    display: grid;
+    gap: 1.25rem;
+    margin-top: 0.5rem;
+    padding: 1.5rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    animation: err-in 400ms var(--ease-out);
+  }
+
+  .invoice[hidden],
+  .invoice__address[hidden] {
+    display: none;
+  }
+
+  .invoice__address {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  /* ——— Pay ——— */
+  .pay-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 0;
+    padding: 1rem 0;
+    border-block: 1px solid var(--line);
+  }
+
+  .pay-total span {
+    color: var(--muted);
+  }
+
+  .pay-total strong {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: clamp(2rem, 4vw, 2.6rem);
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pay-buttons {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .pay-btn {
+    gap: 0.6rem;
+    min-height: 3.5rem;
+    font-size: 1.05rem;
+  }
+
+  .pay-btn svg {
+    width: 1.3rem;
+    height: 1.3rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .pay-btn[aria-busy='true'] {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
+  .co-preview {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+
+  .pay-status {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--ink-soft);
+  }
+
+  .pay-status:empty {
+    display: none;
+  }
+
+  .pay-status.is-error {
+    padding: 0.75rem 1rem;
+    border-left: 2px solid var(--danger);
+    background: rgb(156 59 69 / 0.06);
+    color: var(--danger);
+  }
+
+  .legal,
+  .secure {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .legal a {
+    color: var(--ink-soft);
+  }
+
+  .secure {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .secure svg {
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+
+  /* ——— The parcel ——— */
+  .parcel {
+    margin: 0;
+    perspective: 1200px;
+  }
+
+  .parcel__box {
+    position: relative;
+    padding: clamp(1.75rem, 4vw, 2.5rem) clamp(1.25rem, 3vw, 2rem);
+    background:
+      repeating-linear-gradient(
+        96deg,
+        rgb(255 255 255 / 0.06) 0 2px,
+        transparent 2px 7px
+      ),
+      radial-gradient(ellipse at 30% 20%, #e5cfa9, transparent 70%),
+      #d6b98c;
+    border-radius: 6px;
+    box-shadow:
+      inset 0 0 0 1px rgb(107 85 54 / 0.18),
+      inset 0 -12px 24px rgb(107 85 54 / 0.12),
+      var(--shadow-art);
+    rotate: 1.5deg;
+    transition: rotate 700ms var(--ease-out), transform 700ms var(--ease-out);
+  }
+
+  .parcel__twine {
+    position: absolute;
+    background: repeating-linear-gradient(45deg, #f2ead8 0 3px, #cdbf9f 3px 6px);
+    pointer-events: none;
+  }
+
+  .parcel__twine--h {
+    left: 0;
+    right: 0;
+    top: 26%;
+    height: 5px;
+  }
+
+  .parcel__twine--v {
+    top: 0;
+    bottom: 0;
+    left: 18%;
+    width: 5px;
+    background: repeating-linear-gradient(-45deg, #f2ead8 0 3px, #cdbf9f 3px 6px);
+  }
+
+  .parcel__tape {
+    position: absolute;
+    z-index: 3;
+    top: -0.6rem;
+    left: 50%;
+    width: 0;
+    height: 2.2rem;
+    translate: -50% 0;
+    background: rgb(214 220 232 / 0.85);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12);
+    transition: width 700ms var(--ease-out);
+  }
+
+  .parcel.is-sealed .parcel__tape {
+    width: 70%;
+  }
+
+  .parcel.is-sealed .parcel__box {
+    rotate: -1deg;
+    transform: translateY(-6px);
+  }
+
+  .label {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem 1.25rem;
+    padding: 1.25rem 1.25rem 1rem;
+    background: #fdfcf8;
+    box-shadow: 0 2px 6px rgb(22 23 26 / 0.15);
+    rotate: -1.2deg;
+  }
+
+  .label__tag {
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .label__from {
+    display: grid;
+    align-content: start;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--ink-soft);
+  }
+
+  .label__stamp {
+    position: relative;
+    width: 4.6rem;
+  }
+
+  /* perforated edge postage stamp, with the drawing of the first piece */
+  .stamp {
+    display: block;
+    width: 4.2rem;
+    aspect-ratio: 4 / 5;
+    padding: 0.35rem;
+    background:
+      var(--stamp, none) center / cover no-repeat content-box,
+      #fff;
+    /* perforated edge: holes in the colour of the label around a white margin */
+    outline: 0.3rem dotted #fdfcf8;
+    outline-offset: -0.15rem;
+    box-shadow: 0 1px 3px rgb(22 23 26 / 0.25);
+    rotate: 3deg;
+  }
+
+  .postmark {
+    position: absolute;
+    top: 1.1rem;
+    left: -2.6rem;
+    width: 5.2rem;
+    opacity: 0;
+    scale: 1.6;
+    rotate: -14deg;
+    pointer-events: none;
+  }
+
+  .postmark svg:first-child {
+    display: block;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .postmark circle {
+    fill: none;
+    stroke: rgb(44 56 84 / 0.7);
+    stroke-width: 2.4;
+  }
+
+  .postmark text {
+    font-family: var(--font-body);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    fill: rgb(44 56 84 / 0.75);
+  }
+
+  .postmark .postmark__date {
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+
+  .postmark__waves {
+    position: absolute;
+    top: 30%;
+    left: 85%;
+    width: 7rem;
+    fill: none;
+    stroke: rgb(44 56 84 / 0.6);
+    stroke-width: 2.2;
+  }
+
+  .parcel.is-sealed .postmark {
+    animation: stamp 520ms cubic-bezier(0.3, 1.6, 0.5, 1) 350ms forwards;
+  }
+
+  @keyframes stamp {
+    0% {
+      opacity: 0;
+      scale: 1.7;
+    }
+    60% {
+      opacity: 1;
+      scale: 0.92;
+    }
+    100% {
+      opacity: 0.92;
+      scale: 1;
+    }
+  }
+
+  .label__to {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.85rem 0 0.25rem 1.25rem;
+    border-top: 1px dashed var(--line-strong);
+  }
+
+  .label__line {
+    min-height: 1.6em;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(1.15rem, 2vw, 1.4rem);
+    line-height: 1.3;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+    transition: color 300ms, opacity 300ms;
+  }
+
+  .label__line:not(.is-written) {
+    font-size: clamp(1rem, 1.6vw, 1.15rem);
+  }
+
+  .label__line.is-written {
+    color: var(--ink);
+  }
+
+  .label__line.is-written.is-fresh {
+    animation: write-in 500ms var(--ease-out);
+  }
+
+  .label__line--country {
+    border: 0;
+    font-family: var(--font-body);
+    font-style: normal;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 1;
+    color: var(--ink-soft);
+  }
+
+  .label__handle {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding-top: 0.4rem;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--danger);
+  }
+
+  @keyframes write-in {
+    from {
+      clip-path: inset(0 100% 0 0);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  /* ——— Ticket (order summary) ——— */
+  .ticket {
+    padding: 1.5rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    -webkit-mask: radial-gradient(circle 0.45rem at 50% 100%, transparent 98%, #000) 0 0 / 1.1rem 100%;
+    mask: radial-gradient(circle 0.45rem at 50% 100%, transparent 98%, #000) 0 0 / 1.1rem 100%;
+    padding-bottom: 2rem;
+  }
+
+  .ticket__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 1rem;
+  }
+
+  .ticket__head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .ticket__head a {
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+
+  .ticket__lines {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .ticket__lines :global(li) {
+    display: grid;
+    grid-template-columns: 3.4rem 1fr auto;
+    gap: 0.85rem;
+    align-items: center;
+    animation: err-in 400ms var(--ease-out) both;
+  }
+
+  .ticket__lines :global(.line__img) {
+    position: relative;
+    width: 3.4rem;
+    aspect-ratio: 1;
+    background: var(--paper-deep) center / cover no-repeat;
+    box-shadow: 0 1px 3px rgb(22 23 26 / 0.15);
+  }
+
+  .ticket__lines :global(.line__qty) {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    display: grid;
+    place-items: center;
+    min-width: 1.3rem;
+    height: 1.3rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--light);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ticket__lines :global(.line__title) {
+    font-family: var(--font-display);
+    font-size: 1.02rem;
+    line-height: 1.2;
+  }
+
+  .ticket__lines :global(.line__variant) {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .ticket__lines :global(.line__price) {
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+  }
+
+  .ticket__sums {
+    display: grid;
+    gap: 0.45rem;
+    margin: 1.25rem 0 0;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--line-strong);
+  }
+
+  .ticket__sums div {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
   }
 
-  .checkout-total dt {
+  .ticket__sums dt {
     color: var(--muted);
   }
 
-  .checkout-total dd {
+  .ticket__sums dt small {
+    font-size: 0.8rem;
+  }
+
+  .ticket__sums dd {
     margin: 0;
     font-variant-numeric: tabular-nums;
+    text-align: right;
   }
 
-  .checkout-total__grand {
-    margin-top: 0.4rem;
+  .ticket__vat dt,
+  .ticket__vat dd {
+    color: var(--success);
+  }
+
+  .ticket__sums .ticket__vat[hidden] {
+    display: none;
+  }
+
+  .ticket__total {
+    margin-top: 0.5rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--line);
+    align-items: baseline;
   }
 
-  .checkout-total__grand dt {
+  .ticket__total dt {
     color: var(--ink);
   }
 
-  .checkout-total__grand dd {
+  .ticket__total dd {
     font-family: var(--font-display);
-    font-size: 1.6rem;
-    letter-spacing: -0.02em;
+    font-size: 1.9rem;
+    letter-spacing: -0.03em;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 63.99rem) {
+    .co-aside {
+      max-width: 34rem;
+      width: 100%;
+      justify-self: center;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .route__parcel,
+    .route::after {
+      transition: none;
+    }
   }
 </style>
 
 <script>
-  import { CART_EVENT, readCart } from '@/stores/cart';
-  import { readDestination, isCompleteDestination, type Destination } from '@/stores/destination';
+  import { initCheckout } from '@/scripts/checkout';
 
-  const root = document.querySelector('[data-checkout-root]');
-  if (root instanceof HTMLElement) {
-    const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-checkout-start]'));
-    const status = root.querySelector('[data-checkout-status]');
-    const required = root.querySelector<HTMLElement>('[data-checkout-required]');
-    const subtotalEl = root.querySelector<HTMLElement>('[data-checkout-subtotal]')!;
-    const shippingEl = root.querySelector<HTMLElement>('[data-checkout-shipping]')!;
-    const totalEl = root.querySelector<HTMLElement>('[data-checkout-total]')!;
-    const locale = root.dataset.locale === 'es' ? 'es' : 'en';
-    const emptyLabel = root.dataset.empty ?? 'Empty';
-    const busyLabel = root.dataset.busy ?? 'Busy';
-    const errorLabel = root.dataset.error ?? 'Error';
-    const shippingErrorLabel = root.dataset.shippingError ?? errorLabel;
-    const money = new Intl.NumberFormat(locale === 'es' ? 'es-ES' : 'en-IE', {
-      style: 'currency',
-      currency: 'EUR',
-    });
-    let itemsCents: number | null = null;
-    let shipping: { cents: number; destination: Destination } | null = null;
-    let busy = false;
-
-    function setStatus(text: string, show = true) {
-      if (!(status instanceof HTMLElement)) return;
-      status.hidden = !show;
-      status.textContent = text;
-    }
-
-    function paint() {
-      subtotalEl.textContent = itemsCents === null ? '—' : money.format(itemsCents / 100);
-      shippingEl.textContent = shipping ? root!.querySelector('[data-ship-value]')?.textContent ?? '' : '—';
-      totalEl.textContent =
-        itemsCents !== null && shipping ? money.format((itemsCents + shipping.cents) / 100) : '—';
-      const ready = Boolean(shipping) && readCart().items.length > 0;
-      if (required) required.hidden = ready;
-      for (const button of buttons) button.disabled = busy || !ready;
-    }
-
-    async function loadSubtotal() {
-      const items = readCart().items;
-      if (items.length === 0) {
-        itemsCents = null;
-        setStatus(emptyLabel);
-        paint();
-        return;
-      }
-      try {
-        const res = await fetch('/api/cart/lines/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ locale, ids: items.map((i) => i.productId) }),
-        });
-        const data = (await res.json()) as { lines: Array<{ productId: string; unitAmountCents: number }> };
-        const price = new Map(data.lines.map((l) => [l.productId, l.unitAmountCents]));
-        itemsCents = items.reduce((sum, i) => sum + (price.get(i.productId) ?? 0) * i.quantity, 0);
-      } catch {
-        itemsCents = null;
-      }
-      paint();
-    }
-
-    root.addEventListener('shipping:update', (event) => {
-      const detail = (event as CustomEvent<{ ready: boolean; cents?: number; destination?: Destination }>).detail;
-      shipping = detail.ready && detail.destination ? { cents: detail.cents ?? 0, destination: detail.destination } : null;
-      paint();
-    });
-    window.addEventListener(CART_EVENT, () => void loadSubtotal());
-
-    async function start(provider: string) {
-      const cart = readCart();
-      if (cart.items.length === 0) {
-        setStatus(emptyLabel);
-        return;
-      }
-      const destination = readDestination();
-      if (!isCompleteDestination(destination)) {
-        paint();
-        return;
-      }
-      busy = true;
-      paint();
-      setStatus(busyLabel);
-
-      try {
-        const quoteRes = await fetch('/api/cart/quote/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            locale,
-            items: cart.items,
-            shippingCountry: destination.country,
-            shippingPostalCode: destination.postalCode || undefined,
-          }),
-        });
-        const quote = await quoteRes.json();
-        if (!quoteRes.ok || !quote.quoteId) {
-          const code = String(quote?.error?.message ?? '');
-          throw new Error(code.startsWith('SHIPPING_') ? 'shipping' : 'quote');
-        }
-
-        const attemptId = crypto.randomUUID();
-        const createRes = await fetch('/api/checkout/create/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            provider,
-            locale,
-            quoteId: quote.quoteId,
-            attemptId,
-            items: cart.items,
-          }),
-        });
-        const created = await createRes.json();
-        if (!createRes.ok || !created.url) {
-          throw new Error(String(created?.error?.message ?? '').startsWith('SHIPPING_') ? 'shipping' : 'checkout');
-        }
-        if (created.reference && created.accessToken) {
-          try {
-            sessionStorage.setItem(
-              'petsdrawings.orderAccess.v1',
-              JSON.stringify({
-                reference: created.reference,
-                accessToken: created.accessToken,
-              }),
-            );
-          } catch {
-            // Ignore quota / private mode.
-          }
-        }
-        window.location.assign(created.url);
-      } catch (err) {
-        setStatus(err instanceof Error && err.message === 'shipping' ? shippingErrorLabel : errorLabel);
-        busy = false;
-        paint();
-      }
-    }
-
-    for (const button of buttons) {
-      button.addEventListener('click', () => {
-        void start(button.dataset.checkoutStart ?? 'stripe');
-      });
-    }
-
-    void loadSubtotal();
-  }
+  const root = document.querySelector<HTMLElement>('[data-checkout]');
+  if (root) initCheckout(root);
 </script>

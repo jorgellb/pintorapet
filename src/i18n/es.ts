@@ -17,6 +17,7 @@ export const es: Dictionary = {
     menuOpen: 'Abrir menú',
     menuClose: 'Cerrar menú',
     skip: 'Saltar al contenido',
+    account: 'Cuenta',
     language: 'Idioma',
   },
   home: {

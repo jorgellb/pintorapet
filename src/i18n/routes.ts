@@ -21,6 +21,13 @@ export const routeMap = {
   terms: { en: 'terms', es: 'condiciones' },
   shipping: { en: 'shipping-returns', es: 'envios-devoluciones' },
   accountHelp: { en: 'account-help', es: 'ayuda-compra' },
+  account: { en: 'account', es: 'cuenta' },
+  accountSignIn: { en: 'account/sign-in', es: 'cuenta/entrar' },
+  accountRegister: { en: 'account/register', es: 'cuenta/registro' },
+  accountForgot: { en: 'account/forgot-password', es: 'cuenta/recuperar' },
+  accountReset: { en: 'account/new-password', es: 'cuenta/nueva-contrasena' },
+  accountDetails: { en: 'account/details', es: 'cuenta/datos' },
+  accountOrder: { en: 'account/orders', es: 'cuenta/pedidos' },
 } as const;
 
 export type RouteKey = keyof typeof routeMap;

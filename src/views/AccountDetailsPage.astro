@@ -1,0 +1,304 @@
+---
+import '@/styles/paper-forms.css';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import type { Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { countryOptions } from '@/lib/domain/countries';
+import type { AccountProfile } from '@/lib/domain/accountProfile';
+import { loadProfile } from '@/lib/server/account';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const es = locale === 'es';
+const session = Astro.locals.customer!;
+const countries = countryOptions(locale);
+let profile: AccountProfile = await loadProfile(session);
+let errors: string[] = [];
+
+const copy = es
+  ? {
+      eyebrow: 'Tu cuenta',
+      title: 'Tus datos',
+      lead: 'Los usamos para rellenar el checkout y tus facturas. Puedes cambiarlos cuando quieras.',
+      contact: 'Contacto',
+      name: 'Nombre y apellidos',
+      email: 'Email',
+      emailNote: 'El email es el de tu cuenta.',
+      phone: 'Teléfono',
+      optional: 'opcional',
+      address: 'Dirección de envío',
+      line1: 'Dirección',
+      line2: 'Piso, puerta, escalera',
+      city: 'Ciudad o localidad',
+      state: 'Provincia o región',
+      postal: 'Código postal',
+      country: 'País',
+      billing: 'Datos de factura',
+      billingToggle: 'Guardar datos para facturas con NIF',
+      taxId: 'NIF, NIE o CIF',
+      billingName: 'Nombre o razón social',
+      billingAddress: 'Dirección fiscal',
+      save: 'Guardar mis datos',
+      back: 'Volver a tu cuenta',
+      password: 'Cambiar la contraseña',
+      errors: {
+        full_name: 'Escribe tu nombre.',
+        phone: 'Revisa el teléfono.',
+        address: 'Revisa la dirección: calle, ciudad y código postal.',
+        billing: 'Revisa los datos de factura: el NIF o algún campo vacío.',
+      },
+    }
+  : {
+      eyebrow: 'Your account',
+      title: 'Your details',
+      lead: 'We use them to fill in checkout and your invoices. Change them whenever you like.',
+      contact: 'Contact',
+      name: 'Full name',
+      email: 'Email',
+      emailNote: 'This is your account email.',
+      phone: 'Phone',
+      optional: 'optional',
+      address: 'Delivery address',
+      line1: 'Address',
+      line2: 'Flat, floor, building',
+      city: 'Town or city',
+      state: 'County, state or region',
+      postal: 'Postcode',
+      country: 'Country',
+      billing: 'Invoice details',
+      billingToggle: 'Save details for invoices with a tax ID',
+      taxId: 'Tax ID (VAT number)',
+      billingName: 'Name or company name',
+      billingAddress: 'Billing address',
+      save: 'Save my details',
+      back: 'Back to your account',
+      password: 'Change password',
+      errors: {
+        full_name: 'Enter your name.',
+        phone: 'Check the phone number.',
+        address: 'Check the address: street, town and postcode.',
+        billing: 'Check the invoice details: the tax ID or an empty field.',
+      },
+    };
+
+// After a failed save the endpoint sends back the fields at fault and the draft.
+const flash = Astro.locals.flash ?? null;
+if (flash?.error) {
+  errors = [...new Set(flash.error.split(','))].map(
+    (key) => copy.errors[key as keyof typeof copy.errors] ?? copy.errors.full_name,
+  );
+  try {
+    if (flash.draft) profile = JSON.parse(flash.draft) as AccountProfile;
+  } catch {
+    // Keep the saved profile.
+  }
+}
+
+const a = profile.address;
+const b = profile.billing;
+---
+
+<PublicLayout locale={locale} title={copy.title} noindex>
+  <section class="section details">
+    <div class="site-shell details__wrap">
+      <header>
+        <p class="page-eyebrow">{copy.eyebrow}</p>
+        <h1 class="display details__title">{copy.title}</h1>
+        <p class="details__lead">{copy.lead}</p>
+      </header>
+
+      <form class="paper details__form" method="post" action="/api/account/profile/">
+        <input type="hidden" name="locale" value={locale} />
+        <div class="paper__fields">
+          {
+            errors.length > 0 && (
+              <p class="paper__status" data-tone="error" role="alert">
+                {errors.join(' ')}
+              </p>
+            )
+          }
+
+          <h2 class="paper__title">{copy.contact}</h2>
+          <div class="paper__row">
+            <label class="field">
+              <span class="field__label">{copy.name}</span>
+              <input name="full_name" autocomplete="name" required minlength="2" maxlength="120" value={profile.full_name} />
+            </label>
+            <label class="field">
+              <span class="field__label">{copy.phone} <small>{copy.optional}</small></span>
+              <input name="phone" type="tel" autocomplete="tel" maxlength="32" value={profile.phone} />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field__label">{copy.email}</span>
+            <input value={session.user.email} disabled />
+            <span class="field__hint">{copy.emailNote}</span>
+          </label>
+
+          <h2 class="paper__title details__sub">{copy.address} <small>{copy.optional}</small></h2>
+          <label class="field">
+            <span class="field__label">{copy.line1}</span>
+            <input name="line1" autocomplete="shipping address-line1" maxlength="160" value={a?.line1 ?? ''} />
+          </label>
+          <label class="field">
+            <span class="field__label">{copy.line2} <small>{copy.optional}</small></span>
+            <input name="line2" autocomplete="shipping address-line2" maxlength="160" value={a?.line2 ?? ''} />
+          </label>
+          <div class="paper__row">
+            <label class="field">
+              <span class="field__label">{copy.country}</span>
+              <select name="country" autocomplete="shipping country">
+                {countries.map((c) => <option value={c.code} selected={(a?.country ?? 'ES') === c.code}>{c.name}</option>)}
+              </select>
+            </label>
+            <label class="field">
+              <span class="field__label">{copy.postal}</span>
+              <input name="postal_code" autocomplete="shipping postal-code" maxlength="12" value={a?.postal_code ?? ''} />
+            </label>
+          </div>
+          <div class="paper__row">
+            <label class="field">
+              <span class="field__label">{copy.city}</span>
+              <input name="city" autocomplete="shipping address-level2" maxlength="100" value={a?.city ?? ''} />
+            </label>
+            <label class="field">
+              <span class="field__label">{copy.state} <small>{copy.optional}</small></span>
+              <input name="state" autocomplete="shipping address-level1" maxlength="100" value={a?.state ?? ''} />
+            </label>
+          </div>
+
+          <h2 class="paper__title details__sub">{copy.billing}</h2>
+          <div class="details__billing">
+            <label class="details__check">
+              <input type="checkbox" name="wants_billing" value="yes" checked={Boolean(b)} />
+              {copy.billingToggle}
+            </label>
+            <div class="details__billing-fields">
+              <div class="paper__row">
+                <label class="field">
+                  <span class="field__label">{copy.taxId}</span>
+                  <input name="tax_id" autocomplete="off" maxlength="24" value={b?.taxId ?? ''} />
+                </label>
+                <label class="field">
+                  <span class="field__label">{copy.billingName}</span>
+                  <input name="billing_name" autocomplete="organization" maxlength="160" value={b?.name ?? ''} />
+                </label>
+              </div>
+              <label class="field">
+                <span class="field__label">{copy.billingAddress}</span>
+                <input name="billing_address" autocomplete="billing address-line1" maxlength="200" value={b?.address ?? ''} />
+              </label>
+              <div class="paper__row">
+                <label class="field">
+                  <span class="field__label">{copy.postal}</span>
+                  <input name="billing_postal" autocomplete="billing postal-code" maxlength="12" value={b?.postalCode ?? ''} />
+                </label>
+                <label class="field">
+                  <span class="field__label">{copy.city}</span>
+                  <input name="billing_city" autocomplete="billing address-level2" maxlength="100" value={b?.city ?? ''} />
+                </label>
+              </div>
+              <label class="field">
+                <span class="field__label">{copy.country}</span>
+                <select name="billing_country" autocomplete="billing country">
+                  {countries.map((c) => <option value={c.code} selected={(b?.country ?? 'ES') === c.code}>{c.name}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="paper__actions">
+            <button class="btn" type="submit">{copy.save}</button>
+            <a class="text-link" href={localizedPath(locale, 'account')}>{copy.back}</a>
+          </div>
+        </div>
+      </form>
+
+      <p class="details__password">
+        <a class="text-link" href={localizedPath(locale, 'accountReset')}>{copy.password}</a>
+      </p>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .details__wrap {
+    display: grid;
+    gap: 2rem;
+    max-width: 46rem;
+  }
+
+  .details__title {
+    margin: 0 0 1rem;
+    font-size: clamp(2.8rem, 6vw, 5rem);
+    letter-spacing: -0.05em;
+    line-height: 0.95;
+  }
+
+  .details__lead {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 1.08rem;
+  }
+
+  .details__sub {
+    margin-top: 1rem;
+  }
+
+  .details__sub small,
+  .field__label small {
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .field__hint {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .field input:disabled {
+    color: var(--muted);
+  }
+
+  .details__check {
+    display: inline-flex;
+    gap: 0.6rem;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .details__check input {
+    accent-color: var(--ink);
+  }
+
+  .details__billing-fields {
+    display: none;
+    gap: 1.6rem;
+    margin-top: 1.25rem;
+  }
+
+  /* the fields appear when the box is ticked */
+  .details__billing:has(input[name='wants_billing']:checked) .details__billing-fields {
+    display: grid;
+  }
+
+  .paper select {
+    width: 100%;
+    padding: 0.35rem 0 0.4rem;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: transparent;
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    color: var(--ink);
+  }
+
+  .details__password {
+    margin: 0;
+  }
+</style>

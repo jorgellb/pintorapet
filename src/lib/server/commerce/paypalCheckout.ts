@@ -58,15 +58,23 @@ export async function finalizePaypalOrder(
     return { status: open ? 'pending' : 'expired', ...base };
   }
 
+  // Details typed on our checkout form (with phone and note) win over PayPal's copy.
+  const { data: saved } = await supabase
+    .from('orders')
+    .select('shipping_address')
+    .eq('id', attempt.order_id)
+    .maybeSingle();
+  const fromForm = Boolean(saved?.shipping_address);
+
   const { data: applied, error: applyErr } = await supabase.rpc('apply_paypal_payment', {
     p_order_id: attempt.order_id,
     p_paypal_order_id: paypalOrderId,
     p_capture_id: capture.id,
     p_amount_total_cents: centsOf(capture.amount?.value),
     p_currency: (capture.amount?.currency_code ?? 'EUR').toUpperCase(),
-    p_customer_email: order.payer?.email_address ?? null,
-    p_customer_name: payerNameOf(order),
-    p_shipping_address: shippingOf(order),
+    p_customer_email: fromForm ? null : (order.payer?.email_address ?? null),
+    p_customer_name: fromForm ? null : payerNameOf(order),
+    p_shipping_address: fromForm ? null : shippingOf(order),
   });
   if (applyErr) throw mapPgError(applyErr);
 

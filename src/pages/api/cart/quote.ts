@@ -55,6 +55,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         items,
         country: body.shippingCountry,
         postalCode: body.shippingPostalCode,
+        invoice: body.invoice,
       });
       return Response.json(quotePublicPayload(quote));
     }

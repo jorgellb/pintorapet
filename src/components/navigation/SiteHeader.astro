@@ -62,6 +62,13 @@ const otherPath = alternateHref;
         <span class="visually-hidden">{dict.nav.language}: </span>
         {other.toUpperCase()}
       </a>
+      <a class="account-link" href={localizedPath(locale, 'account')} aria-current={path.startsWith(localizedPath(locale, 'account')) ? 'page' : undefined}>
+        <svg class="account-link__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8.5" r="3.6" />
+          <path d="M4.8 20c.9-3.6 3.8-5.6 7.2-5.6s6.3 2 7.2 5.6" />
+        </svg>
+        <span class="account-link__label">{dict.nav.account}</span>
+      </a>
       <a class="cart-link" href={localizedPath(locale, 'cart')} data-cart-link>
         <span class="cart-link__label">{dict.nav.cart}</span>
         <svg class="cart-link__icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -133,6 +140,7 @@ const otherPath = alternateHref;
           <a href={locale === 'es' ? path : otherPath} hreflang="es" lang="es" aria-current={locale === 'es' ? 'true' : undefined}>ES</a>
           <a href={locale === 'en' ? path : otherPath} hreflang="en" lang="en" aria-current={locale === 'en' ? 'true' : undefined}>EN</a>
         </div>
+        <a class="mobile-menu__account" href={localizedPath(locale, 'account')}>{dict.nav.account}</a>
         <p class="mobile-menu__contact">
           <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a>
           <a href="https://www.instagram.com/petsdrawings_meili/" rel="noopener noreferrer" target="_blank">Instagram</a>
@@ -248,6 +256,36 @@ const otherPath = alternateHref;
     display: flex;
     align-items: center;
     gap: 1.1rem;
+  }
+
+  .account-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--ink);
+    font-size: 0.98rem;
+    text-decoration: none;
+  }
+
+  .account-link__icon {
+    width: 1.35rem;
+    height: 1.35rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+  }
+
+  .account-link[aria-current='page'] .account-link__label {
+    text-decoration: underline;
+    text-underline-offset: 0.35em;
+  }
+
+  .mobile-menu__account {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    color: var(--ink);
+    text-decoration: none;
   }
 
   .lang,
@@ -535,6 +573,15 @@ const otherPath = alternateHref;
 
     .cart-link__icon {
       display: block;
+    }
+
+    .account-link__label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
     }
 
     .cart-count {

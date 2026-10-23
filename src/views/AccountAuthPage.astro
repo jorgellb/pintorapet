@@ -1,0 +1,378 @@
+---
+import '@/styles/paper-forms.css';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import type { Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { safeNext } from '@/lib/domain/accountProfile';
+
+type Mode = 'signIn' | 'register' | 'forgot' | 'reset';
+
+interface Props {
+  locale: Locale;
+  mode: Mode;
+}
+
+const { locale, mode } = Astro.props;
+const es = locale === 'es';
+const accountPath = localizedPath(locale, 'account');
+const next = safeNext(Astro.url.searchParams.get('next'), accountPath);
+const endpoint = { signIn: 'sign-in', register: 'register', forgot: 'forgot', reset: 'reset' }[mode];
+
+const copy = es
+  ? {
+      eyebrow: 'Tu cuenta',
+      titles: {
+        signIn: ['Hola de nuevo,', 'entra en tu cuenta'],
+        register: ['Crea tu cuenta', 'en un minuto'],
+        forgot: ['¿Olvidaste', 'tu contraseña?'],
+        reset: ['Elige una', 'contraseña nueva'],
+      },
+      leads: {
+        signIn: 'Consulta tus pedidos, descarga tus facturas y compra más rápido.',
+        register: 'Guarda tus datos para no escribirlos otra vez y ten tus pedidos y facturas a mano.',
+        forgot: 'Escribe tu email y te enviamos un enlace para crear una contraseña nueva.',
+        reset: 'Escríbela dos veces. Necesita al menos 8 caracteres.',
+      },
+      perks: ['Todos tus pedidos, también los que hiciste sin cuenta', 'Tus facturas, listas para descargar', 'El checkout se rellena solo'],
+      name: 'Nombre y apellidos',
+      email: 'Email',
+      password: 'Contraseña',
+      passwordNew: 'Contraseña nueva',
+      passwordRepeat: 'Repítela',
+      passwordHint: 'Al menos 8 caracteres.',
+      privacy: 'He leído y acepto la {link}.',
+      privacyLink: 'política de privacidad',
+      submit: { signIn: 'Entrar', register: 'Crear cuenta', forgot: 'Enviar enlace', reset: 'Guardar contraseña' },
+      forgotLink: '¿Has olvidado tu contraseña?',
+      toRegister: '¿Aún no tienes cuenta?',
+      toRegisterLink: 'Créala aquí',
+      toSignIn: '¿Ya tienes cuenta?',
+      toSignInLink: 'Entra',
+      guest: 'También puedes comprar sin cuenta.',
+      sentTitle: 'Revisa tu correo',
+      sentRegister: 'Te hemos enviado un enlace a {email} para confirmar tu cuenta. Al pulsarlo entrarás directamente.',
+      sentForgot: 'Si hay una cuenta con {email}, te llegará un enlace para elegir una contraseña nueva.',
+      sentHint: 'Si no lo ves en unos minutos, mira en la carpeta de spam.',
+      resetExpired: 'El enlace ha caducado o ya se usó. Pide uno nuevo.',
+      resetAgain: 'Pedir otro enlace',
+      errors: {
+        credentials: 'El email o la contraseña no coinciden.',
+        unconfirmed: 'Confirma tu email antes de entrar: busca el enlace que te enviamos.',
+        exists: 'Ya hay una cuenta con ese email. Entra o recupera la contraseña.',
+        weak: 'La contraseña necesita al menos 8 caracteres.',
+        rate: 'Demasiados intentos seguidos. Espera un momento y vuelve a probar.',
+        generic: 'Algo no ha ido bien. Inténtalo de nuevo.',
+        email: 'Ese email no parece válido. Revísalo.',
+        mail: 'Ahora mismo no podemos enviarte el correo. Inténtalo más tarde o escríbenos a info@petsdrawings.com.',
+        mismatch: 'Las dos contraseñas no coinciden.',
+        privacy: 'Para crear la cuenta tienes que aceptar la política de privacidad.',
+        missing: 'Revisa los campos.',
+        link: 'El enlace no es válido o ha caducado. Entra o pide otro.',
+      },
+    }
+  : {
+      eyebrow: 'Your account',
+      titles: {
+        signIn: ['Welcome back,', 'sign in'],
+        register: ['Create your account', 'in a minute'],
+        forgot: ['Forgotten', 'your password?'],
+        reset: ['Choose a', 'new password'],
+      },
+      leads: {
+        signIn: 'See your orders, download your invoices and check out faster.',
+        register: 'Save your details so you never type them twice, and keep your orders and invoices at hand.',
+        forgot: 'Enter your email and we will send you a link to set a new password.',
+        reset: 'Type it twice. It needs at least 8 characters.',
+      },
+      perks: ['All your orders, including those placed without an account', 'Your invoices, ready to download', 'Checkout fills itself in'],
+      name: 'Full name',
+      email: 'Email',
+      password: 'Password',
+      passwordNew: 'New password',
+      passwordRepeat: 'Repeat it',
+      passwordHint: 'At least 8 characters.',
+      privacy: 'I have read and accept the {link}.',
+      privacyLink: 'privacy policy',
+      submit: { signIn: 'Sign in', register: 'Create account', forgot: 'Send link', reset: 'Save password' },
+      forgotLink: 'Forgotten your password?',
+      toRegister: 'No account yet?',
+      toRegisterLink: 'Create one',
+      toSignIn: 'Already have an account?',
+      toSignInLink: 'Sign in',
+      guest: 'You can also shop without an account.',
+      sentTitle: 'Check your inbox',
+      sentRegister: 'We have sent a link to {email} to confirm your account. Tapping it signs you in.',
+      sentForgot: 'If there is an account for {email}, a link to choose a new password is on its way.',
+      sentHint: 'If you cannot see it in a few minutes, check your spam folder.',
+      resetExpired: 'The link has expired or was already used. Ask for a new one.',
+      resetAgain: 'Ask for another link',
+      errors: {
+        credentials: 'The email or password does not match.',
+        unconfirmed: 'Confirm your email before signing in: look for the link we sent you.',
+        exists: 'There is already an account with that email. Sign in or reset the password.',
+        weak: 'The password needs at least 8 characters.',
+        rate: 'Too many attempts in a row. Wait a moment and try again.',
+        generic: 'Something went wrong. Please try again.',
+        email: 'That email does not look valid. Please check it.',
+        mail: 'We cannot send you the email right now. Try again later or write to info@petsdrawings.com.',
+        mismatch: 'The two passwords do not match.',
+        privacy: 'To create the account you need to accept the privacy policy.',
+        missing: 'Please check the fields.',
+        link: 'The link is not valid or has expired. Sign in or ask for another one.',
+      },
+    };
+
+// Messages come back from /api/auth/* through a one-time cookie (see middleware).
+const flash = Astro.locals.flash ?? null;
+const errorKey = flash?.error ?? (Astro.url.searchParams.get('error') === 'link' ? 'link' : null);
+const error = errorKey ? (copy.errors[errorKey as keyof typeof copy.errors] ?? copy.errors.generic) : null;
+const sentTo = flash?.sent === (mode === 'register' ? 'register' : 'forgot') ? (flash.email ?? '') : null;
+const email = flash?.email ?? '';
+const fullName = flash?.fullName ?? '';
+const resetReady = mode !== 'reset' || Boolean(Astro.locals.customer);
+
+const [titleTop, titleItalic] = copy.titles[mode];
+const [privacyBefore, privacyAfter] = copy.privacy.split('{link}');
+const nextQuery = next !== accountPath ? `?next=${encodeURIComponent(next)}` : '';
+---
+
+<PublicLayout locale={locale} title={copy.submit[mode]} noindex>
+  <section class="section auth">
+    <div class="site-shell auth__grid">
+      <header class="auth__head">
+        <p class="page-eyebrow">{copy.eyebrow}</p>
+        <h1 class="display auth__title">
+          {titleTop} <em>{titleItalic}</em>
+        </h1>
+        <p class="auth__lead">{copy.leads[mode]}</p>
+        {
+          (mode === 'signIn' || mode === 'register') && (
+            <ul class="auth__perks">
+              {copy.perks.map((perk) => (
+                <li>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3 13 C 6 15, 8 17, 10 20 C 13 13, 17 8, 22 4" />
+                  </svg>
+                  {perk}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </header>
+
+      <div class="paper auth__paper">
+        {
+          sentTo !== null ? (
+            <div class="paper__done" role="status">
+              <svg class="paper__done-mark" viewBox="0 0 52 52" aria-hidden="true">
+                <path d="M6 14h40v26H6z M6 14l20 15 20-15" pathLength="1" />
+              </svg>
+              <h2 class="paper__title">{copy.sentTitle}</h2>
+              <p>{(mode === 'register' ? copy.sentRegister : copy.sentForgot).replace('{email}', sentTo || '…')}</p>
+              <p class="auth__fine">{copy.sentHint}</p>
+            </div>
+          ) : !resetReady ? (
+            <div class="paper__done" role="status">
+              <h2 class="paper__title">{copy.titles.forgot[1]}</h2>
+              <p>{copy.resetExpired}</p>
+              <a class="btn" href={localizedPath(locale, 'accountForgot')}>{copy.resetAgain}</a>
+            </div>
+          ) : (
+            <form class="paper__fields" method="post" action={`/api/auth/${endpoint}/`}>
+              <input type="hidden" name="locale" value={locale} />
+              <input type="hidden" name="next" value={next} />
+              {error && (
+                <p class="paper__status" data-tone="error" role="alert">
+                  {error}
+                </p>
+              )}
+
+              {mode === 'register' && (
+                <label class="field">
+                  <span class="field__label">{copy.name}</span>
+                  <input name="full_name" autocomplete="name" required minlength="2" maxlength="120" value={fullName} />
+                </label>
+              )}
+
+              {mode !== 'reset' && (
+                <label class="field">
+                  <span class="field__label">{copy.email}</span>
+                  <input name="email" type="email" autocomplete="email" required maxlength="254" value={email} />
+                </label>
+              )}
+
+              {(mode === 'signIn' || mode === 'register' || mode === 'reset') && (
+                <label class="field">
+                  <span class="field__label">{mode === 'reset' ? copy.passwordNew : copy.password}</span>
+                  <input
+                    name="password"
+                    type="password"
+                    autocomplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+                    required
+                    minlength={mode === 'signIn' ? undefined : 8}
+                    maxlength="72"
+                  />
+                  {mode !== 'signIn' && <span class="field__hint">{copy.passwordHint}</span>}
+                </label>
+              )}
+
+              {mode === 'reset' && (
+                <label class="field">
+                  <span class="field__label">{copy.passwordRepeat}</span>
+                  <input name="password_repeat" type="password" autocomplete="new-password" required minlength="8" maxlength="72" />
+                </label>
+              )}
+
+              {mode === 'register' && (
+                <label class="auth__check">
+                  <input type="checkbox" name="privacy" value="yes" required />
+                  <span>
+                    {privacyBefore}
+                    <a href={localizedPath(locale, 'privacy')} target="_blank">{copy.privacyLink}</a>
+                    {privacyAfter}
+                  </span>
+                </label>
+              )}
+
+              <div class="paper__actions">
+                <button class="btn" type="submit">{copy.submit[mode]}</button>
+                {mode === 'signIn' && (
+                  <a class="text-link" href={localizedPath(locale, 'accountForgot')}>
+                    {copy.forgotLink}
+                  </a>
+                )}
+              </div>
+            </form>
+          )
+        }
+
+        <footer class="auth__switch">
+          {
+            mode === 'signIn' ? (
+              <p>
+                {copy.toRegister}{' '}
+                <a class="text-link" href={`${localizedPath(locale, 'accountRegister')}${nextQuery}`}>{copy.toRegisterLink}</a>
+              </p>
+            ) : (
+              <p>
+                {copy.toSignIn}{' '}
+                <a class="text-link" href={`${localizedPath(locale, 'accountSignIn')}${nextQuery}`}>{copy.toSignInLink}</a>
+              </p>
+            )
+          }
+          {(mode === 'signIn' || mode === 'register') && <p class="auth__fine">{copy.guest}</p>}
+        </footer>
+      </div>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .auth__grid {
+    display: grid;
+    gap: clamp(2.5rem, 5vw, 4rem);
+    align-items: center;
+  }
+
+  .auth__title {
+    margin: 0 0 1.25rem;
+    font-size: clamp(2.8rem, 6vw, 5.4rem);
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+  }
+
+  .auth__title em {
+    display: block;
+    font-style: italic;
+    color: var(--accent-deep);
+  }
+
+  .auth__lead {
+    margin: 0;
+    max-width: 28rem;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  .auth__perks {
+    list-style: none;
+    margin: 2rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .auth__perks li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+  }
+
+  .auth__perks svg {
+    flex: none;
+    width: 1.2rem;
+    height: 1.2rem;
+    translate: 0 0.2rem;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+  }
+
+  .auth__paper {
+    display: grid;
+    gap: 1.5rem;
+    width: min(100%, 30rem);
+    justify-self: center;
+  }
+
+  .auth__check {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    font-size: 0.95rem;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .auth__check input {
+    accent-color: var(--ink);
+    translate: 0 0.1rem;
+  }
+
+  .auth__switch {
+    display: grid;
+    gap: 0.35rem;
+    padding-top: 1.25rem;
+    border-top: 1px dashed var(--line-strong);
+  }
+
+  .auth__switch p {
+    margin: 0;
+    color: var(--ink-soft);
+  }
+
+  .auth__fine {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+
+  .field__hint {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  @media (min-width: 64rem) {
+    .auth__grid {
+      grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    }
+
+    .auth__paper {
+      justify-self: end;
+    }
+  }
+</style>

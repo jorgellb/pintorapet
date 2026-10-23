@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CartItem } from '@/lib/domain/cart';
+import type { InvoiceCustomer } from '@/lib/domain/checkoutCustomer';
 import { formatEur } from '@/lib/domain/money';
 import { mapPgError } from './pgErrors';
 import { CommerceError } from './errors';
@@ -28,6 +29,9 @@ export interface PersistedQuote {
   priceFingerprint: string;
   configVersion: number;
   shipping: QuoteShipping | null;
+  /** 'no_vat' for Canarias, Ceuta, Melilla and outside the EU: Spanish VAT is taken off. */
+  vatRegime: 'es_vat' | 'no_vat' | null;
+  vatDiscountCents: number;
 }
 
 export interface QuoteShipping {
@@ -51,6 +55,8 @@ type QuoteRow = {
   shipping_postal_code: string | null;
   shipping_zone_name: string | null;
   shipping_weight_grams: number | null;
+  vat_regime?: 'es_vat' | 'no_vat' | null;
+  vat_discount_cents?: number | null;
   lines: Array<{
     product_id: string;
     quantity: number;
@@ -71,6 +77,7 @@ export async function createPersistedQuote(
     items: CartItem[];
     country?: string;
     postalCode?: string;
+    invoice?: InvoiceCustomer;
   },
 ): Promise<PersistedQuote> {
   const p_lines = opts.items.map((item) => ({
@@ -84,6 +91,7 @@ export async function createPersistedQuote(
     p_lines,
     p_country: opts.country?.toUpperCase() ?? null,
     p_postal_code: opts.postalCode || null,
+    p_invoice_customer: opts.invoice ?? null,
   });
 
   if (error) throw mapPgError(error);
@@ -123,6 +131,8 @@ export async function createPersistedQuote(
           weightGrams: row.shipping_weight_grams ?? 0,
         }
       : null,
+    vatRegime: row.vat_regime ?? null,
+    vatDiscountCents: row.vat_discount_cents ?? 0,
   };
 }
 
@@ -141,6 +151,9 @@ export function quotePublicPayload(quote: PersistedQuote) {
     totalFormatted: formatEur(quote.totalCents, quote.locale),
     shippingPending: quote.shipping === null,
     shipping: quote.shipping,
+    vatRegime: quote.vatRegime,
+    vatDiscountCents: quote.vatDiscountCents,
+    vatDiscountFormatted: formatEur(quote.vatDiscountCents, quote.locale),
     expiresAt: quote.expiresAt,
     lines: quote.lines.map((l) => ({
       productId: l.productId,

@@ -15,6 +15,7 @@ export const en = {
     menuOpen: 'Open menu',
     menuClose: 'Close menu',
     skip: 'Skip to content',
+    account: 'Account',
     language: 'Language',
   },
   home: {

@@ -7,6 +7,7 @@ import { createCheckout } from '@/lib/server/commerce/checkout';
 import { checkoutProviders } from '@/lib/server/payments/config';
 import { createServiceClient } from '@/lib/server/supabase';
 import { normalizeCartItems } from '@/lib/domain/cart';
+import { customerSession, loadProfile, saveProfile } from '@/lib/server/account';
 
 export const prerender = false;
 
@@ -53,6 +54,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
 
     const { hash } = ensureCartOwnerHash(cookies);
+    const account = await customerSession(cookies, request);
     const session = await createCheckout(supabase, {
       provider: body.provider,
       quoteId: body.quoteId,
@@ -60,7 +62,29 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       cartOwnerHash: hash,
       locale: body.locale,
       items: body.items ? normalizeCartItems(body.items) : undefined,
+      customer: body.customer,
+      customerId: account?.user.id,
     });
+
+    if (account && body.customer && body.saveToProfile) {
+      // Best effort: a failed profile save never blocks the payment.
+      const profile = await loadProfile(account).catch(() => null);
+      if (profile) {
+        await saveProfile(account, {
+          ...profile,
+          full_name: body.customer.name,
+          phone: body.customer.phone,
+          address: {
+            line1: body.customer.line1,
+            line2: body.customer.line2,
+            city: body.customer.city,
+            state: body.customer.state,
+            postal_code: body.customer.postalCode,
+            country: body.customer.country,
+          },
+        }).catch(() => false);
+      }
+    }
 
     return Response.json({
       url: session.url,

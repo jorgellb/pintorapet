@@ -24,6 +24,17 @@ const { data: settings, error } = await admin.client
   .eq('id', 1)
   .maybeSingle();
 
+// Fiscal details printed on every invoice.
+const { data: invoiceSettings } = await admin.client
+  .from('shop_settings')
+  .select('invoice_config')
+  .eq('id', 1)
+  .maybeSingle();
+const fiscal = (invoiceSettings?.invoice_config ?? {}) as Record<string, string | number | boolean | undefined>;
+const { data: fiscalComplete } = await admin.client.rpc('invoice_config_complete');
+const { data: paidOrders } = await admin.client.from('orders').select('id, invoices(id)').eq('payment_status', 'paid');
+const pendingInvoices = (paidOrders ?? []).filter((o) => !(o.invoices as unknown[] | null)?.length).length;
+
 const services = [
   { name: 'Base de datos con permisos de servidor', ok: hasServiceSupabase(), note: 'Necesaria para pedidos y subidas.' },
   { name: 'Cobros', ok: providers.length > 0, note: providers.length ? `Se cobra con ${providerNames}.` : 'Conecta Stripe o PayPal más arriba.' },
@@ -142,6 +153,80 @@ const feeds = [
       </section>
     </div>
   </div>
+    <form class="panel fiscal" data-fiscal-form>
+      <h2>Datos fiscales</h2>
+      <p class="hint">
+        Aparecen en todas las facturas. Cada pedido pagado genera su factura automáticamente; la
+        clienta puede descargarla desde su cuenta y pedir una completa con su NIF.
+      </p>
+      {
+        !fiscalComplete && (
+          <p class="warn">
+            Los pedidos se cobran, pero la factura queda pendiente hasta que completes estos datos.
+          </p>
+        )
+      }
+      <div class="fiscal__grid">
+        <label>
+          Nombre o razón social
+          <input name="issuerName" value={String(fiscal.issuerName ?? '')} required maxlength="160" />
+        </label>
+        <label>
+          NIF o CIF
+          <input name="issuerNif" value={String(fiscal.issuerNif ?? '')} required maxlength="20" />
+        </label>
+        <label class="fiscal__wide">
+          Dirección
+          <input name="issuerAddress" value={String(fiscal.issuerAddress ?? '')} required maxlength="200" />
+        </label>
+        <label>
+          Código postal
+          <input name="issuerPostalCode" value={String(fiscal.issuerPostalCode ?? '')} required maxlength="12" />
+        </label>
+        <label>
+          Ciudad
+          <input name="issuerCity" value={String(fiscal.issuerCity ?? '')} required maxlength="80" />
+        </label>
+        <label>
+          Tipo de emisor
+          <select name="issuerKind">
+            <option value="autonomo" selected={fiscal.issuerKind !== 'sociedad'}>Autónoma</option>
+            <option value="sociedad" selected={fiscal.issuerKind === 'sociedad'}>Sociedad</option>
+          </select>
+        </label>
+        <label>
+          IVA del envío
+          <select name="shippingVatRate">
+            {[21, 10, 4, 0].map((rate) => (
+              <option value={rate} selected={Number(fiscal.shippingVatRate ?? 21) === rate}>{rate} %</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Serie de simplificadas
+          <input name="simplifiedPrefix" value={String(fiscal.simplifiedPrefix ?? 'S')} maxlength="1" pattern="[A-Z]" />
+        </label>
+        <label>
+          Serie de completas
+          <input name="fullPrefix" value={String(fiscal.fullPrefix ?? 'F')} maxlength="1" pattern="[A-Z]" />
+        </label>
+      </div>
+      <p class="hint">
+        Las series son una letra: S2026-0001, F2026-0001… Cámbialas solo antes de la primera factura del año.
+      </p>
+      <div class="fiscal__actions">
+        <button type="submit">Guardar datos fiscales</button>
+        {
+          pendingInvoices > 0 && (
+            <button type="button" class="btn--quiet" data-issue-pending>
+              Emitir {pendingInvoices} {pendingInvoices === 1 ? 'factura pendiente' : 'facturas pendientes'}
+            </button>
+          )
+        }
+      </div>
+      <p class="status" data-fiscal-status hidden></p>
+    </form>
+
 </AdminLayout>
 
 <style>
@@ -238,6 +323,34 @@ const feeds = [
     font-size: 0.82rem;
   }
 
+  .fiscal {
+    margin-top: 1.25rem;
+  }
+
+  .fiscal__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 0.9rem 1.25rem;
+  }
+
+  .fiscal__wide {
+    grid-column: 1 / -1;
+  }
+
+  .fiscal__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .warn {
+    margin: 0;
+    padding: 0.6rem 0.8rem;
+    border-left: 3px solid var(--a-warn, #b7791f);
+    background: rgb(183 121 31 / 0.08);
+    font-size: 0.92rem;
+  }
+
   @media (max-width: 62rem) {
     .layout {
       grid-template-columns: 1fr;
@@ -273,6 +386,54 @@ const feeds = [
           ? 'Ajustes guardados.'
           : `No se pudieron guardar los ajustes. ${data?.error?.message ?? ''}`;
       }
+    });
+  }
+
+  const fiscal = document.querySelector('[data-fiscal-form]');
+  if (fiscal instanceof HTMLFormElement) {
+    const status = fiscal.querySelector<HTMLElement>('[data-fiscal-status]');
+    const say = (text: string) => {
+      if (!status) return;
+      status.hidden = false;
+      status.textContent = text;
+    };
+    fiscal.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(fiscal);
+      const get = (name: string) => String(fd.get(name) ?? '').trim();
+      say('Guardando…');
+      const res = await fetch('/api/admin/invoices/settings/', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          issuerName: get('issuerName'),
+          issuerNif: get('issuerNif'),
+          issuerAddress: get('issuerAddress'),
+          issuerPostalCode: get('issuerPostalCode'),
+          issuerCity: get('issuerCity'),
+          issuerKind: get('issuerKind'),
+          shippingVatRate: Number(get('shippingVatRate')),
+          simplifiedPrefix: get('simplifiedPrefix').toUpperCase() || 'S',
+          fullPrefix: get('fullPrefix').toUpperCase() || 'F',
+        }),
+      }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      say(
+        res?.ok
+          ? data?.complete
+            ? 'Datos fiscales guardados. Las facturas ya se emiten.'
+            : 'Guardado, pero faltan datos para emitir facturas.'
+          : 'No se pudieron guardar. Revisa el NIF (con su letra) y que las dos series sean distintas.',
+      );
+    });
+    fiscal.querySelector<HTMLButtonElement>('[data-issue-pending]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      say('Emitiendo facturas…');
+      const res = await fetch('/api/admin/invoices/pending/', { method: 'POST' }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      say(res?.ok ? `Emitidas: ${data?.issued ?? 0}.` : 'No se pudieron emitir. Completa primero los datos fiscales.');
+      button.disabled = false;
     });
   }
 

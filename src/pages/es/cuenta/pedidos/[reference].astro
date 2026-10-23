@@ -1,0 +1,7 @@
+---
+import AccountOrderPage from '@/views/AccountOrderPage.astro';
+
+export const prerender = false;
+const { reference } = Astro.params;
+---
+<AccountOrderPage locale="es" reference={reference ?? ''} />
