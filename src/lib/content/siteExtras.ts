@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 export interface SiteExtraAsset {
   id: string;
@@ -38,7 +39,9 @@ async function loadDoc(): Promise<SiteExtrasDoc> {
 }
 
 function withUrl(items: SiteExtraAsset[] | undefined): SiteExtraAsset[] {
-  return (items ?? []).filter((i) => Boolean(i.publicUrl));
+  return (items ?? [])
+    .filter((i) => Boolean(i.publicUrl))
+    .map((item) => ({ ...item, publicUrl: resolveMediaUrl(item.publicUrl) }));
 }
 
 export async function getAboutImages(): Promise<SiteExtraAsset[]> {
@@ -55,5 +58,5 @@ export async function getCommissionExamples(): Promise<SiteExtraAsset[]> {
 
 export async function getLogoUrl(): Promise<string | null> {
   const logo = (await loadDoc()).groups.brand?.find((b) => b.id === 'logo');
-  return logo?.publicUrl ?? null;
+  return logo?.publicUrl ? resolveMediaUrl(logo.publicUrl) : null;
 }

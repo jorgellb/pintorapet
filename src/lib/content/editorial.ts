@@ -1,5 +1,6 @@
 import { getCollection } from 'astro:content';
 import { hasSupabase } from '@/lib/server/env';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 export type WorkCategory = 'dog' | 'cat' | 'horse' | 'other' | 'people';
 export type GalleryGroup = 'people' | 'architecture' | 'illustration' | 'other';
@@ -67,14 +68,26 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 async function worksFromFiles(): Promise<WorkEntry[]> {
   const rows = await getCollection('work');
   return rows
-    .map((entry) => ({ id: entry.data.id, data: entry.data }))
+    .map((entry) => ({
+      id: entry.data.id,
+      data: {
+        ...entry.data,
+        assets: entry.data.assets.map((asset) => ({ ...asset, src: resolveMediaUrl(asset.src) })),
+      },
+    }))
     .sort((a, b) => a.data.order - b.data.order);
 }
 
 async function galleryFromFiles(): Promise<GalleryEntry[]> {
   const rows = await getCollection('gallery');
   return rows
-    .map((entry) => ({ id: entry.data.id, data: entry.data }))
+    .map((entry) => ({
+      id: entry.data.id,
+      data: {
+        ...entry.data,
+        assets: entry.data.assets.map((asset) => ({ ...asset, src: resolveMediaUrl(asset.src) })),
+      },
+    }))
     .sort((a, b) => a.data.order - b.data.order);
 }
 
@@ -110,7 +123,7 @@ function mapWork(row: Record<string, unknown>): WorkEntry | null {
       assets: assets.flatMap((item) => {
         const asset = asRecord(item);
         if (!asset) return [];
-        const src = String(asset.src ?? '');
+        const src = resolveMediaUrl(String(asset.src ?? ''));
         if (!src) return [];
         return [
           {
@@ -146,7 +159,7 @@ function mapGallery(row: Record<string, unknown>): GalleryEntry | null {
       assets: assets.flatMap((item) => {
         const asset = asRecord(item);
         if (!asset) return [];
-        const src = String(asset.src ?? '');
+        const src = resolveMediaUrl(String(asset.src ?? ''));
         if (!src) return [];
         return [
           {

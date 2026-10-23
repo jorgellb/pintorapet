@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Locale } from '@/i18n/routes';
 import type { ProductPublic } from '@/lib/domain/types';
 import { hasSupabase } from '@/lib/server/env';
-import { storagePublicUrl } from '@/lib/server/storageUrl';
+import { resolveMediaUrl, storagePublicUrl } from '@/lib/server/storageUrl';
 
 export type CatalogSource = 'supabase' | 'migration' | 'empty';
 
@@ -39,7 +39,7 @@ async function loadMediaPublicIndex(): Promise<MediaPublicIndex> {
       assets?: Array<{ legacyId: number; publicUrl: string }>;
     };
     for (const a of doc.assets ?? []) {
-      map.set(a.legacyId, a.publicUrl);
+      map.set(a.legacyId, resolveMediaUrl(a.publicUrl));
     }
   } catch {
     // publish-catalog-media not run yet

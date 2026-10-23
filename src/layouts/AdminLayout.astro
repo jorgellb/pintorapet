@@ -1,6 +1,7 @@
 ---
 import '@/styles/global.css';
 import '@/styles/admin.css';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 interface Props {
   title: string;
@@ -8,6 +9,7 @@ interface Props {
 }
 
 const { title, email = null } = Astro.props;
+const logoUrl = resolveMediaUrl('/media/brand/logo.png');
 const path = Astro.url.pathname;
 
 const groups: Array<{ label: string | null; items: Array<{ href: string; label: string }> }> = [
@@ -58,7 +60,7 @@ function isCurrent(href: string): boolean {
           <aside class="side" aria-label="Panel">
             <div class="side__top">
               <a class="side__brand" href="/admin/">
-                <img src="/media/brand/logo.png" alt="" width="48" height="48" />
+                <img src={logoUrl} alt="" width="48" height="48" />
                 <span>
                   <strong>Pets Drawings</strong>
                   <em>Estudio</em>
@@ -108,7 +110,7 @@ function isCurrent(href: string): boolean {
       ) : (
         <main class="solo" id="main">
           <a class="solo__brand" href="/admin/">
-            <img src="/media/brand/logo.png" alt="Pets Drawings" width="96" height="96" />
+            <img src={logoUrl} alt="Pets Drawings" width="96" height="96" />
           </a>
           <slot />
         </main>

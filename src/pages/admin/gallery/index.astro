@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/server/adminAuth';
 import { listGallery } from '@/lib/server/admin/editorial';
 import { hasSupabase } from '@/lib/server/env';
 import { galleryGroupLabel } from '@/lib/admin/labels';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 export const prerender = false;
 
@@ -23,7 +24,7 @@ try {
     sortOrder: row.sort_order,
     published: row.published,
     needsText: !row.summary_es?.trim() && !row.story_es?.trim(),
-    cover: row.cover,
+    cover: resolveMediaUrl(row.cover),
   }));
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'No se pudo leer la galería.';

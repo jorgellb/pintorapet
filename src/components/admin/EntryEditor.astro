@@ -2,6 +2,7 @@
 import SeoFields from '@/components/admin/SeoFields.astro';
 import { galleryGroupLabel, workCategoryLabel } from '@/lib/admin/labels';
 import { siteUrl } from '@/lib/server/env';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 interface MediaOption {
   id: string;
@@ -165,7 +166,7 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
             const value = asset ?? blankAsset;
             const row = (
               <div class="asset" data-asset-row>
-                <img class="asset-thumb" src={value.src || undefined} alt="" data-thumb />
+                <img class="asset-thumb" src={resolveMediaUrl(value.src) || undefined} alt="" data-thumb />
                 <div class="asset-fields">
                   <div class="pair">
                     <label>
