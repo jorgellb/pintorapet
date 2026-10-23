@@ -16,11 +16,11 @@ const logoUrl = await getLogoUrl();
 const brandLabel = `${dict.brand.name} ${dict.brand.byline}`;
 
 const links: { key: RouteKey; label: string }[] = [
+  { key: 'about', label: dict.nav.about },
   { key: 'work', label: dict.nav.work },
   { key: 'gallery', label: dict.nav.gallery },
   { key: 'commissions', label: dict.nav.commissions },
   { key: 'shop', label: dict.nav.shop },
-  { key: 'about', label: dict.nav.about },
   { key: 'contact', label: dict.nav.contact },
 ];
 
