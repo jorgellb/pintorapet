@@ -2,7 +2,7 @@
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import { aboutCopy } from '@/lib/content/seed-copy';
 import { getPageCopy } from '@/lib/content/pages';
-import { getAboutImages } from '@/lib/content/siteExtras';
+import { getAboutImages, getCommissionExamples } from '@/lib/content/siteExtras';
 import type { Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { t } from '@/i18n';
@@ -17,261 +17,880 @@ const dict = t(locale);
 const fallback = aboutCopy[locale];
 const migrated = await getPageCopy('about', locale);
 const images = await getAboutImages();
+const examples = await getCommissionExamples();
 const title = migrated.title ?? fallback.title;
-const paragraphs = migrated.paragraphs.length > 0 ? migrated.paragraphs : fallback.body;
-const lead = paragraphs[0] ?? fallback.lead;
-const chapters = paragraphs.slice(1);
+
+// The migrated page has five paragraphs: greeting, childhood, studio, markets, thanks.
+const paragraphs = migrated.paragraphs.length >= 4 ? migrated.paragraphs : ['', ...fallback.body];
+const [, childhood = '', studio = '', markets = '', thanks = ''] = paragraphs;
 
 const byId = new Map(images.map((image) => [image.id, image.publicUrl]));
 const portrait = byId.get('about-3') ?? images[2]?.publicUrl;
 const desk = byId.get('about-2') ?? images[1]?.publicUrl;
 const market = byId.get('about-1') ?? images[0]?.publicUrl;
 const stall = byId.get('about-4') ?? images[3]?.publicUrl;
+const closeUp = examples.find((e) => e.id === 'kira-sox-drawing')?.publicUrl ?? null;
 
 const alts = {
   portrait: es ? 'Meili en su estudio, con un retrato a lápiz' : 'Meili in her studio, with a pencil portrait',
   desk: es ? 'Meili dibujando un retrato de dos perros' : 'Meili drawing a portrait of two dogs',
   market: es ? 'Meili en su puesto de un mercado' : 'Meili at her market stall',
   stall: es ? 'Puesto de Pets Drawings en un mercado' : 'Pets Drawings stall at a market',
+  closeUp: es ? 'Retrato a lápiz de Kira y Sox' : 'Pencil portrait of Kira and Sox',
 };
+
+const copy = es
+  ? {
+      greetingTop: 'Hola,',
+      greetingBottom: 'soy Meili',
+      plaque: 'Meili en su estudio',
+      plaqueNote: 'con un retrato a lápiz a medias',
+      childhood: 'Desde niña',
+      look: 'Mira de cerca',
+      lookHint: 'Mueve la lupa por el dibujo',
+      studio: 'En el estudio',
+      notes: ['la foto de referencia', 'el retrato, a medias', 'grafito, trazo a trazo'],
+      markets: 'En los mercados',
+      shopLink: 'Ver la tienda',
+      invite: '¿Dibujamos a tu compañero?',
+    }
+  : {
+      greetingTop: 'Hello,',
+      greetingBottom: 'I’m Meili',
+      plaque: 'Meili in her studio',
+      plaqueNote: 'with a pencil portrait in progress',
+      childhood: 'Since childhood',
+      look: 'Look closer',
+      lookHint: 'Move the loupe across the drawing',
+      studio: 'In the studio',
+      notes: ['the reference photo', 'the portrait, halfway', 'graphite, stroke by stroke'],
+      markets: 'At the markets',
+      shopLink: 'Visit the shop',
+      invite: 'Shall we draw your companion?',
+    };
+
+// Set the final words of the childhood paragraph apart: they are the point of her work.
+const gazePhrase = es ? 'en su mirada' : 'through their eyes';
+const gazeAt = childhood.lastIndexOf(gazePhrase);
+const childhoodParts =
+  gazeAt > 0
+    ? [childhood.slice(0, gazeAt), gazePhrase, childhood.slice(gazeAt + gazePhrase.length)]
+    : [childhood, '', ''];
+
+const leadWords = fallback.lead.split(' ');
 ---
 
-<PublicLayout locale={locale} title={title} description={lead}>
-  <article class="about">
-    <header class="about__hero">
-      <div class="site-shell about__hero-grid">
-        <p class="about__eyebrow">Meili Stringfellow</p>
-        <h1 class="display about__title">{title}</h1>
-        <div class="about__intro">
-          <p class="about__lead">{lead}</p>
-          {chapters[0] && <p>{chapters[0]}</p>}
+<PublicLayout locale={locale} title={title} description={fallback.lead} image={portrait}>
+  <article class="about" data-about>
+    <svg class="trail" data-trail aria-hidden="true" focusable="false">
+      <path class="trail__line" data-trail-path></path>
+    </svg>
+    <svg class="pencil" data-pencil viewBox="0 0 64 16" aria-hidden="true" focusable="false">
+      <path class="pencil__body" d="M14 3 H58 a3 3 0 0 1 3 3 V10 a3 3 0 0 1 -3 3 H14 Z"></path>
+      <path class="pencil__band" d="M50 3 V13"></path>
+      <path class="pencil__wood" d="M14 3 L2 8 L14 13 Z"></path>
+      <path class="pencil__lead" d="M6 6.3 L2 8 L6 9.7 Z"></path>
+    </svg>
+
+    <!-- ——— Hero: a photograph that is still a drawing ——— -->
+    <header class="hero">
+      <span class="trail-point" data-trail-point style="left: 58%; top: 92%"></span>
+      <div class="site-shell hero__grid">
+        <div class="hero__copy">
+          <p class="eyebrow">{title} · Meili Stringfellow</p>
+          <h1 class="display hero__title">
+            <span class="hero__line">{copy.greetingTop}</span>
+            <span class="hero__line hero__line--italic">{copy.greetingBottom}</span>
+          </h1>
+          <p class="hero__lead">
+            {
+              leadWords.map((word, i) => (
+                <span class="word" style={`--w:${i}`}>
+                  {word}{' '}
+                </span>
+              ))
+            }
+          </p>
         </div>
+
         {
           portrait && (
-            <figure class="about__figure about__portrait">
-              <img src={portrait} alt={alts.portrait} width="1080" height="1080" fetchpriority="high" decoding="async" />
+            <figure class="about__figure hero__portrait">
+              <div class="hero__sheet">
+                <img
+                  class="hero__photo"
+                  src={portrait}
+                  alt={alts.portrait}
+                  width="1007"
+                  height="1080"
+                  fetchpriority="high"
+                  decoding="async"
+                />
+              </div>
+              <figcaption class="plaque">
+                <span class="plaque__label">{copy.plaque}</span>
+                <span>{copy.plaqueNote}</span>
+              </figcaption>
             </figure>
           )
         }
       </div>
     </header>
 
+    <!-- ——— Since childhood: the gaze, seen through a loupe ——— -->
+    <section class="chapter gaze" aria-labelledby="gaze-title">
+      <span class="trail-point" data-trail-point style="left: 42%; top: 6%"></span>
+      <span class="trail-point" data-trail-point style="left: 44%; top: 97%"></span>
+      <div class="site-shell gaze__grid">
+        <div class="gaze__copy" data-reveal>
+          <h2 id="gaze-title" class="chapter__title display">{copy.childhood}</h2>
+          <p class="gaze__text">
+            {childhoodParts[0]}
+            {childhoodParts[1] && <em>{childhoodParts[1]}</em>}
+            {childhoodParts[2]}
+          </p>
+        </div>
+
+        {
+          closeUp && (
+            <figure class="gaze__art" data-reveal>
+              <div class="loupe-stage" data-loupe data-src={closeUp}>
+                <img src={closeUp} alt={alts.closeUp} loading="lazy" decoding="async" />
+                <span class="loupe" data-loupe-lens aria-hidden="true">
+                  <span class="loupe__glass"></span>
+                  <span class="loupe__handle"></span>
+                </span>
+              </div>
+              <figcaption class="plaque">
+                <span class="plaque__label">{copy.look}</span>
+                <span>{copy.lookHint}</span>
+              </figcaption>
+            </figure>
+          )
+        }
+      </div>
+    </section>
+
+    <!-- ——— In the studio: annotated, like a page in a sketchbook ——— -->
     {
       desk && (
-        <section class="about__studio" aria-labelledby="about-studio">
-          <div class="site-shell about__studio-grid">
-            <figure class="about__figure about__desk">
-              <img src={desk} alt={alts.desk} loading="lazy" decoding="async" />
+        <section class="chapter studio" aria-labelledby="studio-title">
+          <span class="trail-point" data-trail-point style="left: 99%; top: 45%" />
+          <span class="trail-point" data-trail-point style="left: 97%; top: 100%" />
+          <div class="site-shell studio__grid">
+            <figure class="about__figure studio__photo" data-reveal data-notes>
+              <div class="studio__frame">
+                <img src={desk} alt={alts.desk} loading="lazy" decoding="async" width="1565" height="1080" />
+                <svg class="notes" viewBox="0 0 1000 690" preserveAspectRatio="none" aria-hidden="true">
+                  <path pathLength="1" d="M100 180 C 60 300, 60 400, 110 530" />
+                  <path pathLength="1" d="M110 530 l -22 -34 M110 530 l 32 -22" />
+                  <path pathLength="1" d="M270 220 C 340 340, 300 440, 360 580" />
+                  <path pathLength="1" d="M360 580 l -28 -26 M360 580 l 26 -29" />
+                  <path class="notes__ink" pathLength="1" d="M640 760 C 600 720, 572 640, 552 520" />
+                  <path class="notes__ink" pathLength="1" d="M552 520 l -20 28 M552 520 l 26 22" />
+                </svg>
+                <span class="note note--1">{copy.notes[0]}</span>
+                <span class="note note--2">{copy.notes[1]}</span>
+                <span class="note note--3">{copy.notes[2]}</span>
+              </div>
             </figure>
-            <div class="about__copy">
-              <h2 id="about-studio" class="display about__h2">{es ? 'En el estudio' : 'In the studio'}</h2>
-              {chapters[1] && <p>{chapters[1]}</p>}
+            <div class="studio__copy" data-reveal>
+              <h2 id="studio-title" class="chapter__title display">{copy.studio}</h2>
+              <p>{studio}</p>
             </div>
           </div>
         </section>
       )
     }
 
-    <section class="about__markets" aria-labelledby="about-markets">
-      <div class="site-shell about__markets-grid">
-        <div class="about__copy">
-          <h2 id="about-markets" class="display about__h2">{es ? 'En los mercados' : 'At the markets'}</h2>
-          {chapters[2] && <p>{chapters[2]}</p>}
-          {chapters.slice(3).map((text) => <p>{text}</p>)}
+    <!-- ——— At the markets: snapshots that drift as you pass ——— -->
+    <section class="chapter markets" aria-labelledby="markets-title">
+      <span class="trail-point" data-trail-point style="left: 1.5%; top: 6%"></span>
+      <span class="trail-point" data-trail-point style="left: 1.5%; top: 88%"></span>
+      <div class="site-shell markets__grid">
+        <div class="markets__copy" data-reveal>
+          <h2 id="markets-title" class="chapter__title display">{copy.markets}</h2>
+          <p>{markets}</p>
+          <a class="text-link" href={localizedPath(locale, 'shop')}>{copy.shopLink}</a>
         </div>
-        {
-          market && (
-            <figure class="about__figure about__market">
-              <img src={market} alt={alts.market} loading="lazy" decoding="async" />
-            </figure>
-          )
-        }
-        {
-          stall && (
-            <figure class="about__figure about__stall">
-              <img src={stall} alt={alts.stall} loading="lazy" decoding="async" />
-            </figure>
-          )
-        }
+        <div class="markets__photos">
+          {
+            market && (
+              <figure class="about__figure snapshot snapshot--a" data-drift="-0.06">
+                <img src={market} alt={alts.market} loading="lazy" decoding="async" />
+              </figure>
+            )
+          }
+          {
+            stall && (
+              <figure class="about__figure snapshot snapshot--b" data-drift="0.08">
+                <img src={stall} alt={alts.stall} loading="lazy" decoding="async" />
+              </figure>
+            )
+          }
+        </div>
       </div>
     </section>
 
-    <section class="about__close">
-      <div class="site-shell">
-        <p class="display about__invite">
-          {es ? '¿Dibujamos a tu compañero?' : 'Shall we draw your companion?'}
-        </p>
-        <p class="about__links">
+    <!-- ——— Close: the pencil line ends under the invitation ——— -->
+    <section class="close" aria-labelledby="close-title">
+      <div class="site-shell close__inner">
+        {thanks && <p class="close__thanks" data-reveal>{thanks}</p>}
+        <h2 id="close-title" class="display close__title">
+          <span class="close__words">{copy.invite}</span>
+          <span class="close__anchor">
+            <span class="trail-point" data-trail-point style="left: -22%; top: -0.9em"></span>
+            <span class="trail-point" data-trail-point style="left: 6%; top: 0"></span>
+            <span class="trail-point" data-trail-point style="left: 94%; top: 0"></span>
+          </span>
+        </h2>
+        <p class="close__links">
           <a class="btn" href={localizedPath(locale, 'commissions')}>{dict.home.ctaCommission}</a>
           <a class="btn btn--ghost" href={localizedPath(locale, 'work')}>{dict.nav.work}</a>
-          <a class="btn btn--ghost" href={localizedPath(locale, 'shop')}>{dict.nav.shop}</a>
+          <a class="btn btn--ghost" href={localizedPath(locale, 'contact')}>{dict.nav.contact}</a>
         </p>
       </div>
     </section>
+
   </article>
 </PublicLayout>
 
 <style>
-  .about__hero {
-    padding-bottom: clamp(2rem, 5vw, 4rem);
+  .about {
+    position: relative;
+    isolation: isolate;
+    overflow-x: clip;
   }
 
-  .about__hero-grid {
-    display: grid;
-    gap: 1rem 2rem;
-  }
-
-  .about__eyebrow {
-    margin: 0;
-    font-size: 0.78rem;
+  .eyebrow {
+    margin: 0 0 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.75rem;
     font-weight: 500;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--muted);
+    animation: rise 1s var(--ease-out) 0.1s both;
   }
 
-  .about__eyebrow::before {
+  .eyebrow::before {
     content: '';
-    display: inline-block;
-    width: 2rem;
+    width: 2.25rem;
     height: 1px;
-    margin-right: 0.7rem;
-    vertical-align: middle;
     background: currentColor;
   }
 
-  .about__title {
-    margin: 0;
-    font-size: clamp(4.2rem, 12vw, 9rem);
-    line-height: 0.86;
-    letter-spacing: -0.055em;
+  .plaque {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.2rem 0.75rem;
+    margin-top: 1.1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.9rem;
+    color: var(--muted);
   }
 
-  .about__intro {
-    display: grid;
-    gap: 1rem;
-    max-width: 34rem;
-  }
-
-  .about__intro p {
-    margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.65;
-    color: var(--ink-soft);
-  }
-
-  .about__lead {
+  .plaque__label {
     font-family: var(--font-display);
     font-style: italic;
-    font-size: clamp(1.35rem, 2.2vw, 1.7rem);
-    line-height: 1.35;
+    font-size: 1.1rem;
     color: var(--ink);
+  }
+
+  .text-link {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 0.35em;
+  }
+
+  .text-link:hover {
+    color: var(--ink);
+    text-decoration-color: var(--ink);
   }
 
   .about__figure {
     margin: 0;
   }
 
-  .about__figure img {
-    display: block;
+  /* ——— The pencil line that follows the reader ——— */
+  .trail {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    padding: 0.55rem;
-    background: #fff;
+    overflow: visible;
+    pointer-events: none;
   }
 
-  .about__portrait {
-    rotate: -2.5deg;
-    animation: settle 1.1s var(--ease-out) both;
+  .trail__line {
+    fill: none;
+    stroke: var(--ink-soft);
+    stroke-opacity: 0.38;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
-  .about__portrait img {
-    aspect-ratio: 4 / 5;
-    object-position: 50% 20%;
+  .pencil {
+    position: absolute;
+    z-index: 0;
+    top: 0;
+    left: 0;
+    width: 3.4rem;
+    height: auto;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0;
+    transform-origin: 2px 50%;
+    transition: opacity 400ms var(--ease-out);
+    filter: drop-shadow(0 4px 6px rgb(22 23 26 / 0.18));
   }
 
-  .about__studio {
-    background: var(--paper-deep);
-    padding-block: clamp(3rem, 7vw, 6rem);
+  .pencil.is-on {
+    opacity: 1;
   }
 
-  .about__studio-grid,
-  .about__markets-grid {
+  .pencil__body {
+    fill: #f4d57c;
+    stroke: var(--ink);
+    stroke-width: 0.9;
+  }
+
+  .pencil__band {
+    stroke: var(--ink);
+    stroke-width: 0.9;
+  }
+
+  .pencil__wood {
+    fill: #f1dcc0;
+    stroke: var(--ink);
+    stroke-width: 0.9;
+    stroke-linejoin: round;
+  }
+
+  .pencil__lead {
+    fill: var(--ink);
+  }
+
+  .trail-point {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
+  .hero,
+  .chapter,
+  .close {
+    position: relative;
+  }
+
+  .hero > .site-shell,
+  .chapter > .site-shell,
+  .close > .site-shell {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ——— Hero ——— */
+  .hero {
+    padding-block: clamp(1rem, 3vw, 2.5rem) clamp(4rem, 9vw, 8rem);
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: -10% 0 0;
+    background: radial-gradient(ellipse 40% 55% at 70% 45%, #fff 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero__grid {
     display: grid;
-    gap: clamp(1.5rem, 4vw, 3.5rem);
+    gap: clamp(2.5rem, 5vw, 4rem);
     align-items: center;
   }
 
-  .about__desk {
-    rotate: 1.5deg;
-  }
-
-  .about__desk img {
-    aspect-ratio: 5 / 4;
-    object-position: 60% 50%;
-  }
-
-  .about__copy {
+  .hero__title {
+    margin: 0 0 1.75rem;
     display: grid;
-    gap: 1rem;
   }
 
-  .about__h2 {
+  .hero__line {
+    font-size: clamp(3.6rem, 10vw, 9.5rem);
+    line-height: 0.9;
+    letter-spacing: -0.055em;
+    animation: rise 1.3s var(--ease-out) 0.25s both;
+  }
+
+  .hero__line--italic {
+    padding-left: 0.5em;
+    font-style: italic;
+    color: var(--accent-deep);
+    animation-delay: 0.7s;
+  }
+
+  .hero__lead {
     margin: 0;
-    font-size: clamp(2.4rem, 5vw, 4.2rem);
+    max-width: 28rem;
+    font-size: clamp(1.1rem, 1.3vw, 1.3rem);
+    line-height: 1.55;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .word {
+    display: inline-block;
+    white-space: pre;
+    animation: ink-in 900ms var(--ease-out) both;
+    animation-delay: calc(1.3s + var(--w) * 70ms);
+  }
+
+  .hero__portrait {
+    position: relative;
+    justify-self: center;
+    width: min(100%, 31rem);
+    animation: drop 1.2s cubic-bezier(0.2, 0.9, 0.25, 1.1) 0.2s both;
+  }
+
+  .hero__sheet {
+    position: relative;
+    background: var(--sheet);
+    padding: clamp(0.5rem, 1.2vw, 0.9rem);
+    box-shadow: var(--shadow-art);
+    rotate: -1.8deg;
+  }
+
+  .hero__sheet::before {
+    content: '';
+    position: absolute;
+    z-index: 3;
+    top: -0.8rem;
+    left: 50%;
+    width: 36%;
+    height: 1.5rem;
+    translate: -50% 0;
+    rotate: 2.5deg;
+    background: rgb(214 220 232 / 0.8);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+  }
+
+  .hero__photo {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    object-position: 45% 30%;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  @media (min-width: 64rem) {
+    .hero {
+      min-height: calc(100svh - 12rem);
+      display: grid;
+      align-items: center;
+    }
+
+    .hero__grid {
+      grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    }
+
+    .hero__portrait {
+      justify-self: end;
+      width: min(100%, 27rem);
+    }
+  }
+
+  /* ——— Chapters ——— */
+  .chapter {
+    padding-block: clamp(4.5rem, 10vw, 9rem);
+  }
+
+  .chapter__title {
+    margin: 0 0 1.5rem;
+    font-size: clamp(2.6rem, 5.5vw, 5rem);
     line-height: 0.95;
     letter-spacing: -0.045em;
   }
 
-  .about__copy p {
+  .chapter p {
     margin: 0;
     max-width: 36rem;
-    font-size: 1.08rem;
-    line-height: 1.65;
+    font-size: 1.1rem;
+    line-height: 1.7;
     color: var(--ink-soft);
     white-space: pre-line;
+    text-wrap: pretty;
   }
 
-  .about__markets {
-    padding-block: clamp(3rem, 8vw, 7rem);
+  /* Gaze */
+  .gaze::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background: var(--paper-deep);
   }
 
-  .about__market,
-  .about__stall {
-    animation: settle 1.1s var(--ease-out) both;
+  .gaze__grid {
+    display: grid;
+    gap: clamp(3rem, 6vw, 5rem);
+    align-items: center;
   }
 
-  .about__market {
+  .chapter .gaze__text {
+    font-family: var(--font-display);
+    font-size: clamp(1.45rem, 2.4vw, 2.1rem);
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    max-width: 30rem;
+  }
+
+  .gaze__text em {
+    color: var(--accent-deep);
+    background: linear-gradient(transparent 62%, rgb(214 220 232 / 0.9) 62%, rgb(214 220 232 / 0.9) 92%, transparent 92%);
+  }
+
+  .gaze__art {
+    margin: 0;
+  }
+
+  .loupe-stage {
+    --lx: 24%;
+    --ly: 40%;
+    --zoom: 2.6;
+    position: relative;
+    background: var(--sheet);
+    padding: clamp(0.5rem, 1vw, 0.8rem);
+    box-shadow: var(--shadow-art);
+    rotate: 1deg;
+    cursor: none;
+    touch-action: pan-y;
+  }
+
+  .loupe-stage img {
+    width: 100%;
+    height: auto;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  .loupe {
+    --size: clamp(8rem, 17vw, 12rem);
+    position: absolute;
+    left: var(--lx);
+    top: var(--ly);
+    width: var(--size);
+    height: var(--size);
+    translate: -50% -50%;
+    pointer-events: none;
+    transition:
+      left 120ms linear,
+      top 120ms linear;
+  }
+
+  .loupe__glass {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background-image: var(--src);
+    background-repeat: no-repeat;
+    background-color: var(--sheet);
+    background-size: var(--bg-w, 0) var(--bg-h, 0);
+    background-position: var(--bg-x, 0) var(--bg-y, 0);
+    box-shadow:
+      0 0 0 3px var(--ink),
+      0 0 0 6px var(--sheet),
+      0 0 0 7px var(--line-strong),
+      0 18px 40px -12px rgb(22 23 26 / 0.45),
+      inset 0 0 22px rgb(22 23 26 / 0.18);
+  }
+
+  .loupe__glass::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, rgb(255 255 255 / 0.55), transparent 38%);
+  }
+
+  .loupe__handle {
+    position: absolute;
+    left: 86%;
+    top: 86%;
+    width: 0.85rem;
+    height: calc(var(--size) * 0.5);
+    border-radius: 0.5rem;
+    background: linear-gradient(90deg, #2c3854, #3f4f73 45%, #2c3854);
+    transform-origin: 50% 0;
+    rotate: -45deg;
+    box-shadow: 0 10px 18px -6px rgb(22 23 26 / 0.4);
+  }
+
+  @media (min-width: 64rem) {
+    .gaze__grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    }
+  }
+
+  /* Studio */
+  .studio__grid {
+    display: grid;
+    gap: clamp(3rem, 6vw, 5rem);
+    align-items: center;
+  }
+
+  .studio__frame {
+    position: relative;
+    background: var(--sheet);
+    padding: clamp(0.5rem, 1vw, 0.8rem);
+    box-shadow: var(--shadow-art);
+    rotate: -0.8deg;
+    margin-bottom: 3.5rem;
+  }
+
+  .studio__frame img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1565 / 1080;
+    object-fit: cover;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  .notes {
+    position: absolute;
+    inset: clamp(0.5rem, 1vw, 0.8rem);
+    width: calc(100% - 2 * clamp(0.5rem, 1vw, 0.8rem));
+    height: calc(100% - 2 * clamp(0.5rem, 1vw, 0.8rem));
+    overflow: visible;
+    fill: none;
+    stroke: var(--sheet);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 1px 1.5px rgb(22 23 26 / 0.55));
+  }
+
+  /* below the photo the paper is light, so that arrow is drawn in graphite */
+  .notes .notes__ink {
+    stroke: var(--ink-soft);
+  }
+
+  .notes path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+
+  .note {
+    position: absolute;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(0.95rem, 1.6vw, 1.35rem);
+    line-height: 1.1;
+    color: var(--ink);
+    white-space: nowrap;
+    opacity: 0;
+    translate: 0 0.4rem;
+    transition:
+      opacity 600ms var(--ease-out),
+      translate 600ms var(--ease-out);
+  }
+
+  .note--1,
+  .note--2 {
+    padding: 0.2rem 0.55rem;
+    background: rgb(255 255 255 / 0.82);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12);
+  }
+
+  .note--1 {
+    left: 3%;
+    top: 12%;
     rotate: -3deg;
   }
 
-  .about__stall {
-    rotate: 2.5deg;
-    animation-delay: 0.15s;
+  .note--2 {
+    left: 20%;
+    top: 21%;
+    rotate: 2deg;
   }
 
-  .about__market img,
-  .about__stall img {
-    aspect-ratio: 4 / 5;
-    object-position: 50% 40%;
+  /* below the photo, pointing up at the pencil */
+  .note--3 {
+    left: 66%;
+    top: calc(100% + 0.4rem);
+    rotate: -1.5deg;
   }
 
-  .about__close {
-    padding-bottom: clamp(4rem, 8vw, 7rem);
+  .studio__photo.is-visible .notes path {
+    animation: ink 900ms var(--ease-out) forwards;
+  }
+
+  .studio__photo.is-visible .notes path:nth-child(2n) {
+    animation-duration: 300ms;
+  }
+
+  .studio__photo.is-visible .notes path:nth-child(1) { animation-delay: 500ms; }
+  .studio__photo.is-visible .notes path:nth-child(2) { animation-delay: 1350ms; }
+  .studio__photo.is-visible .notes path:nth-child(3) { animation-delay: 1100ms; }
+  .studio__photo.is-visible .notes path:nth-child(4) { animation-delay: 1950ms; }
+  .studio__photo.is-visible .notes path:nth-child(5) { animation-delay: 1700ms; }
+  .studio__photo.is-visible .notes path:nth-child(6) { animation-delay: 2550ms; }
+
+  .studio__photo.is-visible .note {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  .studio__photo.is-visible .note--1 { transition-delay: 300ms; }
+  .studio__photo.is-visible .note--2 { transition-delay: 900ms; }
+  .studio__photo.is-visible .note--3 { transition-delay: 1500ms; }
+
+  @media (max-width: 39.99rem) {
+    .note--2 {
+      left: 24%;
+      top: 25%;
+    }
+
+    .note--3 {
+      left: auto;
+      right: 0;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .studio__grid {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+    }
+  }
+
+  /* Markets */
+  .markets__grid {
+    display: grid;
+    gap: clamp(3rem, 6vw, 5rem);
+    align-items: center;
+  }
+
+  .markets__copy {
+    display: grid;
+    gap: 1.5rem;
+    justify-items: start;
+  }
+
+  .markets__copy .chapter__title {
+    margin-bottom: 0;
+  }
+
+  .markets__photos {
+    position: relative;
+    min-height: clamp(24rem, 62vw, 40rem);
+  }
+
+  .snapshot {
+    position: absolute;
+    width: 62%;
+    padding: 0.7rem 0.7rem 2.6rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    translate: 0 var(--drift, 0px);
+    will-change: translate;
+  }
+
+  .snapshot img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  .snapshot::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: -0.65rem;
+    left: 50%;
+    width: 38%;
+    height: 1.35rem;
+    translate: -50% 0;
+    rotate: -3deg;
+    background: rgb(214 220 232 / 0.8);
+  }
+
+  .snapshot--a {
+    left: 0;
+    top: 4%;
+    rotate: -5deg;
+  }
+
+  .snapshot--b {
+    right: 0;
+    top: 30%;
+    width: 50%;
+    rotate: 4deg;
+    z-index: 2;
+  }
+
+  .snapshot--b img {
+    aspect-ratio: 3 / 4;
+  }
+
+  @media (min-width: 64rem) {
+    .markets__grid {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
+    }
+  }
+
+  /* ——— Close ——— */
+  .close {
+    padding-block: clamp(4rem, 9vw, 8rem) clamp(5rem, 10vw, 9rem);
     text-align: center;
   }
 
-  .about__invite {
-    margin: 0 auto 1.5rem;
-    max-width: 16ch;
-    font-size: clamp(2.4rem, 5vw, 4rem);
-    line-height: 0.95;
-    letter-spacing: -0.04em;
-    font-style: italic;
+  .close__inner {
+    display: grid;
+    justify-items: center;
   }
 
-  .about__links {
+  .close__thanks {
+    margin: 0 0 2rem;
+    max-width: 34rem;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+    text-wrap: balance;
+  }
+
+  .close__title {
+    position: relative;
+    margin: 0 0 3.5rem;
+    max-width: 14ch;
+    font-size: clamp(2.8rem, 7vw, 6.5rem);
+    font-style: italic;
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+  }
+
+  .close__anchor {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -0.3em;
+    height: 0;
+  }
+
+  .close__links {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -279,82 +898,232 @@ const alts = {
     margin: 0;
   }
 
-  @keyframes settle {
+  /* ——— Reveal on read (only once the script runs) ——— */
+  .about.is-live [data-reveal] {
+    opacity: 0;
+    translate: 0 1.25rem;
+    filter: blur(6px);
+    transition:
+      opacity 1s var(--ease-out),
+      translate 1s var(--ease-out),
+      filter 1s var(--ease-out);
+  }
+
+  .about.is-live [data-reveal].is-visible {
+    opacity: 1;
+    translate: 0 0;
+    filter: none;
+  }
+
+  @keyframes rise {
     from {
       opacity: 0;
-      transform: translateY(18px) rotate(-6deg);
+      transform: translateY(0.35em);
     }
-    to {
+  }
+
+  @keyframes ink-in {
+    from {
+      opacity: 0;
+      filter: blur(5px);
+      transform: translateY(0.3em);
+    }
+  }
+
+  @keyframes drop {
+    from {
+      opacity: 0;
+      transform: translateY(-60px) rotate(-6deg) scale(1.06);
+    }
+    55% {
       opacity: 1;
-      transform: none;
     }
   }
 
-  @media (max-width: 63.99rem) {
-    .about__portrait {
-      margin-top: 0.5rem;
-    }
-
-    .about__stall {
-      margin-top: -1.5rem;
-      margin-left: 12%;
-      width: 78%;
-    }
-  }
-
-  @media (min-width: 64rem) {
-    .about__hero-grid {
-      grid-template-columns: 1.1fr 0.9fr;
-      grid-template-rows: auto auto 1fr;
-      align-items: end;
-      min-height: 70svh;
-    }
-
-    .about__eyebrow {
-      grid-column: 1;
-      grid-row: 1;
-    }
-
-    .about__title {
-      grid-column: 1;
-      grid-row: 2;
-    }
-
-    .about__intro {
-      grid-column: 1;
-      grid-row: 3;
-      align-self: start;
-      margin-top: 1.5rem;
-    }
-
-    .about__portrait {
-      grid-column: 2;
-      grid-row: 1 / -1;
-      align-self: center;
-      width: min(100%, 28rem);
-      justify-self: end;
-      margin-top: -1rem;
-    }
-
-    .about__studio-grid {
-      grid-template-columns: 1.15fr 0.85fr;
-    }
-
-    .about__markets-grid {
-      grid-template-columns: 0.8fr 1fr 0.85fr;
-      align-items: end;
-    }
-
-    .about__market {
-      margin-bottom: 3rem;
+  @keyframes ink {
+    to {
+      stroke-dashoffset: 0;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .about__portrait,
-    .about__market,
-    .about__stall {
-      animation: none;
+    .about.is-live [data-reveal] {
+      opacity: 1;
+      translate: none;
+      filter: none;
+    }
+
+    .notes path {
+      stroke-dashoffset: 0;
+    }
+
+    .note {
+      opacity: 1;
+      translate: none;
+    }
+
+    .snapshot {
+      translate: none;
     }
   }
 </style>
+
+<script>
+  const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const article = document.querySelector<HTMLElement>('[data-about]');
+
+  /* ——— Reveal chapters as they are read ——— */
+  if (article && 'IntersectionObserver' in window) {
+    article.classList.add('is-live');
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add('is-visible');
+          io.unobserve(entry.target);
+        }
+      },
+      { rootMargin: '0px 0px -12% 0px', threshold: 0.15 },
+    );
+    article.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el));
+  }
+
+  /* ——— Loupe over the graphite ——— */
+  const stage = document.querySelector<HTMLElement>('[data-loupe]');
+  const glass = stage?.querySelector<HTMLElement>('.loupe__glass');
+  const stageImg = stage?.querySelector<HTMLImageElement>('img');
+  if (stage && glass && stageImg) {
+    stage.style.setProperty('--src', `url("${stage.dataset.src}")`);
+
+    const place = (px: number, py: number) => {
+      const img = stageImg.getBoundingClientRect();
+      const box = stage.getBoundingClientRect();
+      const zoom = Number(getComputedStyle(stage).getPropertyValue('--zoom')) || 2.6;
+      const lens = glass.getBoundingClientRect().width || 160;
+      // keep the lens on the drawing
+      const x = Math.min(Math.max(px, img.left), img.right);
+      const y = Math.min(Math.max(py, img.top), img.bottom);
+      stage.style.setProperty('--lx', `${x - box.left}px`);
+      stage.style.setProperty('--ly', `${y - box.top}px`);
+      stage.style.setProperty('--bg-w', `${img.width * zoom}px`);
+      stage.style.setProperty('--bg-h', `${img.height * zoom}px`);
+      stage.style.setProperty('--bg-x', `${-((x - img.left) * zoom - lens / 2)}px`);
+      stage.style.setProperty('--bg-y', `${-((y - img.top) * zoom - lens / 2)}px`);
+    };
+
+    const rest = () => {
+      const img = stageImg.getBoundingClientRect();
+      place(img.left + img.width * 0.24, img.top + img.height * 0.4);
+    };
+
+    stage.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse' && e.pressure === 0) return;
+      place(e.clientX, e.clientY);
+    });
+    stage.addEventListener('pointerdown', (e) => place(e.clientX, e.clientY));
+    stage.addEventListener('pointerleave', rest);
+    if (stageImg.complete) rest();
+    else stageImg.addEventListener('load', rest, { once: true });
+    window.addEventListener('resize', rest);
+  }
+
+  /* ——— Pencil line drawn as the page is read ——— */
+  const trail = document.querySelector<SVGSVGElement>('[data-trail]');
+  const path = trail?.querySelector<SVGPathElement>('[data-trail-path]');
+  const pencil = document.querySelector<SVGSVGElement>('[data-pencil]');
+  if (article && trail && path && pencil) {
+    let length = 0;
+    let samples: { len: number; y: number }[] = [];
+    let ticking = 0;
+
+    // Smooth curve through the anchor points (Catmull-Rom to Bézier).
+    const build = () => {
+      const box = article.getBoundingClientRect();
+      const points = [...article.querySelectorAll<HTMLElement>('[data-trail-point]')]
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.left - box.left, y: r.top - box.top };
+        })
+        .sort((a, b) => a.y - b.y);
+      if (points.length < 2) return;
+      trail.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+      let d = `M${points[0].x},${points[0].y}`;
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i - 1] ?? points[i];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[i + 2] ?? p2;
+        const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+        const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+        d += ` C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`;
+      }
+      path.setAttribute('d', d);
+      length = path.getTotalLength();
+      path.style.strokeDasharray = `${length}`;
+      samples = Array.from({ length: 241 }, (_, i) => {
+        const len = (length * i) / 240;
+        return { len, y: path.getPointAtLength(len).y };
+      });
+      update();
+    };
+
+    // The pencil sits where the line meets 62% of the viewport height. The
+    // final underline is level, so it is drawn by the scroll that follows.
+    const lengthAtY = (y: number) => {
+      const lastY = samples[samples.length - 1]?.y ?? 0;
+      const underline = samples.find((sample) => sample.y >= lastY - 3)?.len ?? length;
+      if (y >= lastY - 3) return Math.min(length, underline + (y - (lastY - 3)) * 3);
+      let best = 0;
+      for (const sample of samples) {
+        if (sample.y <= y) best = Math.max(best, sample.len);
+      }
+      return Math.min(best, underline);
+    };
+
+    const update = () => {
+      ticking = 0;
+      if (!length) return;
+      if (calm.matches) {
+        path.style.strokeDashoffset = '0';
+        pencil.classList.remove('is-on');
+        return;
+      }
+      const top = article.getBoundingClientRect().top;
+      const len = lengthAtY(window.innerHeight * 0.62 - top);
+      path.style.strokeDashoffset = `${length - len}`;
+      // Held like a pencil in the hand: tip down and to the left, leaning a
+      // little with the direction of the stroke.
+      const at = path.getPointAtLength(len);
+      const behind = path.getPointAtLength(Math.max(0, len - 6));
+      const lean = Math.max(-12, Math.min(12, (at.x - behind.x) * 2));
+      pencil.style.transform = `translate(${at.x - 2}px, ${at.y - pencil.clientHeight / 2}px) rotate(${-40 + lean}deg)`;
+      pencil.classList.toggle('is-on', len > 4 && len < length - 4);
+    };
+
+    window.addEventListener('scroll', () => {
+      if (!ticking) ticking = requestAnimationFrame(update);
+    }, { passive: true });
+    new ResizeObserver(() => build()).observe(article);
+    calm.addEventListener('change', update);
+    build();
+  }
+
+  /* ——— Market snapshots drift at their own pace ——— */
+  const drifting = [...document.querySelectorAll<HTMLElement>('[data-drift]')];
+  if (drifting.length) {
+    let pending = 0;
+    const drift = () => {
+      pending = 0;
+      if (calm.matches) return;
+      for (const el of drifting) {
+        const rect = el.getBoundingClientRect();
+        const offset = rect.top + rect.height / 2 - window.innerHeight / 2;
+        el.style.setProperty('--drift', `${(offset * Number(el.dataset.drift)).toFixed(1)}px`);
+      }
+    };
+    window.addEventListener('scroll', () => {
+      if (!pending) pending = requestAnimationFrame(drift);
+    }, { passive: true });
+    drift();
+  }
+</script>
