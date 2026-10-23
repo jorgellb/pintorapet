@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { googleMerchantConfig, metaCatalogConfig } from '@/lib/catalog/syncCatalog';
 import { hasResend, hasServiceSupabase } from '@/lib/server/env';
 import { checkoutProviders } from '@/lib/server/payments/config';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 const TZ = 'Europe/Madrid';
 const DAY = 24 * 60 * 60 * 1000;
@@ -141,7 +142,8 @@ export async function loadOverview(client: SupabaseClient): Promise<Overview> {
       id: w.id,
       title: w.title_es || w.title_en,
       category: w.category,
-      src: drawing?.src ?? null,
+      // Stored as /media/... paths, which only exist locally; serve them from Storage.
+      src: resolveMediaUrl(drawing?.src) || null,
       published: w.published,
       needsText: needsText(w),
     };
