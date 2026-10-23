@@ -1,0 +1,359 @@
+{
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/en/",
+      "permanent": true
+    },
+    {
+      "source": "/about-me",
+      "destination": "/en/about-me/",
+      "permanent": true
+    },
+    {
+      "source": "/work",
+      "destination": "/en/work/",
+      "permanent": true
+    },
+    {
+      "source": "/gallery",
+      "destination": "/en/gallery/",
+      "permanent": true
+    },
+    {
+      "source": "/order",
+      "destination": "/en/commissions/",
+      "permanent": true
+    },
+    {
+      "source": "/contact",
+      "destination": "/en/contact/",
+      "permanent": true
+    },
+    {
+      "source": "/privacy-policy",
+      "destination": "/en/privacy/",
+      "permanent": true
+    },
+    {
+      "source": "/cookie-policy",
+      "destination": "/en/cookies/",
+      "permanent": true
+    },
+    {
+      "source": "/shop",
+      "destination": "/en/shop/",
+      "permanent": true
+    },
+    {
+      "source": "/basket",
+      "destination": "/en/cart/",
+      "permanent": true
+    },
+    {
+      "source": "/cart",
+      "destination": "/en/cart/",
+      "permanent": true
+    },
+    {
+      "source": "/checkout",
+      "destination": "/en/checkout/",
+      "permanent": true
+    },
+    {
+      "source": "/my-account",
+      "destination": "/en/account-help/",
+      "permanent": true
+    },
+    {
+      "source": "/es/about-me",
+      "destination": "/es/sobre-mi/",
+      "permanent": true
+    },
+    {
+      "source": "/es/work",
+      "destination": "/es/obra/",
+      "permanent": true
+    },
+    {
+      "source": "/es/gallery",
+      "destination": "/es/galeria/",
+      "permanent": true
+    },
+    {
+      "source": "/es/order",
+      "destination": "/es/encargos/",
+      "permanent": true
+    },
+    {
+      "source": "/es/contact",
+      "destination": "/es/contacto/",
+      "permanent": true
+    },
+    {
+      "source": "/es/privacy-policy",
+      "destination": "/es/privacidad/",
+      "permanent": true
+    },
+    {
+      "source": "/es/cookie-policy",
+      "destination": "/es/cookies/",
+      "permanent": true
+    },
+    {
+      "source": "/es/shop",
+      "destination": "/es/tienda/",
+      "permanent": true
+    },
+    {
+      "source": "/es/basket",
+      "destination": "/es/carrito/",
+      "permanent": true
+    },
+    {
+      "source": "/es/cart",
+      "destination": "/es/carrito/",
+      "permanent": true
+    },
+    {
+      "source": "/es/checkout",
+      "destination": "/es/finalizar-compra/",
+      "permanent": true
+    },
+    {
+      "source": "/es/my-account",
+      "destination": "/es/ayuda-compra/",
+      "permanent": true
+    },
+    {
+      "source": "/product-category/greeting-cards",
+      "destination": "/en/shop/?category=greeting-cards",
+      "permanent": true
+    },
+    {
+      "source": "/product-category/coasters",
+      "destination": "/en/shop/?category=coasters",
+      "permanent": true
+    },
+    {
+      "source": "/product-category/mugs",
+      "destination": "/en/shop/?category=mugs",
+      "permanent": true
+    },
+    {
+      "source": "/es/product-category/greeting-cards",
+      "destination": "/es/tienda/?category=greeting-cards",
+      "permanent": true
+    },
+    {
+      "source": "/es/product-category/coasters",
+      "destination": "/es/tienda/?category=coasters",
+      "permanent": true
+    },
+    {
+      "source": "/es/product-category/mugs",
+      "destination": "/es/tienda/?category=mugs",
+      "permanent": true
+    },
+    {
+      "source": "/product/springer-spaniel-greeting-card-portrait",
+      "destination": "/en/shop/springer-spaniel-greeting-card/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/springer-spaniel-greeting-card-portrait",
+      "destination": "/es/tienda/tarjeta-springer-spaniel/",
+      "permanent": true
+    },
+    {
+      "source": "/product/springer-spaniel-coaster-portrait",
+      "destination": "/en/shop/springer-spaniel-coaster/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/springer-spaniel-coaster-portrait",
+      "destination": "/es/tienda/posavasos-springer-spaniel/",
+      "permanent": true
+    },
+    {
+      "source": "/product/springer-spaniel-black-mug-portrait",
+      "destination": "/en/shop/springer-spaniel-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/springer-spaniel-black-mug-portrait",
+      "destination": "/es/tienda/taza-springer-spaniel/",
+      "permanent": true
+    },
+    {
+      "source": "/product/labrador-retriever-black-greeting-card-portrait",
+      "destination": "/en/shop/black-labrador-greeting-card/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/labrador-retriever-black-greeting-card-portrait",
+      "destination": "/es/tienda/tarjeta-labrador-negro/",
+      "permanent": true
+    },
+    {
+      "source": "/product/labrador-retriever-black-coaster-portrait",
+      "destination": "/en/shop/black-labrador-coaster/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/labrador-retriever-black-coaster-portrait",
+      "destination": "/es/tienda/posavasos-labrador-negro/",
+      "permanent": true
+    },
+    {
+      "source": "/product/labrador-retriever-black-mug-portrait",
+      "destination": "/en/shop/black-labrador-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/labrador-retriever-black-mug-portrait",
+      "destination": "/es/tienda/taza-labrador-negro/",
+      "permanent": true
+    },
+    {
+      "source": "/product/golden-retriever-greeting-card-portrait",
+      "destination": "/en/shop/golden-retriever-greeting-card/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/golden-retriever-greeting-card-portrait",
+      "destination": "/es/tienda/tarjeta-golden-retriever/",
+      "permanent": true
+    },
+    {
+      "source": "/product/golden-retriever-coaster-portrait",
+      "destination": "/en/shop/golden-retriever-coaster/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/golden-retriever-coaster-portrait",
+      "destination": "/es/tienda/posavasos-golden-retriever/",
+      "permanent": true
+    },
+    {
+      "source": "/product/golden-retriever-mug-portrait-copy",
+      "destination": "/en/shop/golden-retriever-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/golden-retriever-mug-portrait-copy",
+      "destination": "/es/tienda/taza-golden-retriever/",
+      "permanent": true
+    },
+    {
+      "source": "/product/golden-retriever-mug-portrait",
+      "destination": "/en/shop/golden-retriever-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/product/dachshund-greeting-card-portrait",
+      "destination": "/en/shop/dachshund-greeting-card/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/dachshund-greeting-card-portrait",
+      "destination": "/es/tienda/tarjeta-teckel/",
+      "permanent": true
+    },
+    {
+      "source": "/product/dachshund-coaster-portrait",
+      "destination": "/en/shop/dachshund-coaster/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/dachshund-coaster-portrait",
+      "destination": "/es/tienda/posavasos-teckel/",
+      "permanent": true
+    },
+    {
+      "source": "/product/dachshund-mug-portrait",
+      "destination": "/en/shop/dachshund-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/dachshund-mug-portrait",
+      "destination": "/es/tienda/taza-teckel/",
+      "permanent": true
+    },
+    {
+      "source": "/product/border-collie-greeting-card-portrait",
+      "destination": "/en/shop/border-collie-greeting-card/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/border-collie-greeting-card-portrait",
+      "destination": "/es/tienda/tarjeta-border-collie/",
+      "permanent": true
+    },
+    {
+      "source": "/product/border-collie-coaster-portrait",
+      "destination": "/en/shop/border-collie-coaster/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/border-collie-coaster-portrait",
+      "destination": "/es/tienda/posavasos-border-collie/",
+      "permanent": true
+    },
+    {
+      "source": "/product/border-collie-mug-portrait-copy",
+      "destination": "/en/shop/border-collie-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/border-collie-mug-portrait-copy",
+      "destination": "/es/tienda/taza-border-collie/",
+      "permanent": true
+    },
+    {
+      "source": "/product/border-collie-mug-portrait",
+      "destination": "/en/shop/border-collie-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/product/jack-russell-terrier-coaster-portrait",
+      "destination": "/en/shop/jack-russell-coaster/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/jack-russell-terrier-coaster-portrait",
+      "destination": "/es/tienda/posavasos-jack-russell/",
+      "permanent": true
+    },
+    {
+      "source": "/product/jack-russell-terrier-greeting-card-portrait",
+      "destination": "/en/shop/jack-russell-greeting-card/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/jack-russell-terrier-greeting-card-portrait",
+      "destination": "/es/tienda/tarjeta-jack-russell/",
+      "permanent": true
+    },
+    {
+      "source": "/product/jack-russell-terrier-mug-portrait",
+      "destination": "/en/shop/jack-russell-mug/",
+      "permanent": true
+    },
+    {
+      "source": "/es/product/jack-russell-terrier-mug-portrait",
+      "destination": "/es/tienda/taza-jack-russell/",
+      "permanent": true
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/outbox",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/catalog-sync",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

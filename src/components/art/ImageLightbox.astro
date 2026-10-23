@@ -1,0 +1,90 @@
+---
+interface Props {
+  closeLabel: string;
+}
+
+const { closeLabel } = Astro.props;
+---
+
+<dialog class="lightbox" data-lightbox aria-label={closeLabel}>
+  <form method="dialog" class="lightbox__bar">
+    <button type="submit" value="close">{closeLabel}</button>
+  </form>
+  <img data-lightbox-img alt="" />
+</dialog>
+
+<style>
+  .lightbox {
+    width: min(96vw, 72rem);
+    max-height: 96vh;
+    margin: auto;
+    border: 0;
+    padding: 0.75rem;
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .lightbox::backdrop {
+    background: rgb(36 34 31 / 0.72);
+  }
+
+  .lightbox__bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+  }
+
+  .lightbox__bar button {
+    font: inherit;
+    font-weight: 600;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: var(--ink);
+  }
+
+  .lightbox img {
+    display: block;
+    width: 100%;
+    max-height: calc(96vh - 3.5rem);
+    object-fit: contain;
+    background: var(--surface);
+  }
+</style>
+
+<script>
+  const dialog = document.querySelector('[data-lightbox]');
+  const img = document.querySelector('[data-lightbox-img]');
+  if (dialog instanceof HTMLDialogElement && img instanceof HTMLImageElement) {
+    let lastTrigger: HTMLElement | null = null;
+
+    document.querySelectorAll('[data-lightbox-src]').forEach((trigger) => {
+      if (!(trigger instanceof HTMLElement)) return;
+      trigger.addEventListener('click', () => {
+        const src = trigger.getAttribute('data-lightbox-src');
+        const alt = trigger.getAttribute('data-lightbox-alt') ?? '';
+        if (!src) return;
+        lastTrigger = trigger;
+        img.src = src;
+        img.alt = alt;
+        dialog.showModal();
+      });
+
+      if (trigger instanceof HTMLButtonElement || trigger.getAttribute('role') === 'button') {
+        trigger.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            trigger.click();
+          }
+        });
+      }
+    });
+
+    dialog.addEventListener('close', () => {
+      img.removeAttribute('src');
+      img.alt = '';
+      lastTrigger?.focus();
+      lastTrigger = null;
+    });
+  }
+</script>

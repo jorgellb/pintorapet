@@ -1,0 +1,43 @@
+{
+  "id": "dogs-a3-1",
+  "title": {
+    "en": "Dogs A3",
+    "es": "Perros A3"
+  },
+  "category": "dog",
+  "summary": {
+    "en": "A3 dog portraits from the Work portfolio.",
+    "es": "Retratos de perros en A3 del portfolio Obra."
+  },
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/dogs-a3-1-0-IMG_1612-1547x1080.jpg",
+      "alt": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/dogs-a3-1-1-A3-drawing-jack-russels-1528x1080.jpg",
+      "alt": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/dogs-a3-1-2-IMG_5270.jpg",
+      "alt": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      }
+    }
+  ],
+  "order": 1,
+  "pathSlugs": {
+    "en": "dogs-a3-1",
+    "es": "dogs-a3-1"
+  }
+}

@@ -1,0 +1,146 @@
+---
+interface Props {
+  /** Shown in the heading, e.g. “Español”. */
+  language: string;
+  host: string;
+  /** Path before the slug, e.g. “/es/tienda/”. */
+  pathPrefix: string;
+  slugName: string;
+  slug: string;
+  titleName: string;
+  descriptionName: string;
+  seoTitle: string;
+  seoDescription: string;
+  /** Form fields the preview falls back to when the SEO fields are empty. */
+  fallbackTitleName: string;
+  fallbackDescriptionName: string;
+  /** Names the fallback field in the hint, e.g. “el resumen”. */
+  fallbackDescriptionLabel?: string;
+}
+
+const props = Astro.props;
+---
+
+<div class="seo" data-seo data-fallback-title={props.fallbackTitleName} data-fallback-description={props.fallbackDescriptionName}>
+  <h3>{props.language}</h3>
+  <label>
+    Dirección
+    <span class="slug">
+      <span class="muted">{props.pathPrefix}</span>
+      <input name={props.slugName} value={props.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" data-seo-slug />
+    </span>
+  </label>
+  <label>
+    Título para Google
+    <input name={props.titleName} value={props.seoTitle} maxlength="120" data-seo-title />
+    <span class="hint" data-count="60">Vacío usa el título. <span data-counter></span></span>
+  </label>
+  <label>
+    Descripción para Google
+    <textarea name={props.descriptionName} rows="3" maxlength="320" data-seo-description>{props.seoDescription}</textarea>
+    <span class="hint" data-count="155">Vacía usa {props.fallbackDescriptionLabel ?? 'el resumen'}. <span data-counter></span></span>
+  </label>
+  <div class="serp" aria-label="Vista previa en Google">
+    <span class="serp__url">{props.host}{props.pathPrefix}<span data-serp-slug>{props.slug}</span>/</span>
+    <span class="serp__title" data-serp-title></span>
+    <span class="serp__text" data-serp-description></span>
+  </div>
+</div>
+
+<style>
+  .seo {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .seo h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .slug {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .slug .muted {
+    flex: none;
+    font-size: 0.85rem;
+  }
+
+  .serp {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: #fff;
+    font-family: Arial, sans-serif;
+  }
+
+  .serp__url {
+    overflow: hidden;
+    color: #4d5156;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .serp__title {
+    overflow: hidden;
+    color: #1a0dab;
+    font-size: 1.12rem;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .serp__text {
+    display: -webkit-box;
+    overflow: hidden;
+    color: #4d5156;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  [data-over] {
+    color: var(--danger);
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-seo]').forEach((block) => {
+    const form = block.closest('form');
+    const field = (name: string | undefined) =>
+      name ? form?.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`) : null;
+    const title = block.querySelector<HTMLInputElement>('[data-seo-title]');
+    const description = block.querySelector<HTMLTextAreaElement>('[data-seo-description]');
+    const slug = block.querySelector<HTMLInputElement>('[data-seo-slug]');
+    const fallbackTitle = field(block.dataset.fallbackTitle);
+    const fallbackDescription = field(block.dataset.fallbackDescription);
+
+    const update = () => {
+      const shownTitle = title?.value.trim() || `${fallbackTitle?.value.trim() ?? ''} · Pets Drawings`;
+      const shownText = description?.value.trim() || fallbackDescription?.value.trim() || '';
+      block.querySelector('[data-serp-title]')!.textContent = shownTitle;
+      block.querySelector('[data-serp-description]')!.textContent = shownText || 'Sin descripción: Google elegirá un fragmento de la página.';
+      block.querySelector('[data-serp-slug]')!.textContent = slug?.value ?? '';
+      block.querySelectorAll<HTMLElement>('[data-count]').forEach((hint) => {
+        const input = hint.parentElement?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+        const counter = hint.querySelector('[data-counter]');
+        const limit = Number(hint.dataset.count);
+        const length = input?.value.trim().length ?? 0;
+        if (counter) counter.textContent = length ? `${length} de ${limit} caracteres recomendados.` : '';
+        hint.toggleAttribute('data-over', length > limit);
+      });
+    };
+
+    [title, description, slug, fallbackTitle, fallbackDescription].forEach((input) =>
+      input?.addEventListener('input', update),
+    );
+    update();
+  });
+</script>

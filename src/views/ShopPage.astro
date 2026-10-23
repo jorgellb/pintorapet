@@ -1,0 +1,224 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import ProductImage from '@/components/shop/ProductImage.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { formatEur } from '@/lib/domain/money';
+import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const catalog = await loadPublicCatalog(locale);
+const { source } = catalog;
+const products = topLevelProducts(catalog.products);
+const category = Astro.url.searchParams.get('category') ?? 'all';
+const filtered =
+  category === 'all'
+    ? products
+    : products.filter((p) => p.category === category);
+
+const categories = [
+  { id: 'all', label: dict.shop.all },
+  { id: 'greeting-cards', label: locale === 'es' ? 'Tarjetas' : 'Cards' },
+  { id: 'coasters', label: locale === 'es' ? 'Posavasos' : 'Coasters' },
+  { id: 'mugs', label: locale === 'es' ? 'Tazas' : 'Mugs' },
+];
+---
+
+<PublicLayout locale={locale} title={dict.shop.title} description={dict.shop.lead}>
+  <section class="section">
+    <div class="site-shell">
+      <h1 class="display h1-display">{dict.shop.title}</h1>
+      <p class="muted lead">{dict.shop.lead}</p>
+      {
+        source === 'empty' && (
+          <p class="notice">
+            {locale === 'es'
+              ? 'Catálogo pendiente (Supabase o migration/products.json).'
+              : 'Catalogue pending (Supabase or migration/products.json).'}
+          </p>
+        )
+      }
+
+      <div class="filters" role="navigation" aria-label={dict.shop.filterCategory}>
+        {
+          categories.map((c) => (
+            <a
+              class:list={['chip', { 'chip--active': category === c.id }]}
+              href={`${localizedPath(locale, 'shop')}?category=${c.id}`}
+            >
+              {c.label}
+            </a>
+          ))
+        }
+      </div>
+
+      {
+        filtered.length === 0 ? (
+          <p class="muted">{dict.shop.empty}</p>
+        ) : (
+          <ul class="grid">
+            {filtered.map((product) => (
+              <li>
+                <article class="card">
+                  <a class="card__media" href={localizedPath(locale, 'shop', product.slug)}>
+                    <ProductImage
+                      class="card__img"
+                      src={product.coverImageUrl}
+                      alt={product.title}
+                    />
+                  </a>
+                  <div class="card__body">
+                    <h2>
+                      <a href={localizedPath(locale, 'shop', product.slug)}>{product.title}</a>
+                    </h2>
+                    <p class="meta muted">{product.motif}</p>
+                    <p class="price">{formatEur(product.priceCents, locale)}</p>
+                    <p class="avail muted">{dict.shop.unverified}</p>
+                    <button
+                      type="button"
+                      class="btn btn--ghost"
+                      data-add-to-cart
+                      data-product-id={product.id}
+                      disabled={!product.saleEnabled}
+                    >
+                      {product.saleEnabled ? dict.shop.addToCart : dict.shop.unverified}
+                    </button>
+                  </div>
+                </article>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .lead {
+    max-width: 40rem;
+    font-size: 1.1rem;
+  }
+
+  .notice {
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    background: var(--accent-soft);
+    max-width: 40rem;
+    margin: 1rem 0 0;
+  }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 1.75rem 0 2.25rem;
+  }
+
+  .chip {
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    text-decoration: none;
+    color: var(--ink);
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .chip--active {
+    background: var(--ink);
+    color: var(--surface);
+    border-color: var(--ink);
+  }
+
+  .grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+
+  .card {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .card__media :global(.card__img),
+  .card__media :global(.ph) {
+    aspect-ratio: 1;
+    width: 100%;
+  }
+
+  .card__body h2 {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    margin: 0;
+    font-weight: 500;
+  }
+
+  .card__body h2 a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .meta {
+    margin: 0.25rem 0;
+    font-size: 0.85rem;
+  }
+
+  .price {
+    font-weight: 600;
+    margin: 0.35rem 0;
+  }
+
+  .avail {
+    font-size: 0.85rem;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  @media (min-width: 64rem) {
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 2rem;
+    }
+  }
+</style>
+
+<script>
+  import { addItem, openCart } from '@/stores/cart';
+
+  document.querySelectorAll('[data-add-to-cart]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!(btn instanceof HTMLButtonElement) || btn.disabled) return;
+      const id = btn.dataset.productId;
+      if (!id) return;
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuid.test(id)) {
+        window.alert('Invalid product id.');
+        return;
+      }
+      addItem(id, 1);
+      openCart();
+      const label = btn.textContent;
+      btn.textContent = '✓';
+      window.setTimeout(() => {
+        if (label) btn.textContent = label;
+      }, 900);
+    });
+  });
+</script>

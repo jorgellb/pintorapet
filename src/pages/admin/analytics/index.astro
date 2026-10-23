@@ -1,0 +1,221 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import CountTable from '@/components/admin/CountTable.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const days = [7, 30, 90].includes(Number(Astro.url.searchParams.get('days')))
+  ? Number(Astro.url.searchParams.get('days'))
+  : 30;
+const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+type Row = {
+  viewed_at: string;
+  session_hash: string;
+  path: string;
+  locale: string | null;
+  referrer_host: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  country: string | null;
+  region: string | null;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+  language: string | null;
+};
+
+let rows: Row[] = [];
+let loadError: string | null = null;
+try {
+  const { data, error } = await admin.client
+    .from('page_views')
+    .select(
+      'viewed_at, session_hash, path, locale, referrer_host, utm_source, utm_medium, utm_campaign, country, region, device, browser, os, language',
+    )
+    .gte('viewed_at', since)
+    .order('viewed_at', { ascending: false })
+    .limit(20000);
+  if (error) throw error;
+  rows = (data ?? []) as Row[];
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'No se pudo leer la analítica.';
+}
+
+const countries = new Intl.DisplayNames(['es'], { type: 'region' });
+function countryName(code: string | null): string {
+  if (!code) return 'Desconocido';
+  try {
+    return countries.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+function tally(values: Array<string | null>, empty = 'Directo'): Array<[string, number]> {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const key = value || empty;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+}
+
+const sessions = new Set(rows.map((row) => row.session_hash)).size;
+const pages = tally(rows.map((row) => row.path), '—');
+const sources = tally(rows.map((row) => row.referrer_host));
+const campaigns = tally(
+  rows.map((row) =>
+    row.utm_campaign ? `${row.utm_source ?? '—'} / ${row.utm_campaign}` : null,
+  ),
+  'Sin campaña',
+);
+const places = tally(rows.map((row) => countryName(row.country)), 'Desconocido');
+const devices = tally(rows.map((row) => row.device), 'Desconocido');
+const browsers = tally(rows.map((row) => row.browser), 'Desconocido');
+const systems = tally(rows.map((row) => row.os), 'Desconocido');
+const languages = tally(rows.map((row) => row.language), 'Desconocido');
+const recent = rows.slice(0, 20);
+
+function when(value: string): string {
+  return new Intl.DateTimeFormat('es', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+---
+
+<AdminLayout title="Visitas" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Visitas</h1>
+      <p class="lead">
+        Visitas anónimas de los últimos {days} días de quien aceptó la medición. Se
+        guarda la página, la procedencia, el país, el idioma y el dispositivo.
+      </p>
+    </div>
+  </header>
+  <ul class="tabs">
+    {
+      [7, 30, 90].map((option) => (
+        <li>
+          <a href={`/admin/analytics/?days=${option}`} aria-current={option === days ? 'page' : undefined}>
+            {option} días
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  {
+    loadError ? (
+      <p class="err">
+        {loadError}. Aplica la migración <code>20261022000004_analytics.sql</code>.
+      </p>
+    ) : (
+      <>
+        <section class="stats">
+          <p><strong>{rows.length}</strong><span>páginas vistas</span></p>
+          <p><strong>{sessions}</strong><span>visitas</span></p>
+          <p><strong>{pages.length}</strong><span>páginas distintas</span></p>
+          <p><strong>{sources.filter(([name]) => name !== 'Directo').length}</strong><span>sitios de origen</span></p>
+        </section>
+        <div class="columns">
+          <CountTable title="De dónde llegan" rows={sources} />
+          <CountTable title="Campañas" rows={campaigns} />
+          <CountTable title="Páginas" rows={pages} />
+          <CountTable title="Países" rows={places} />
+          <CountTable title="Dispositivos" rows={devices} />
+          <CountTable title="Navegadores" rows={browsers} />
+          <CountTable title="Sistemas" rows={systems} />
+          <CountTable title="Idiomas" rows={languages} />
+        </div>
+        <h2 class="recent-title">Últimas páginas vistas</h2>
+        {
+          recent.length === 0 ? (
+            <p class="empty">Todavía no hay visitas aceptadas en este periodo.</p>
+          ) : (
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cuándo</th>
+                  <th>Página</th>
+                  <th>Origen</th>
+                  <th>País</th>
+                  <th>Dispositivo</th>
+                  <th>Idioma</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((row) => (
+                  <tr>
+                    <td>{when(row.viewed_at)}</td>
+                    <td><code>{row.path}</code></td>
+                    <td>{row.utm_source ?? row.referrer_host ?? 'Directo'}</td>
+                    <td>{countryName(row.country)}{row.region ? ` · ${row.region}` : ''}</td>
+                    <td class="muted">{[row.device, row.browser, row.os].filter(Boolean).join(' · ') || '—'}</td>
+                    <td>{row.language ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            </div>
+          )
+        }
+      </>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1rem;
+    margin: 0 0 1.25rem;
+  }
+
+  .stats p {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: #fff;
+  }
+
+  .stats strong {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 400;
+    line-height: 1;
+  }
+
+  .stats span {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  .columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 1rem;
+  }
+
+  .recent-title {
+    margin-top: 2.5rem;
+  }
+
+  td {
+    vertical-align: top;
+  }
+</style>

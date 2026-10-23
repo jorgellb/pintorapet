@@ -1,0 +1,60 @@
+{
+  "id": "michi-pantera",
+  "title": {
+    "en": "Michi & Pantera",
+    "es": "Michi y Pantera"
+  },
+  "category": "cat",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/michi-pantera-michi-pantera-0-IMG_2576-2-2-pdf-765x1080.jpg",
+      "label": "Michi",
+      "alt": {
+        "en": "Michi",
+        "es": "Michi"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/michi-pantera-michi-pantera-1-IMG_2491-2-pdf-770x1080.jpg",
+      "label": "Pantera",
+      "alt": {
+        "en": "Pantera",
+        "es": "Pantera"
+      }
+    },
+    {
+      "role": "related_product_photo",
+      "src": "/media/portfolio/michi-pantera-michi-pantera-2-IMG_2580-1-pdf-1055x1080.jpg",
+      "label": "Mugs & Coasters",
+      "alt": {
+        "en": "Mugs & Coasters",
+        "es": "Mugs & Coasters"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/michi-pantera-michi-pantera-3-29a4b4ee-656f-4bd6-a422-33a2b33419b9-919x1080.jpg",
+      "label": "Michi",
+      "alt": {
+        "en": "Michi",
+        "es": "Michi"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/michi-pantera-michi-pantera-4-d110a758-343a-4e15-830b-8622ecfc4897.jpg",
+      "label": "Pantera",
+      "alt": {
+        "en": "Pantera",
+        "es": "Pantera"
+      }
+    }
+  ],
+  "order": 7,
+  "pathSlugs": {
+    "en": "michi-pantera",
+    "es": "michi-pantera"
+  }
+}

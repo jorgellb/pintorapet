@@ -1,0 +1,27 @@
+{
+  "id": "dylan-mia-jaedon",
+  "title": {
+    "en": "Dylan, Mia, and Jaedon",
+    "es": "Dylan, Mia y Jaedon"
+  },
+  "group": "people",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/gallery/dylan-mia-jaedon-0.jpeg",
+      "alt": {
+        "en": "Dylan, Mia, and Jaedon",
+        "es": "Dylan, Mia y Jaedon"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/gallery/dylan-mia-jaedon-1.jpg",
+      "alt": {
+        "en": "Dylan, Mia, and Jaedon",
+        "es": "Dylan, Mia y Jaedon"
+      }
+    }
+  ],
+  "order": 6
+}

@@ -1,0 +1,864 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import SeoFields from '@/components/admin/SeoFields.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { getAdminProduct, listProductImages, listVariants } from '@/lib/server/admin/products';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { hasSupabase, siteUrl } from '@/lib/server/env';
+import { storagePublicUrl } from '@/lib/server/storageUrl';
+import { chipClass, euros, inventoryLabel, productCategoryLabel, productStatusLabel } from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const id = Astro.params.id;
+if (!id) return Astro.redirect('/admin/products/');
+
+const product = await getAdminProduct(admin.client, id);
+if (!product) return new Response('Producto no encontrado', { status: 404 });
+if (product.parent_id) return Astro.redirect(`/admin/products/${product.parent_id}/#variaciones`);
+
+const en = product.product_translations.find((t) => t.locale === 'en');
+const es = product.product_translations.find((t) => t.locale === 'es');
+const inv = product.inventory;
+const title = es?.title || en?.title || product.sku;
+
+const [variants, images, media] = await Promise.all([
+  listVariants(admin.client, product.id),
+  listProductImages(admin.client, product.id),
+  listMedia(admin.client).catch(() => []),
+]);
+
+const altById = new Map(media.map((item) => [item.id, item.altEs]));
+const photos = images.map((image) => ({
+  id: image.mediaAssetId,
+  url: storagePublicUrl(image.bucket, image.objectPath),
+  hasAlt: Boolean(altById.get(image.mediaAssetId)?.trim()),
+}));
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: item.object_path.split('/').pop() ?? item.object_path,
+  bucket: item.bucket,
+  altEs: item.altEs,
+}));
+
+const host = new URL(siteUrl()).host;
+const status = productStatusLabel(product.status);
+const stock = inventoryLabel(inv?.inventory_mode);
+const available = (row: { inventory: { stock_on_hand: number; stock_reserved: number } | null }) =>
+  Math.max(0, (row.inventory?.stock_on_hand ?? 0) - (row.inventory?.stock_reserved ?? 0));
+const modes = ['unverified', 'tracked', 'made_to_order'];
+const statuses = ['draft', 'published', 'archived'];
+---
+
+<AdminLayout title={title} email={admin.user.email}>
+  <a class="back" href="/admin/products/">← Productos</a>
+  <header class="page-head">
+    <div>
+      <h1>{title}</h1>
+      <p class="meta">
+        <code>{product.sku}</code>
+        <span class={chipClass(status.tone)}>{status.text}</span>
+        <span class={chipClass(stock.tone)}>{stock.text}</span>
+        <span class="muted">{productCategoryLabel(product.categories?.code)} · {euros(product.price_cents)}</span>
+        {variants.length > 0 && <span class="chip chip--info">{variants.length + 1} opciones</span>}
+      </p>
+    </div>
+    <div class="head-actions">
+      {
+        es?.slug && product.status === 'published' && (
+          <a class="btn btn--quiet" href={`/es/tienda/${es.slug}/`} target="_blank" rel="noreferrer">
+            Ver en la tienda ↗
+          </a>
+        )
+      }
+      <button type="button" class="btn--quiet btn--danger" data-delete-product data-id={product.id} data-title={title}>
+        Borrar
+      </button>
+    </div>
+  </header>
+
+  <div class="editor">
+    <div class="editor-main">
+      <form
+        id="product-form"
+        class="stack"
+        data-product-form
+        data-product-id={product.id}
+        data-updated-at={product.updated_at}
+      >
+        <fieldset>
+          <legend>Textos</legend>
+          <div class="pair">
+            <label>
+              Título
+              <input type="text" name="esTitle" value={es?.title ?? ''} required />
+            </label>
+            <label>
+              Título en inglés
+              <input type="text" name="enTitle" value={en?.title ?? ''} required />
+            </label>
+          </div>
+          <div class="pair">
+            <label>
+              Resumen
+              <textarea name="esSummary" rows="3">{es?.summary ?? ''}</textarea>
+            </label>
+            <label>
+              Resumen en inglés
+              <textarea name="enSummary" rows="3">{en?.summary ?? ''}</textarea>
+            </label>
+          </div>
+          <div class="pair">
+            <label>
+              Descripción
+              <textarea name="esDescription" rows="6">{es?.description ?? ''}</textarea>
+            </label>
+            <label>
+              Descripción en inglés
+              <textarea name="enDescription" rows="6">{en?.description ?? ''}</textarea>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Venta</legend>
+          <div class="pair">
+            <label>
+              Estado
+              <select name="status">
+                {statuses.map((s) => (
+                  <option value={s} selected={product.status === s}>
+                    {productStatusLabel(s).text}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Precio (€)
+              <input type="number" name="price" min="0.01" step="0.01" value={(product.price_cents / 100).toFixed(2)} required />
+            </label>
+          </div>
+          <div class="pair">
+            <label>
+              Peso (g)
+              <input type="number" name="weightGrams" min="1" max="30000" step="1" value={product.weight_grams} required />
+              <span class="hint">Sin embalaje; sirve para calcular el envío. Se aplica también a sus variaciones.</span>
+            </label>
+          </div>
+          <div class="pair">
+            <label>
+              SKU
+              <input type="text" name="sku" value={product.sku} maxlength="60" required />
+            </label>
+            <label>
+              Motivo
+              <input type="text" name="motif" value={product.motif} maxlength="120" required />
+              <span class="hint">El animal o tema del dibujo, por ejemplo «Galgo».</span>
+            </label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" role="switch" name="saleEnabled" checked={product.sale_enabled} />
+            <span>
+              <strong>A la venta</strong>
+              <span class="hint">Se puede comprar cuando la tienda tiene la venta activa.</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>SEO</legend>
+          <p class="hint">Cómo aparece el producto en Google y al compartirlo. Lo que dejes vacío se toma del título y el resumen.</p>
+          <div class="pair">
+            <SeoFields
+              language="Español"
+              host={host}
+              pathPrefix="/es/tienda/"
+              slugName="esSlug"
+              slug={es?.slug ?? ''}
+              titleName="esSeoTitle"
+              descriptionName="esSeoDescription"
+              seoTitle={es?.seo_title ?? ''}
+              seoDescription={es?.seo_description ?? ''}
+              fallbackTitleName="esTitle"
+              fallbackDescriptionName="esSummary"
+            />
+            <SeoFields
+              language="Inglés"
+              host={host}
+              pathPrefix="/en/shop/"
+              slugName="enSlug"
+              slug={en?.slug ?? ''}
+              titleName="enSeoTitle"
+              descriptionName="enSeoDescription"
+              seoTitle={en?.seo_title ?? ''}
+              seoDescription={en?.seo_description ?? ''}
+              fallbackTitleName="enTitle"
+              fallbackDescriptionName="enSummary"
+            />
+          </div>
+        </fieldset>
+
+        <div class="save-bar">
+          <button type="submit">Guardar producto</button>
+          <p class="status" data-product-status role="status" hidden></p>
+        </div>
+      </form>
+
+      <fieldset id="fotos">
+        <legend>Fotos</legend>
+        <p class="hint">
+          La primera es la foto principal: sale en la tienda, en Google y en Meta. Arrastra
+          las demás para ordenarlas.
+        </p>
+        <ol class="photos" data-photos data-product-id={product.id}>
+          {
+            photos.map((photo) => (
+              <li class="photo" draggable="true" data-photo data-id={photo.id} data-url={photo.url}>
+                <img src={photo.url} alt="" />
+                <span class="badge">Principal</span>
+                {!photo.hasAlt && (
+                  <a class="chip chip--warn alt" href="/admin/media/?filtro=sin-alt" target="_blank" rel="noreferrer">
+                    Sin texto alternativo
+                  </a>
+                )}
+                <span class="photo__actions">
+                  <button type="button" class="btn--quiet" data-photo-main>Principal</button>
+                  <button type="button" class="btn--quiet" data-photo-left aria-label="Mover antes">←</button>
+                  <button type="button" class="btn--quiet" data-photo-right aria-label="Mover después">→</button>
+                  <button type="button" class="btn--quiet btn--danger" data-photo-remove aria-label="Quitar foto">✕</button>
+                </span>
+              </li>
+            ))
+          }
+        </ol>
+        <template data-photo-template>
+          <li class="photo" draggable="true" data-photo>
+            <img alt="" />
+            <span class="badge">Principal</span>
+            <span class="photo__actions">
+              <button type="button" class="btn--quiet" data-photo-main>Principal</button>
+              <button type="button" class="btn--quiet" data-photo-left aria-label="Mover antes">←</button>
+              <button type="button" class="btn--quiet" data-photo-right aria-label="Mover después">→</button>
+              <button type="button" class="btn--quiet btn--danger" data-photo-remove aria-label="Quitar foto">✕</button>
+            </span>
+          </li>
+        </template>
+        <p class="empty" data-photos-empty hidden={photos.length > 0}>Este producto todavía no tiene fotos.</p>
+        <div class="row">
+          <button type="button" data-photo-add>Añadir desde Medios</button>
+          <a class="hint" href="/admin/media/?filtro=tienda" target="_blank" rel="noreferrer">Gestionar textos en Medios ↗</a>
+          <p class="status" data-photos-status role="status" hidden></p>
+        </div>
+      </fieldset>
+
+      <fieldset id="variaciones">
+        <legend>Variaciones</legend>
+        <p class="hint">
+          Tamaños, colores o acabados del mismo producto. Cada opción tiene su SKU, precio y
+          stock, y comparte textos y fotos con este producto.
+        </p>
+
+        <div class="variant variant--main">
+          <span class="variant__tag">Esta opción</span>
+          <div class="variant__grid">
+            <label>
+              Nombre de la opción
+              <input form="product-form" name="variantLabelEs" value={product.variant_label_es} placeholder="Ej.: A6" maxlength="80" />
+            </label>
+            <label>
+              En inglés
+              <input form="product-form" name="variantLabelEn" value={product.variant_label_en} placeholder="Ej.: A6" maxlength="80" />
+            </label>
+            <p class="variant__summary muted">
+              {product.sku} · {euros(product.price_cents)} · {stock.text}
+              {inv?.inventory_mode === 'tracked' && ` · ${available(product)} disponibles`}
+            </p>
+          </div>
+          <span class="hint">El precio, el SKU y el stock de esta opción se editan arriba y en Inventario. Se guarda con «Guardar producto».</span>
+        </div>
+
+        {
+          variants.map((variant) => {
+            const vStock = inventoryLabel(variant.inventory?.inventory_mode);
+            return (
+              <form class="variant" data-variant data-id={variant.id}>
+                <span class="variant__tag">
+                  <span class={chipClass(vStock.tone)}>{vStock.text}</span>
+                  {variant.status !== 'published' && (
+                    <span class={chipClass(productStatusLabel(variant.status).tone)}>{productStatusLabel(variant.status).text}</span>
+                  )}
+                </span>
+                <div class="variant__grid">
+                  <label>
+                    Nombre de la opción
+                    <input name="labelEs" value={variant.variant_label_es} required maxlength="80" />
+                  </label>
+                  <label>
+                    En inglés
+                    <input name="labelEn" value={variant.variant_label_en} required maxlength="80" />
+                  </label>
+                  <label>
+                    SKU
+                    <input name="sku" value={variant.sku} required maxlength="60" />
+                  </label>
+                  <label>
+                    Precio (€)
+                    <input type="number" name="price" min="0.01" step="0.01" value={(variant.price_cents / 100).toFixed(2)} required />
+                  </label>
+                  <label>
+                    Stock
+                    <select name="mode" data-initial={variant.inventory?.inventory_mode ?? 'unverified'}>
+                      {modes.map((m) => (
+                        <option value={m} selected={variant.inventory?.inventory_mode === m}>
+                          {inventoryLabel(m).text}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Unidades
+                    <input type="number" name="stock" min="0" step="1" value={variant.inventory?.stock_on_hand ?? 0} data-initial={variant.inventory?.stock_on_hand ?? 0} />
+                  </label>
+                  <label>
+                    Estado
+                    <select name="status">
+                      {statuses.map((s) => (
+                        <option value={s} selected={variant.status === s}>
+                          {productStatusLabel(s).text}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label class="switch">
+                    <input type="checkbox" role="switch" name="saleEnabled" checked={variant.sale_enabled} />
+                    <span><strong>A la venta</strong></span>
+                  </label>
+                </div>
+                <div class="row">
+                  <button type="submit">Guardar opción</button>
+                  <button type="button" class="btn--quiet btn--danger" data-variant-delete>Borrar</button>
+                  <p class="status" data-variant-status role="status" hidden></p>
+                </div>
+              </form>
+            );
+          })
+        }
+
+        <form
+          class="variant variant--new"
+          data-variant-new
+          data-parent-id={product.id}
+          data-parent-sku={product.sku}
+          data-parent-slug-es={es?.slug ?? ''}
+          data-parent-slug-en={en?.slug ?? ''}
+          data-parent-title-es={es?.title ?? ''}
+          data-parent-title-en={en?.title ?? ''}
+        >
+          <span class="variant__tag">Nueva opción</span>
+          <div class="variant__grid">
+            <label>
+              Nombre de la opción
+              <input name="labelEs" required maxlength="80" placeholder="Ej.: A5" />
+            </label>
+            <label>
+              En inglés
+              <input name="labelEn" maxlength="80" placeholder="Igual que en español" />
+            </label>
+            <label>
+              SKU
+              <input name="sku" maxlength="60" placeholder={`${product.sku}-…`} />
+            </label>
+            <label>
+              Precio (€)
+              <input type="number" name="price" min="0.01" step="0.01" value={(product.price_cents / 100).toFixed(2)} required />
+            </label>
+          </div>
+          <div class="row">
+            <button type="submit">Añadir variación</button>
+            <p class="status" data-variant-new-status role="status" hidden></p>
+          </div>
+        </form>
+      </fieldset>
+    </div>
+
+    <aside class="editor-side">
+      <form class="panel" data-inventory-form data-product-id={product.id}>
+        <h2>Inventario</h2>
+        <p class="stock">
+          <strong>{available(product)}</strong>
+          <span class="hint">disponibles · {inv?.stock_reserved ?? 0} reservados</span>
+        </p>
+        <label>
+          Modo
+          <select name="inventoryMode">
+            {modes.map((m) => (
+              <option value={m} selected={inv?.inventory_mode === m}>
+                {inventoryLabel(m).text}
+              </option>
+            ))}
+          </select>
+          <span class="hint">Con stock sin verificar el producto se muestra y no se puede comprar.</span>
+        </label>
+        <label>
+          Unidades en el estudio
+          <input type="number" name="stockOnHand" min="0" step="1" value={inv?.stock_on_hand ?? 0} required />
+        </label>
+        <label>
+          Nota
+          <input type="text" name="note" maxlength="500" placeholder="Ej.: recuento de octubre" />
+        </label>
+        <button type="submit">Actualizar inventario</button>
+        <p class="status" data-inventory-status role="status" hidden></p>
+      </form>
+    </aside>
+  </div>
+
+  <MediaPicker items={pickerItems} defaultBucket="catalog-public" />
+</AdminLayout>
+
+<style>
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0.4rem 0 0;
+  }
+
+  .head-actions,
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    align-items: center;
+  }
+
+  .stack {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.75rem 0;
+    background: linear-gradient(to top, var(--paper) 70%, transparent);
+  }
+
+  .stock {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    margin: 0;
+  }
+
+  .stock strong {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 400;
+  }
+
+  .photos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .photo {
+    position: relative;
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+    cursor: grab;
+  }
+
+  .photo:first-child {
+    grid-column: span 2;
+    grid-row: span 2;
+    border-color: var(--accent);
+  }
+
+  .photo.is-dragging {
+    opacity: 0.4;
+  }
+
+  .photo.is-over {
+    outline: 2px dashed var(--accent);
+    outline-offset: 2px;
+  }
+
+  .photo img {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 0.4rem;
+    background: var(--paper-deep);
+    object-fit: cover;
+    pointer-events: none;
+  }
+
+  .badge {
+    position: absolute;
+    top: 0.8rem;
+    left: 0.8rem;
+    display: none;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.75rem;
+  }
+
+  .photo:first-child .badge {
+    display: inline-block;
+  }
+
+  .alt {
+    position: absolute;
+    right: 0.8rem;
+    bottom: 3.2rem;
+    text-decoration: none;
+  }
+
+  .photo__actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .photo__actions button {
+    flex: 1;
+    min-height: 2rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  .photo:first-child [data-photo-main],
+  .photo:first-child [data-photo-left],
+  .photo:last-child [data-photo-right] {
+    visibility: hidden;
+  }
+
+  .variant {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .variant--main {
+    border-color: var(--accent-soft);
+    background: var(--accent-soft);
+  }
+
+  .variant--new {
+    border-style: dashed;
+    background: transparent;
+  }
+
+  .variant__tag {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .variant__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 0.8rem;
+    align-items: end;
+  }
+
+  .variant__summary {
+    margin: 0;
+    padding-bottom: 0.6rem;
+  }
+
+  .variant .switch {
+    padding-bottom: 0.4rem;
+  }
+</style>
+
+<script>
+  import { pickMedia } from '@/lib/admin/mediaPicker';
+  import { slugify, variantTitle } from '@/lib/admin/slug';
+
+  type ApiBody = { ok?: boolean; id?: string; result?: string; error?: { message?: string } };
+
+  const say = (el: Element | null | undefined, text: string) => {
+    if (!(el instanceof HTMLElement)) return;
+    el.hidden = false;
+    el.textContent = text;
+  };
+
+  async function send(url: string, method: string, body?: unknown) {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null);
+    const data = ((await res?.json().catch(() => null)) ?? {}) as ApiBody;
+    return { ok: Boolean(res?.ok), data };
+  }
+
+  const cents = (value: FormDataEntryValue | null) => Math.round(Number(value) * 100);
+
+  // Product
+  const productForm = document.querySelector<HTMLFormElement>('[data-product-form]');
+  if (productForm) {
+    const status = productForm.querySelector('[data-product-status]');
+    const id = productForm.dataset.productId;
+    productForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!id) return;
+      const fd = new FormData(productForm);
+      const text = (name: string) => String(fd.get(name) ?? '');
+      const locale = (prefix: 'en' | 'es') => ({
+        title: text(`${prefix}Title`),
+        slug: text(`${prefix}Slug`),
+        summary: text(`${prefix}Summary`),
+        description: text(`${prefix}Description`),
+        seoTitle: text(`${prefix}SeoTitle`),
+        seoDescription: text(`${prefix}SeoDescription`),
+      });
+      say(status, 'Guardando…');
+      const { ok, data } = await send(`/api/admin/products/${id}/`, 'PATCH', {
+        expectedUpdatedAt: productForm.dataset.updatedAt,
+        status: text('status'),
+        priceCents: cents(fd.get('price')),
+        saleEnabled: fd.get('saleEnabled') === 'on',
+        weightGrams: Number(fd.get('weightGrams')),
+        sku: text('sku'),
+        motif: text('motif'),
+        variantLabelEs: text('variantLabelEs'),
+        variantLabelEn: text('variantLabelEn'),
+        en: locale('en'),
+        es: locale('es'),
+      });
+      if (ok) {
+        say(status, 'Producto guardado.');
+        window.location.reload();
+      } else {
+        say(status, `No se pudo guardar. ${data.error?.message ?? ''}`);
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        productForm.requestSubmit();
+      }
+    });
+  }
+
+  // Delete
+  document.querySelector<HTMLButtonElement>('[data-delete-product]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const message = `¿Borrar «${button.dataset.title}» y todas sus variaciones? Si ya tiene pedidos se archivará y dejará de verse en la tienda.`;
+    if (!confirm(message)) return;
+    button.disabled = true;
+    const { ok, data } = await send(`/api/admin/products/${button.dataset.id}/`, 'DELETE');
+    if (!ok) {
+      button.disabled = false;
+      alert(`No se pudo borrar. ${data.error?.message ?? ''}`);
+      return;
+    }
+    window.location.href = data.result === 'archived' ? '/admin/products/?archivado=1' : '/admin/products/?borrado=1';
+  });
+
+  // Inventory
+  const inventoryForm = document.querySelector<HTMLFormElement>('[data-inventory-form]');
+  if (inventoryForm) {
+    const status = inventoryForm.querySelector('[data-inventory-status]');
+    inventoryForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(inventoryForm);
+      say(status, 'Actualizando…');
+      const { ok, data } = await send('/api/admin/inventory/', 'POST', {
+        productId: inventoryForm.dataset.productId,
+        stockOnHand: Number(fd.get('stockOnHand')),
+        inventoryMode: String(fd.get('inventoryMode')),
+        note: String(fd.get('note') ?? '') || undefined,
+      });
+      if (ok) {
+        say(status, 'Inventario actualizado.');
+        window.location.reload();
+      } else {
+        say(status, `No se pudo actualizar. ${data.error?.message ?? ''}`);
+      }
+    });
+  }
+
+  // Photos
+  const list = document.querySelector<HTMLOListElement>('[data-photos]');
+  const photosStatus = document.querySelector('[data-photos-status]');
+  const photosEmpty = document.querySelector<HTMLElement>('[data-photos-empty]');
+  if (list) {
+    const ids = () => [...list.querySelectorAll<HTMLElement>('[data-photo]')].map((li) => li.dataset.id ?? '');
+    const template = document.querySelector<HTMLTemplateElement>('[data-photo-template]');
+
+    const save = async () => {
+      if (photosEmpty) photosEmpty.hidden = ids().length > 0;
+      say(photosStatus, 'Guardando fotos…');
+      const { ok, data } = await send(`/api/admin/products/${list.dataset.productId}/images/`, 'PUT', {
+        mediaAssetIds: ids(),
+      });
+      say(photosStatus, ok ? 'Fotos guardadas.' : `No se pudieron guardar las fotos. ${data.error?.message ?? ''}`);
+    };
+
+    const build = (item: { id: string; url: string; altEs: string }) => {
+      const li = template?.content.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+      if (!li) return null;
+      li.dataset.id = item.id;
+      li.dataset.url = item.url;
+      const img = li.querySelector('img');
+      if (img) img.src = item.url;
+      return li;
+    };
+
+    list.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      const li = target.closest<HTMLElement>('[data-photo]');
+      if (!li) return;
+      if (target.closest('[data-photo-main]')) list.prepend(li);
+      else if (target.closest('[data-photo-left]')) li.previousElementSibling?.before(li);
+      else if (target.closest('[data-photo-right]')) li.nextElementSibling?.after(li);
+      else if (target.closest('[data-photo-remove]')) li.remove();
+      else return;
+      save();
+    });
+
+    let dragged: HTMLElement | null = null;
+    list.addEventListener('dragstart', (event) => {
+      dragged = (event.target as HTMLElement).closest('[data-photo]');
+      dragged?.classList.add('is-dragging');
+      event.dataTransfer?.setData('text/plain', dragged?.dataset.id ?? '');
+    });
+    list.addEventListener('dragover', (event) => {
+      const over = (event.target as HTMLElement).closest<HTMLElement>('[data-photo]');
+      if (!dragged || !over || over === dragged) return;
+      event.preventDefault();
+      list.querySelectorAll('.is-over').forEach((el) => el.classList.remove('is-over'));
+      over.classList.add('is-over');
+    });
+    list.addEventListener('drop', (event) => {
+      const over = (event.target as HTMLElement).closest<HTMLElement>('[data-photo]');
+      if (!dragged || !over || over === dragged) return;
+      event.preventDefault();
+      const items = [...list.children];
+      if (items.indexOf(dragged) < items.indexOf(over)) over.after(dragged);
+      else over.before(dragged);
+      save();
+    });
+    list.addEventListener('dragend', () => {
+      dragged?.classList.remove('is-dragging');
+      list.querySelectorAll('.is-over').forEach((el) => el.classList.remove('is-over'));
+      dragged = null;
+    });
+
+    document.querySelector('[data-photo-add]')?.addEventListener('click', async () => {
+      const picked = await pickMedia({ multiple: true, exclude: ids() });
+      if (picked.length === 0) return;
+      for (const item of picked) {
+        const li = build(item);
+        if (li) list.append(li);
+      }
+      save();
+    });
+  }
+
+  // Variations
+  document.querySelectorAll<HTMLFormElement>('[data-variant]').forEach((form) => {
+    const status = form.querySelector('[data-variant-status]');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const id = form.dataset.id;
+      say(status, 'Guardando…');
+      const product = await send(`/api/admin/products/${id}/`, 'PATCH', {
+        variantLabelEs: String(fd.get('labelEs') ?? ''),
+        variantLabelEn: String(fd.get('labelEn') ?? ''),
+        sku: String(fd.get('sku') ?? ''),
+        priceCents: cents(fd.get('price')),
+        status: String(fd.get('status')),
+        saleEnabled: fd.get('saleEnabled') === 'on',
+      });
+      if (!product.ok) {
+        say(status, `No se pudo guardar. ${product.data.error?.message ?? ''}`);
+        return;
+      }
+      const mode = form.querySelector<HTMLSelectElement>('[name="mode"]');
+      const stock = form.querySelector<HTMLInputElement>('[name="stock"]');
+      if (mode?.value !== mode?.dataset.initial || stock?.value !== stock?.dataset.initial) {
+        const inventory = await send('/api/admin/inventory/', 'POST', {
+          productId: id,
+          stockOnHand: Number(stock?.value ?? 0),
+          inventoryMode: mode?.value,
+        });
+        if (!inventory.ok) {
+          say(status, `Opción guardada. El stock no se pudo actualizar: ${inventory.data.error?.message ?? ''}`);
+          return;
+        }
+      }
+      window.location.reload();
+    });
+
+    form.querySelector('[data-variant-delete]')?.addEventListener('click', async () => {
+      const label = String(new FormData(form).get('labelEs') ?? '');
+      if (!confirm(`¿Borrar la opción «${label}»?`)) return;
+      const { ok, data } = await send(`/api/admin/products/${form.dataset.id}/`, 'DELETE');
+      if (ok) window.location.reload();
+      else say(status, `No se pudo borrar. ${data.error?.message ?? ''}`);
+    });
+  });
+
+  const newVariant = document.querySelector<HTMLFormElement>('[data-variant-new]');
+  if (newVariant) {
+    const status = newVariant.querySelector('[data-variant-new-status]');
+    newVariant.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(newVariant);
+      const d = newVariant.dataset;
+      const labelEs = String(fd.get('labelEs') ?? '').trim();
+      const labelEn = String(fd.get('labelEn') ?? '').trim() || labelEs;
+      const sku = String(fd.get('sku') ?? '').trim() || `${d.parentSku}-${slugify(labelEs).toUpperCase()}`;
+      say(status, 'Creando…');
+      const { ok, data } = await send('/api/admin/products/', 'POST', {
+        parentId: d.parentId,
+        sku,
+        priceCents: cents(fd.get('price')),
+        variantLabelEs: labelEs,
+        variantLabelEn: labelEn,
+        es: { title: variantTitle(d.parentTitleEs ?? '', labelEs), slug: `${d.parentSlugEs}-${slugify(labelEs)}` },
+        en: { title: variantTitle(d.parentTitleEn ?? '', labelEn), slug: `${d.parentSlugEn}-${slugify(labelEn)}` },
+      });
+      if (ok) {
+        window.location.hash = 'variaciones';
+        window.location.reload();
+      } else {
+        say(status, `No se pudo crear. ${data.error?.message ?? ''}`);
+      }
+    });
+  }
+</script>

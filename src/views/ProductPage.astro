@@ -1,0 +1,242 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import ProductImage from '@/components/shop/ProductImage.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath, productPath } from '@/i18n/routes';
+import { formatEur } from '@/lib/domain/money';
+import { loadProductPage } from '@/lib/catalog/loadProducts';
+import type { ProductPublic } from '@/lib/domain/types';
+
+interface Props {
+  locale: Locale;
+  slug: string;
+}
+
+const { locale, slug } = Astro.props;
+const dict = t(locale);
+const page = await loadProductPage(locale, slug);
+if (!page) {
+  return Astro.redirect(localizedPath(locale, 'shop'));
+}
+const { product, options, selected } = page;
+
+const canAddOf = (p: ProductPublic) =>
+  p.saleEnabled && p.availability !== 'sold_out' && p.availability !== 'unavailable';
+const statusOf = (p: ProductPublic) =>
+  p.availability === 'sold_out'
+    ? dict.shop.soldOut
+    : p.availability === 'unavailable'
+      ? dict.shop.unavailable
+      : p.availability === 'unverified' || !p.saleEnabled
+        ? dict.shop.unverified
+        : null;
+
+const price = formatEur(selected.priceCents, locale);
+const canAdd = canAddOf(selected);
+const statusLabel = statusOf(selected);
+const choices = options.map((option) => ({
+  id: option.id,
+  label: option.variantLabel || dict.shop.defaultOption,
+  price: formatEur(option.priceCents, locale),
+  canAdd: canAddOf(option),
+  status: statusOf(option) ?? '',
+  path: productPath(locale, option.slug),
+}));
+---
+
+<PublicLayout
+  locale={locale}
+  title={product.title}
+  seoTitle={product.seoTitle}
+  description={product.seoDescription ?? product.summary}
+  image={product.coverImageUrl}
+  canonicalPath={productPath(locale, product.slug)}
+>
+  <section class="section">
+    <div class="site-shell product">
+      <div class="gallery">
+        <ProductImage
+          class="gallery__main"
+          src={product.coverImageUrl}
+          alt={product.title}
+        />
+        {
+          product.imageUrls.length > 1 && (
+            <ul class="thumbs">
+              {product.imageUrls.map((url, i) => (
+                <li>
+                  <ProductImage
+                    src={url}
+                    alt={`${product.title} (${i + 1})`}
+                  />
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </div>
+      <div class="buy">
+        <p class="muted"><a href={localizedPath(locale, 'shop')}>{dict.shop.title}</a></p>
+        <h1 class="display h1-display">{product.title}</h1>
+        <p class="price" data-price>{price}</p>
+        <p class="muted" data-status hidden={!statusLabel}>{statusLabel}</p>
+        {
+          choices.length > 1 && (
+            <fieldset class="options" data-options={JSON.stringify(choices)}>
+              <legend>{dict.shop.options}</legend>
+              {choices.map((choice) => (
+                <label class="option">
+                  <input type="radio" name="option" value={choice.id} checked={choice.id === selected.id} />
+                  <span>{choice.label}</span>
+                </label>
+              ))}
+            </fieldset>
+          )
+        }
+        {product.description && <p>{product.description}</p>}
+        <button
+          class="btn"
+          type="button"
+          data-add-to-cart
+          data-product-id={selected.id}
+          data-label={dict.shop.addToCart}
+          disabled={!canAdd}
+        >
+          {canAdd ? dict.shop.addToCart : (statusLabel ?? dict.shop.unavailable)}
+        </button>
+      </div>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .product {
+    display: grid;
+    gap: 2rem;
+  }
+
+  .gallery__main :global(img),
+  .gallery__main :global(.ph) {
+    aspect-ratio: 1;
+    width: 100%;
+  }
+
+  .thumbs {
+    list-style: none;
+    margin: 0.75rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .gallery img {
+    width: 100%;
+    border: 0;
+  }
+
+  .price {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0 0 1.25rem;
+    padding: 0;
+    border: 0;
+  }
+
+  .options legend {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .option {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .option input {
+    position: absolute;
+    opacity: 0;
+  }
+
+  .option span {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--paper);
+  }
+
+  .option input:checked + span {
+    border-color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  .option input:focus-visible + span {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  @media (min-width: 64rem) {
+    .product {
+      grid-template-columns: 3fr 2fr;
+      gap: 3rem;
+      align-items: start;
+    }
+  }
+</style>
+
+<script>
+  import { addItem, openCart } from '@/stores/cart';
+
+  type Choice = { id: string; label: string; price: string; canAdd: boolean; status: string; path: string };
+
+  const btn = document.querySelector('[data-add-to-cart]');
+  const options = document.querySelector<HTMLFieldSetElement>('[data-options]');
+  if (options && btn instanceof HTMLButtonElement) {
+    const choices = JSON.parse(options.dataset.options ?? '[]') as Choice[];
+    const price = document.querySelector('[data-price]');
+    const status = document.querySelector<HTMLElement>('[data-status]');
+    options.addEventListener('change', (event) => {
+      const id = (event.target as HTMLInputElement).value;
+      const choice = choices.find((c) => c.id === id);
+      if (!choice) return;
+      if (price) price.textContent = choice.price;
+      if (status) {
+        status.textContent = choice.status;
+        status.hidden = !choice.status;
+      }
+      btn.dataset.productId = choice.id;
+      btn.disabled = !choice.canAdd;
+      btn.textContent = choice.canAdd ? (btn.dataset.label ?? '') : choice.status;
+      history.replaceState(null, '', choice.path);
+    });
+  }
+
+  if (btn instanceof HTMLButtonElement) {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-product-id');
+      if (!id) return;
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuid.test(id)) {
+        window.alert('Invalid product id.');
+        return;
+      }
+      addItem(id, 1);
+      openCart();
+      const label = btn.getAttribute('data-label') ?? btn.textContent;
+      btn.textContent = '✓';
+      window.setTimeout(() => {
+        if (label) btn.textContent = label;
+      }, 900);
+    });
+  }
+</script>

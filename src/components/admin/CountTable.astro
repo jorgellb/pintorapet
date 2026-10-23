@@ -1,0 +1,71 @@
+---
+interface Props {
+  title: string;
+  rows: Array<[string, number]>;
+}
+
+const { title, rows } = Astro.props;
+const max = Math.max(1, ...rows.map(([, count]) => count));
+---
+
+<section class="panel">
+  <h2>{title}</h2>
+  {
+    rows.length === 0 ? (
+      <p class="hint">Sin datos en este periodo.</p>
+    ) : (
+      <ol>
+        {rows.map(([name, count]) => (
+          <li style={`--share: ${count / max}`}>
+            <span class="name" title={name}>{name}</span>
+            <span class="num">{count}</span>
+          </li>
+        ))}
+      </ol>
+    )
+  }
+</section>
+
+<style>
+  h2 {
+    font-size: 1.05rem;
+  }
+
+  ol {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.88rem;
+    isolation: isolate;
+  }
+
+  li::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: calc(var(--share) * 100%);
+    border-radius: 0.4rem;
+    background: var(--accent-soft);
+  }
+
+  .name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+</style>

@@ -1,0 +1,5 @@
+---
+import ProductPage from '@/views/ProductPage.astro';
+const { slug } = Astro.params;
+---
+<ProductPage locale="es" slug={slug!} />

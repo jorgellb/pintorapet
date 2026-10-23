@@ -1,0 +1,31 @@
+{
+  "id": "dog-generic-2",
+  "title": {
+    "en": "Dog",
+    "es": "Perro"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/dog-generic-2-dog-generic-2-0-IMG_1234-770x1080.jpg",
+      "alt": {
+        "en": "Dog",
+        "es": "Perro"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/dog-generic-2-dog-generic-2-1-20250616_160803-810x1080.jpg",
+      "alt": {
+        "en": "Dog",
+        "es": "Perro"
+      }
+    }
+  ],
+  "order": 6,
+  "pathSlugs": {
+    "en": "dog-generic-2",
+    "es": "dog-generic-2"
+  }
+}

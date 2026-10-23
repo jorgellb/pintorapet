@@ -1,0 +1,7 @@
+---
+import GalleryDetailPage from '@/views/GalleryDetailPage.astro';
+
+const { slug } = Astro.params;
+---
+
+<GalleryDetailPage locale="es" slug={slug!} />

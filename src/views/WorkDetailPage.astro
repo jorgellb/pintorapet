@@ -1,0 +1,429 @@
+---
+import { loadWorks } from '@/lib/content/editorial';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
+import ImageLightbox from '@/components/art/ImageLightbox.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath, workPath } from '@/i18n/routes';
+
+interface Props {
+  locale: Locale;
+  slug: string;
+}
+
+const { locale, slug } = Astro.props;
+const es = locale === 'es';
+const dict = t(locale);
+const works = await loadWorks();
+const index = works.findIndex((w) => w.data.pathSlugs[locale] === slug);
+const entry = works[index];
+if (!entry) {
+  return Astro.redirect(localizedPath(locale, 'work'));
+}
+
+const prev = works[(index - 1 + works.length) % works.length];
+const next = works[(index + 1) % works.length];
+const title = entry.data.title[locale];
+
+const assets = entry.data.assets.filter((a) => Boolean(a.src));
+const drawing = assets.find((a) => a.role === 'drawing');
+const photo = assets.find((a) => a.role === 'reference_photo');
+const canCompare = Boolean(drawing?.src && photo?.src);
+const processShots = assets.filter((a) => a.role === 'process_photo');
+const extras = assets.filter(
+  (a) => a !== drawing && a.role !== 'process_photo' && (canCompare ? a !== photo : true),
+);
+const description = entry.data.summary?.[locale]?.trim() ?? '';
+const process = entry.data.story?.[locale]?.trim() ?? '';
+
+function roleLabel(role: string): string {
+  if (role === 'drawing') return dict.art.drawing;
+  if (role === 'reference_photo') return dict.art.photo;
+  if (role === 'comparison') return dict.art.comparison;
+  return role;
+}
+---
+
+<PublicLayout
+  locale={locale}
+  title={title}
+  seoTitle={entry.data.seo?.title[locale]}
+  description={entry.data.seo?.description[locale] ?? entry.data.summary?.[locale]}
+  image={drawing?.src}
+>
+  <article>
+    <section class="piece">
+      <div class="site-shell piece__grid">
+        <header class="piece__head">
+          <a class="piece__back" href={localizedPath(locale, 'work')}>{dict.nav.work}</a>
+          <h1 class="display piece__title">{title}</h1>
+          <p class="plaque">
+            <span>{es ? 'Grafito sobre papel' : 'Graphite on paper'}</span>
+            <span>Meili Stringfellow</span>
+          </p>
+          <a class="btn" href={localizedPath(locale, 'commissions')}>{dict.home.ctaCommission}</a>
+        </header>
+
+        {
+          drawing?.src && (
+            <figure class="piece__wall">
+              <button
+                type="button"
+                class="piece__zoom"
+                data-lightbox-src={drawing.src}
+                data-lightbox-alt={drawing.alt?.[locale] ?? title}
+              >
+                <img
+                  src={drawing.src}
+                  alt={drawing.alt?.[locale] ?? title}
+                  loading="eager"
+                  fetchpriority="high"
+                  decoding="async"
+                  style={`view-transition-name: work-${entry.data.id}`}
+                />
+                <span class="visually-hidden">
+                  {dict.art.openLightbox}: {dict.art.drawing}
+                </span>
+              </button>
+            </figure>
+          )
+        }
+      </div>
+    </section>
+
+    {
+      (description || process || processShots.length > 0) && (
+        <section class="notes">
+          <div class="site-shell notes__grid">
+            {
+              description && (
+                <div>
+                  <h2 class="display notes__title">{es ? 'Descripción' : 'Description'}</h2>
+                  <p class="notes__text">{description}</p>
+                </div>
+              )
+            }
+            {
+              (process || processShots.length > 0) && (
+                <div>
+                  <h2 class="display notes__title">{es ? 'Proceso de trabajo' : 'Working process'}</h2>
+                  {process && <p class="notes__text">{process}</p>}
+                  {
+                    processShots.length > 0 && (
+                      <ul class="notes__shots">
+                        {processShots.map((asset) => (
+                          <li>
+                            <button
+                              type="button"
+                              class="thumb"
+                              data-lightbox-src={asset.src}
+                              data-lightbox-alt={asset.alt?.[locale] ?? title}
+                            >
+                              <img src={asset.src} alt={asset.alt?.[locale] ?? title} loading="lazy" decoding="async" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  }
+                </div>
+              )
+            }
+          </div>
+        </section>
+      )
+    }
+
+    {
+      canCompare && drawing?.src && photo?.src && (
+        <section class="compare-band">
+          <div class="site-shell compare-band__grid">
+            <div>
+              <h2 class="display notes__title">{dict.home.fromPhoto}</h2>
+              <p class="muted">{dict.art.compareHint}</p>
+              <button
+                type="button"
+                class="text-btn"
+                data-lightbox-src={photo.src}
+                data-lightbox-alt={photo.alt?.[locale] ?? title}
+              >
+                {dict.art.openLightbox}: {dict.art.photo}
+              </button>
+            </div>
+            <PhotoDrawingCompare
+              compact
+              photoSrc={photo.src}
+              drawingSrc={drawing.src}
+              photoAlt={photo.alt?.[locale] ?? title}
+              drawingAlt={drawing.alt?.[locale] ?? title}
+              photoLabel={dict.art.photo}
+              drawingLabel={dict.art.drawing}
+              hint={dict.art.compareHint}
+            />
+          </div>
+        </section>
+      )
+    }
+
+    {
+      extras.length > 0 && (
+        <section class="section extras">
+          <ul class="site-shell extras__wall">
+            {extras.map((asset) => (
+              <li>
+                <button
+                  type="button"
+                  class="thumb"
+                  data-lightbox-src={asset.src}
+                  data-lightbox-alt={asset.alt?.[locale] ?? title}
+                >
+                  <img
+                    src={asset.src}
+                    alt={asset.alt?.[locale] ?? title}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </button>
+                <p class="extras__label">{asset.label ?? roleLabel(asset.role)}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    <nav class="sequel" aria-label={es ? 'Más obras' : 'More works'}>
+      <div class="site-shell sequel__grid">
+        <a class="sequel__link" href={workPath(locale, prev.data.pathSlugs[locale])} rel="prev">
+          <span class="muted">{es ? 'Anterior' : 'Previous'}</span>
+          <span class="display">{prev.data.title[locale]}</span>
+        </a>
+        <a
+          class="sequel__link sequel__link--next"
+          href={workPath(locale, next.data.pathSlugs[locale])}
+          rel="next"
+        >
+          <span class="muted">{es ? 'Siguiente' : 'Next'}</span>
+          <span class="display">{next.data.title[locale]}</span>
+        </a>
+      </div>
+    </nav>
+  </article>
+  <ImageLightbox closeLabel={dict.art.closeLightbox} />
+</PublicLayout>
+
+<style>
+  .piece {
+    padding-block: 0.5rem clamp(4rem, 8vw, 7rem);
+    background: radial-gradient(ellipse 50% 60% at 65% 40%, #fff, transparent 70%);
+  }
+
+  .piece__grid {
+    display: grid;
+    gap: clamp(2rem, 5vw, 4.5rem);
+    align-items: center;
+  }
+
+  .piece__head {
+    display: grid;
+    gap: 1.25rem;
+    justify-items: start;
+  }
+
+  .piece__back {
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  .piece__back::before {
+    content: '← ';
+  }
+
+  .piece__title {
+    margin: 0;
+    font-size: clamp(3.4rem, 8vw, 8rem);
+    line-height: 0.9;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+  }
+
+  .plaque {
+    margin: 0;
+    display: grid;
+    padding-left: 0.9rem;
+    border-left: 1px solid var(--line-strong);
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .notes {
+    padding-block: clamp(2.5rem, 6vw, 4.5rem);
+  }
+
+  .notes__grid {
+    display: grid;
+    gap: clamp(2rem, 4vw, 4rem);
+  }
+
+  .notes__title {
+    margin: 0 0 0.8rem;
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    letter-spacing: -0.04em;
+  }
+
+  .notes__text {
+    margin: 0;
+    max-width: 38rem;
+    font-size: 1.08rem;
+    line-height: 1.65;
+    white-space: pre-line;
+  }
+
+  .notes__shots {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin: 1rem 0 0;
+    padding: 0;
+  }
+
+  .notes__shots li {
+    width: min(100%, 9rem);
+  }
+
+  .notes__shots img {
+    width: 100%;
+    padding: 0.35rem;
+  }
+
+  .piece__wall {
+    margin: 0;
+  }
+
+  .piece__zoom,
+  .thumb {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: zoom-in;
+  }
+
+  .piece__zoom img {
+    width: 100%;
+    max-height: 80svh;
+    object-fit: contain;
+    padding: clamp(0.6rem, 1.4vw, 1.1rem);
+  }
+
+  .compare-band {
+    padding-block: clamp(2rem, 5vw, 3.5rem);
+    background: var(--paper-deep);
+  }
+
+  .compare-band__grid {
+    display: grid;
+    gap: clamp(1.25rem, 3vw, 2.5rem);
+    align-items: center;
+    justify-items: start;
+  }
+
+  .text-btn {
+    font: inherit;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 0.35em;
+  }
+
+  .extras__wall {
+    list-style: none;
+    padding: 0;
+    columns: 2;
+    column-gap: clamp(1.25rem, 3vw, 3rem);
+  }
+
+  .extras__wall li {
+    break-inside: avoid;
+    margin-bottom: clamp(2rem, 4vw, 3rem);
+  }
+
+  .extras__wall img {
+    width: 100%;
+    padding: 0.6rem;
+  }
+
+  .extras__label {
+    margin: 0.8rem 0 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.15rem;
+  }
+
+  .sequel {
+    border-top: 1px solid var(--line);
+  }
+
+  .sequel__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sequel__link {
+    display: grid;
+    gap: 0.35rem;
+    padding-block: clamp(2rem, 5vw, 3.5rem);
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .sequel__link .display {
+    font-size: clamp(1.6rem, 4vw, 3.2rem);
+    letter-spacing: -0.04em;
+    transition: transform 500ms var(--ease-out);
+  }
+
+  .sequel__link:hover .display {
+    transform: translateX(0.4rem);
+  }
+
+  .sequel__link--next {
+    text-align: right;
+    border-left: 1px solid var(--line);
+  }
+
+  .sequel__link--next:hover .display {
+    transform: translateX(-0.4rem);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @media (min-width: 64rem) {
+    .piece__grid {
+      grid-template-columns: 4fr 7fr;
+    }
+
+    .notes__grid,
+    .compare-band__grid {
+      grid-template-columns: 1fr 1fr;
+      align-items: start;
+    }
+
+    .extras__wall {
+      columns: 3;
+    }
+  }
+</style>

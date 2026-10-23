@@ -1,0 +1,728 @@
+{
+  "builtAt": "2026-10-21T19:59:10.615Z",
+  "source": "PROMPT Anexo B",
+  "artworkCount": 19,
+  "downloadErrors": 0,
+  "artworks": [
+    {
+      "id": "dogs-a3-1",
+      "order": 1,
+      "category": "dog",
+      "title": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      },
+      "pathSlugs": {
+        "en": "dogs-a3-1",
+        "es": "dogs-a3-1"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_1612-1547x1080.jpg",
+          "status": "ok",
+          "bytes": 199320,
+          "sha256": "427cc4296d394cec203b72c8f50fa64d36548c6144e9de6b98fa5e497ac6f669",
+          "localPath": "migration/downloads/portfolio/dogs-a3-1-0-IMG_1612-1547x1080.jpg",
+          "publicUrl": "/media/portfolio/dogs-a3-1-0-IMG_1612-1547x1080.jpg"
+        },
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/A3-drawing-jack-russels-1528x1080.jpg",
+          "status": "ok",
+          "bytes": 91541,
+          "sha256": "52475d717e466a193081d2fb2e68a3038aba94775b35c19112d75628abe71645",
+          "localPath": "migration/downloads/portfolio/dogs-a3-1-1-A3-drawing-jack-russels-1528x1080.jpg",
+          "publicUrl": "/media/portfolio/dogs-a3-1-1-A3-drawing-jack-russels-1528x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_5270.jpg",
+          "status": "ok",
+          "bytes": 224207,
+          "sha256": "225051c4b9a642fa0f74e1309d05930eb4f57463033be70572effb71af0ec403",
+          "localPath": "migration/downloads/portfolio/dogs-a3-1-2-IMG_5270.jpg",
+          "publicUrl": "/media/portfolio/dogs-a3-1-2-IMG_5270.jpg"
+        }
+      ]
+    },
+    {
+      "id": "dogs-a3-2",
+      "order": 2,
+      "category": "dog",
+      "title": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      },
+      "pathSlugs": {
+        "en": "dogs-a3-2",
+        "es": "dogs-a3-2"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_1585-1528x1080.jpg",
+          "status": "ok",
+          "bytes": 218989,
+          "sha256": "01eb2acb9a0afc6504e541362cb1f7ae94f8f21550280ec0d4afa522ee01aef2",
+          "localPath": "migration/downloads/portfolio/dogs-a3-2-0-IMG_1585-1528x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/BE046129-13D3-42A6-87A1-F3C54DF4DE2B-1620x1080.jpg",
+          "status": "ok",
+          "bytes": 201241,
+          "sha256": "b065bd5eab06bfa03666c53b50bf81e192fc55f340e74a25c82726f7ed6e8d90",
+          "localPath": "migration/downloads/portfolio/dogs-a3-2-1-BE046129-13D3-42A6-87A1-F3C54DF4DE2B-1620x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "mabel",
+      "order": 3,
+      "category": "dog",
+      "title": {
+        "en": "Mabel",
+        "es": "Mabel"
+      },
+      "pathSlugs": {
+        "en": "mabel",
+        "es": "mabel"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Mabel",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_1562-e1786611102186-764x1080.jpg",
+          "status": "ok",
+          "bytes": 120863,
+          "sha256": "f06b7b629ced66c782d657a565bd2605abd8541bdc4bf42649b72e81cc3f3b82",
+          "localPath": "migration/downloads/portfolio/mabel-0-IMG_1562-e1786611102186-764x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Mabel",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_1955-810x1080.jpg",
+          "status": "ok",
+          "bytes": 231625,
+          "sha256": "79eed40dc1bb5cb962a8209ac4129c055963a75ed2b5fdca9269f58672143af6",
+          "localPath": "migration/downloads/portfolio/mabel-1-IMG_1955-810x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "dog-generic-1",
+      "order": 4,
+      "category": "dog",
+      "title": {
+        "en": "Dog",
+        "es": "Perro"
+      },
+      "pathSlugs": {
+        "en": "dog-generic-1",
+        "es": "dog-generic-1"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_1509-770x1080.jpg",
+          "status": "ok",
+          "bytes": 108162,
+          "sha256": "1db84b039ddd5b45c78a41e1eadcb10e6e88fc62969ef71037a374eaf921868b",
+          "localPath": "migration/downloads/portfolio/dog-generic-1-0-IMG_1509-770x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/PHOTO-2025-06-07-10-21-49-e1786446260284.jpg",
+          "status": "ok",
+          "bytes": 168628,
+          "sha256": "13fca4151df792816147d1fe7839d2546cfee4761c89fbed61dd94ddb77cd3c4",
+          "localPath": "migration/downloads/portfolio/dog-generic-1-1-PHOTO-2025-06-07-10-21-49-e1786446260284.jpg"
+        }
+      ]
+    },
+    {
+      "id": "smokey",
+      "order": 5,
+      "category": "cat",
+      "title": {
+        "en": "Smokey",
+        "es": "Smokey"
+      },
+      "pathSlugs": {
+        "en": "smokey",
+        "es": "smokey"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Smokey",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_3394-pdf-755x1080.jpg",
+          "status": "ok",
+          "bytes": 182004,
+          "sha256": "2e7598a3e747176d4ae5b019e0956a7b2d01e3640f257d5c7bdd74f5b69cd0ba",
+          "localPath": "migration/downloads/portfolio/smokey-0-IMG_3394-pdf-755x1080.jpg"
+        },
+        {
+          "role": "drawing",
+          "label": "Smocky",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_3427-pdf-810x1080.jpg",
+          "status": "ok",
+          "bytes": 164830,
+          "sha256": "8cd9122ad709baea8855997791e580f2c8a75898f3c9060bce9fff4188aacf3e",
+          "localPath": "migration/downloads/portfolio/smokey-1-IMG_3427-pdf-810x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Smoky",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/1000056511.jpg",
+          "status": "ok",
+          "bytes": 82180,
+          "sha256": "6f7a20419b4bd9e2ca7954da091240b21419e4fcd5200b7d83dd492e1619df42",
+          "localPath": "migration/downloads/portfolio/smokey-2-1000056511.jpg"
+        }
+      ]
+    },
+    {
+      "id": "dog-generic-2",
+      "order": 6,
+      "category": "dog",
+      "title": {
+        "en": "Dog",
+        "es": "Perro"
+      },
+      "pathSlugs": {
+        "en": "dog-generic-2",
+        "es": "dog-generic-2"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_1234-770x1080.jpg",
+          "status": "ok",
+          "bytes": 146852,
+          "sha256": "9917960276fd17ea46d35a6cc80d0d6b29b77c00ba4913474a28f20eb721d465",
+          "localPath": "migration/downloads/portfolio/dog-generic-2-0-IMG_1234-770x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/20250616_160803-810x1080.jpg",
+          "status": "ok",
+          "bytes": 161388,
+          "sha256": "14660b9295f5b60431b3e119f9ea03100ac94f1b0d9a083a37f03a17967cfae3",
+          "localPath": "migration/downloads/portfolio/dog-generic-2-1-20250616_160803-810x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "michi-pantera",
+      "order": 7,
+      "category": "cat",
+      "title": {
+        "en": "Michi & Pantera",
+        "es": "Michi y Pantera"
+      },
+      "pathSlugs": {
+        "en": "michi-pantera",
+        "es": "michi-pantera"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Michi",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_2576-2-2-pdf-765x1080.jpg",
+          "status": "ok",
+          "bytes": 154318,
+          "sha256": "4b8eec608e87874d8915dc876e14e667c7a33341be2449548edb2a0a66d0f37c",
+          "localPath": "migration/downloads/portfolio/michi-pantera-0-IMG_2576-2-2-pdf-765x1080.jpg"
+        },
+        {
+          "role": "drawing",
+          "label": "Pantera",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_2491-2-pdf-770x1080.jpg",
+          "status": "ok",
+          "bytes": 202421,
+          "sha256": "c0a9a29bdd772899c2c544bc164b66b0ed73360c75881c96601adde0ab6f9dd3",
+          "localPath": "migration/downloads/portfolio/michi-pantera-1-IMG_2491-2-pdf-770x1080.jpg"
+        },
+        {
+          "role": "related_product_photo",
+          "label": "Mugs & Coasters",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_2580-1-pdf-1055x1080.jpg",
+          "status": "ok",
+          "bytes": 179325,
+          "sha256": "3266ba3978d03bc010cf2d6956a584745a95856ea3781c494b2a946089dd9c01",
+          "localPath": "migration/downloads/portfolio/michi-pantera-2-IMG_2580-1-pdf-1055x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Michi",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/29a4b4ee-656f-4bd6-a422-33a2b33419b9-919x1080.jpg",
+          "status": "ok",
+          "bytes": 133014,
+          "sha256": "30e6be00a98a66da3086e9ed300941a9c0b5819ff916ce90d4e503e665691494",
+          "localPath": "migration/downloads/portfolio/michi-pantera-3-29a4b4ee-656f-4bd6-a422-33a2b33419b9-919x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Pantera",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/d110a758-343a-4e15-830b-8622ecfc4897.jpg",
+          "status": "ok",
+          "bytes": 34045,
+          "sha256": "02e888f80558646ed96c630ece6c7ae2767f4b33d32b1164fac278ad17d086fe",
+          "localPath": "migration/downloads/portfolio/michi-pantera-4-d110a758-343a-4e15-830b-8622ecfc4897.jpg"
+        }
+      ]
+    },
+    {
+      "id": "rufus",
+      "order": 8,
+      "category": "dog",
+      "title": {
+        "en": "Rufus",
+        "es": "Rufus"
+      },
+      "pathSlugs": {
+        "en": "rufus",
+        "es": "rufus"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Rufus",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/Rufus-762x1080.jpeg",
+          "status": "ok",
+          "bytes": 163414,
+          "sha256": "a6cdd84d3eaa6c4e96da519f74298a3fbc8028260dad68f67e88825139958824",
+          "localPath": "migration/downloads/portfolio/rufus-0-Rufus-762x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Rufus",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/9ad5b5d1-3593-41f0-84a1-2d622237b608-801x1080.jpg",
+          "status": "ok",
+          "bytes": 137505,
+          "sha256": "83261e389e251d0820e4525609eb0d8ed187328b35409460b71ea478cb807b32",
+          "localPath": "migration/downloads/portfolio/rufus-1-9ad5b5d1-3593-41f0-84a1-2d622237b608-801x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "sox-kira",
+      "order": 9,
+      "category": "dog",
+      "title": {
+        "en": "Sox & Kira",
+        "es": "Sox y Kira"
+      },
+      "pathSlugs": {
+        "en": "sox-kira",
+        "es": "sox-kira"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Kira & Sox",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/Kira-Sox-1541x1080.jpeg",
+          "status": "ok",
+          "bytes": 349306,
+          "sha256": "0a9ad567573ca7fec0c9291cfd3e48c63f83a6b8b7abfff20d1e85eb100dd1ca",
+          "localPath": "migration/downloads/portfolio/sox-kira-0-Kira-Sox-1541x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Kira & Sox",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/photo-output-e1783718127926-1591x1080.png",
+          "status": "ok",
+          "bytes": 1361702,
+          "sha256": "6b53583656c9c53cee8c1ae187e638f2c973c86feebfb890c0fac8017a056f6c",
+          "localPath": "migration/downloads/portfolio/sox-kira-1-photo-output-e1783718127926-1591x1080.png"
+        }
+      ]
+    },
+    {
+      "id": "chester",
+      "order": 10,
+      "category": "dog",
+      "title": {
+        "en": "Chester",
+        "es": "Chester"
+      },
+      "pathSlugs": {
+        "en": "chester",
+        "es": "chester"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Chester",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/IMG_9321-copy-852x1080.jpg",
+          "status": "ok",
+          "bytes": 141456,
+          "sha256": "957b446375a2aab724e05104e933750ce27fd09dfce15b496c8e0a9311446d32",
+          "localPath": "migration/downloads/portfolio/chester-0-IMG_9321-copy-852x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Chester",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/IMG_1590-865x1080.jpg",
+          "status": "ok",
+          "bytes": 108526,
+          "sha256": "17a34adb282216900acfb36556c570e9c04fd267e104f19cc44e1b2898a14047",
+          "localPath": "migration/downloads/portfolio/chester-1-IMG_1590-865x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "moquitos",
+      "order": 11,
+      "category": "horse",
+      "title": {
+        "en": "Moquitos",
+        "es": "Moquitos"
+      },
+      "pathSlugs": {
+        "en": "moquitos",
+        "es": "moquitos"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Moquitos",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/Moquitos-788x1080.jpeg",
+          "status": "ok",
+          "bytes": 209314,
+          "sha256": "6b994f4d528e4f48bebd738e024f7a574c94f93257844984e0bf86c658266556",
+          "localPath": "migration/downloads/portfolio/moquitos-0-Moquitos-788x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Moquitos",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/MOquitos-1-871x1080.jpg",
+          "status": "ok",
+          "bytes": 162471,
+          "sha256": "0170008dabd1c833865ddf9ce5623c975cd9757c21e616422edb2e7ce925ff5b",
+          "localPath": "migration/downloads/portfolio/moquitos-1-MOquitos-1-871x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "millie-cat",
+      "order": 12,
+      "category": "cat",
+      "title": {
+        "en": "Millie",
+        "es": "Millie"
+      },
+      "pathSlugs": {
+        "en": "millie-cat",
+        "es": "millie-cat"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Millie Drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/05/Millie-Drawing-873x1080.jpeg",
+          "status": "ok",
+          "bytes": 232267,
+          "sha256": "ce13bc0ffe98f50e97bef787cc00dc6c0fda9c0bd14bde8e53c050fee2296d3a",
+          "localPath": "migration/downloads/portfolio/millie-cat-0-Millie-Drawing-873x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Millie Photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/05/Millie-Photo.jpg",
+          "status": "ok",
+          "bytes": 87474,
+          "sha256": "a53f71d75b8bb709b3fde3452daa569074ac7ce383d80493943c1ab30752709b",
+          "localPath": "migration/downloads/portfolio/millie-cat-1-Millie-Photo.jpg"
+        }
+      ]
+    },
+    {
+      "id": "tida",
+      "order": 13,
+      "category": "dog",
+      "title": {
+        "en": "Tida",
+        "es": "Tida"
+      },
+      "pathSlugs": {
+        "en": "tida",
+        "es": "tida"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Tida drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/03/Tida-dog-drawing-rotated-810x1080.jpeg",
+          "status": "ok",
+          "bytes": 160201,
+          "sha256": "ec6ced073b0387800fb9c10d7f42366852bbbbcda54d58d4eeedd744a5e3eaa3",
+          "localPath": "migration/downloads/portfolio/tida-0-Tida-dog-drawing-rotated-810x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Tida photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Tida-dog-photo-691x1080.jpg",
+          "status": "ok",
+          "bytes": 133929,
+          "sha256": "d4ca4a22c6c86060b59a453ef24fda0f0ec36bc78497af5232fa1dd584a961dd",
+          "localPath": "migration/downloads/portfolio/tida-1-Tida-dog-photo-691x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "frankie",
+      "order": 14,
+      "category": "dog",
+      "title": {
+        "en": "Frankie",
+        "es": "Frankie"
+      },
+      "pathSlugs": {
+        "en": "frankie",
+        "es": "frankie"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Frankie drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/French-Bulldog-drawing-1551x1080.jpeg",
+          "status": "ok",
+          "bytes": 237997,
+          "sha256": "ea804861f83204b2a2263bacfb0801c9a21a9c01db06f3ff56c56265d36042b1",
+          "localPath": "migration/downloads/portfolio/frankie-0-French-Bulldog-drawing-1551x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Frankie photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/French-Bulldog-photo-1438x1080.jpg",
+          "status": "ok",
+          "bytes": 300841,
+          "sha256": "6fd7b1c6134a7d904776c81052d1a4bda45e5c080559b0df969d28c4f3716f84",
+          "localPath": "migration/downloads/portfolio/frankie-1-French-Bulldog-photo-1438x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "doggy",
+      "order": 15,
+      "category": "dog",
+      "title": {
+        "en": "Doggy",
+        "es": "Doggy"
+      },
+      "pathSlugs": {
+        "en": "doggy",
+        "es": "doggy"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Doggy drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/03/Doggy-my-dog-drawing-1535x1080.jpg",
+          "status": "ok",
+          "bytes": 317843,
+          "sha256": "e8fbe1c80bcb0531c93e46c455e2452073cbaccc2ccbf77c963bd4acd5320f37",
+          "localPath": "migration/downloads/portfolio/doggy-0-Doggy-my-dog-drawing-1535x1080.jpg"
+        },
+        {
+          "role": "comparison",
+          "label": "Doggy comparing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Doggy-my-dog-comparing-1440x1080.jpeg",
+          "status": "ok",
+          "bytes": 315289,
+          "sha256": "bc14c4471050c33145a5066b6d1e40b9d7205d69c8de406dc93f3e4a80aadfe2",
+          "localPath": "migration/downloads/portfolio/doggy-1-Doggy-my-dog-comparing-1440x1080.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Doggy photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Doggy-my-dog-photo-1620x1080.jpeg",
+          "status": "ok",
+          "bytes": 163937,
+          "sha256": "77563cc20c558e10a548508a573079defd7a1cc5cfb664e35f3130df30091e14",
+          "localPath": "migration/downloads/portfolio/doggy-2-Doggy-my-dog-photo-1620x1080.jpeg"
+        }
+      ]
+    },
+    {
+      "id": "patron",
+      "order": 16,
+      "category": "dog",
+      "title": {
+        "en": "Patrón",
+        "es": "Patrón"
+      },
+      "pathSlugs": {
+        "en": "patron",
+        "es": "patron"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Patron drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Dog-Pedro-Arg-drawing-760x1080.jpg",
+          "status": "ok",
+          "bytes": 134965,
+          "sha256": "d8fc9ee0462e2b696652d1b40cd632cc3e2f59c67faba51b3f451ea00c33a2da",
+          "localPath": "migration/downloads/portfolio/patron-0-Dog-Pedro-Arg-drawing-760x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Patron photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Dog-Pedro-Arg-photo-608x1080.jpg",
+          "status": "ok",
+          "bytes": 197223,
+          "sha256": "2fc0c51e00aa6834e4e71d2b316be4103080d1642a477195839fda57939b3fa4",
+          "localPath": "migration/downloads/portfolio/patron-1-Dog-Pedro-Arg-photo-608x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "lucky-estrella",
+      "order": 17,
+      "category": "dog",
+      "title": {
+        "en": "Lucky and Estrella",
+        "es": "Lucky y Estrella"
+      },
+      "pathSlugs": {
+        "en": "lucky-estrella",
+        "es": "lucky-estrella"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Lucky-and-Estrella-dogs-drawing-1-758x1080.jpg",
+          "status": "ok",
+          "bytes": 120458,
+          "sha256": "4eeb57d030d1fecf817d07768f22cae44a7724dcc6fd5b57f846e34e782daed0",
+          "localPath": "migration/downloads/portfolio/lucky-estrella-0-Lucky-and-Estrella-dogs-drawing-1-758x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/05/Lucky-and-Estrella-dogs-photo-792x1080.jpg",
+          "status": "ok",
+          "bytes": 128276,
+          "sha256": "f089ef6e677909e41ee5fdc38b553f409ca6e0ab092f1a9760d224efc34eaadb",
+          "localPath": "migration/downloads/portfolio/lucky-estrella-1-Lucky-and-Estrella-dogs-photo-792x1080.jpg"
+        }
+      ]
+    },
+    {
+      "id": "nara",
+      "order": 18,
+      "category": "dog",
+      "title": {
+        "en": "Nara",
+        "es": "Nara"
+      },
+      "pathSlugs": {
+        "en": "nara",
+        "es": "nara"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Nara drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Dubi-dog-Nara-drawing-755x1080.jpg",
+          "status": "ok",
+          "bytes": 123891,
+          "sha256": "17757ebf25e79e916fd0cb3cefc657e53841edbe48f8af0ae17d79684343ca18",
+          "localPath": "migration/downloads/portfolio/nara-0-Dubi-dog-Nara-drawing-755x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Nara photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Dubi-dog-Nara-photo.jpg",
+          "status": "ok",
+          "bytes": 117294,
+          "sha256": "e0dd00be930705dc5d01e457c27233e61c719481cccd2cde866bb39a8f47a8da",
+          "localPath": "migration/downloads/portfolio/nara-1-Dubi-dog-Nara-photo.jpg"
+        }
+      ]
+    },
+    {
+      "id": "millie-lady-charlie",
+      "order": 19,
+      "category": "dog",
+      "title": {
+        "en": "Millie, Lady and Charlie",
+        "es": "Millie, Lady y Charlie"
+      },
+      "pathSlugs": {
+        "en": "millie-lady-charlie",
+        "es": "millie-lady-charlie"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Millie drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Millie-dog-drawing-1560x1080.jpg",
+          "status": "ok",
+          "bytes": 391663,
+          "sha256": "ae54912dda4449f78d87fd515bdd3c4912002efb3fcfe8a3d2468b46f594dc47",
+          "localPath": "migration/downloads/portfolio/millie-lady-charlie-0-Millie-dog-drawing-1560x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Millie photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Millie-dog-photo.jpg",
+          "status": "ok",
+          "bytes": 215837,
+          "sha256": "f4702d160c272bfa3400308d58b590e03ee003239d004f84ea62ac0a02fc31ba",
+          "localPath": "migration/downloads/portfolio/millie-lady-charlie-1-Millie-dog-photo.jpg"
+        },
+        {
+          "role": "drawing",
+          "label": "Charlie drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/03/Charlie-dog-drawing-1539x1080.jpg",
+          "status": "ok",
+          "bytes": 256519,
+          "sha256": "d6d8de2339818fd72f22effb1c5b9253698ef6673caa754340055c62088e59d8",
+          "localPath": "migration/downloads/portfolio/millie-lady-charlie-2-Charlie-dog-drawing-1539x1080.jpg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Lady photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Lady-dog-photo.jpeg",
+          "status": "ok",
+          "bytes": 244614,
+          "sha256": "5811ac8645ee30a4268255cafc8987e38c2a8a4878bf7f007cc2d347016cc025",
+          "localPath": "migration/downloads/portfolio/millie-lady-charlie-3-Lady-dog-photo.jpeg"
+        },
+        {
+          "role": "drawing",
+          "label": "Lady drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Lady-dog-drawing.jpeg",
+          "status": "ok",
+          "bytes": 195738,
+          "sha256": "8c1a9b311eaf2884b89e425404e9a7ca1d94ff3608fe868ec8ed89576f05a46f",
+          "localPath": "migration/downloads/portfolio/millie-lady-charlie-4-Lady-dog-drawing.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Charlie photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Charlie-dog-photo-1374x1080.jpg",
+          "status": "ok",
+          "bytes": 250448,
+          "sha256": "edff494136d516526e17bd2787c39bb70cfa665595e7c7ca3a4af582b4fd31f4",
+          "localPath": "migration/downloads/portfolio/millie-lady-charlie-5-Charlie-dog-photo-1374x1080.jpg"
+        }
+      ]
+    }
+  ]
+}

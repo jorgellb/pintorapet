@@ -1,0 +1,33 @@
+{
+  "id": "millie-cat",
+  "title": {
+    "en": "Millie",
+    "es": "Millie"
+  },
+  "category": "cat",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/millie-cat-millie-cat-0-Millie-Drawing-873x1080.jpeg",
+      "label": "Millie Drawing",
+      "alt": {
+        "en": "Millie Drawing",
+        "es": "Millie Drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/millie-cat-millie-cat-1-Millie-Photo.jpg",
+      "label": "Millie Photo",
+      "alt": {
+        "en": "Millie Photo",
+        "es": "Millie Photo"
+      }
+    }
+  ],
+  "order": 12,
+  "pathSlugs": {
+    "en": "millie-cat",
+    "es": "millie-cat"
+  }
+}

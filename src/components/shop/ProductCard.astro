@@ -1,0 +1,124 @@
+---
+import { formatEur } from '@/lib/domain/money';
+import { productPath } from '@/i18n/routes';
+import { t, type Locale } from '@/i18n';
+import type { ProductPublic } from '@/lib/domain/types';
+
+interface Props {
+  locale: Locale;
+  product: ProductPublic;
+}
+
+const { locale, product } = Astro.props;
+const dict = t(locale);
+const price = formatEur(product.priceCents, locale);
+const href = productPath(locale, product.slug);
+const canAdd =
+  product.saleEnabled &&
+  product.availability !== 'sold_out' &&
+  product.availability !== 'unavailable';
+const statusLabel =
+  product.availability === 'sold_out'
+    ? dict.shop.soldOut
+    : product.availability === 'unavailable'
+      ? dict.shop.unavailable
+      : product.availability === 'unverified' || !product.saleEnabled
+        ? dict.shop.unverified
+        : null;
+---
+
+<article class="product-card" data-product-id={product.id}>
+  <a class="product-card__media" href={href}>
+    {
+      product.coverImageUrl ? (
+        <img src={product.coverImageUrl} alt="" loading="lazy" />
+      ) : (
+        <div class="product-card__placeholder" aria-hidden="true" />
+      )
+    }
+  </a>
+  <div class="product-card__body">
+    <h2 class="product-card__title">
+      <a href={href}>{product.title}</a>
+    </h2>
+    {product.summary && <p class="muted product-card__summary">{product.summary}</p>}
+    <p class="price">{price}</p>
+    {statusLabel && <p class="muted product-card__status">{statusLabel}</p>}
+    {
+      canAdd ? (
+        <button
+          type="button"
+          class="btn"
+          data-add-to-cart
+          data-product-id={product.id}
+          data-label={dict.shop.addToCart}
+        >
+          {dict.shop.addToCart}
+        </button>
+      ) : (
+        <button type="button" class="btn" disabled>
+          {statusLabel ?? dict.shop.unavailable}
+        </button>
+      )
+    }
+  </div>
+</article>
+
+<style>
+  .product-card {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .product-card__media {
+    display: block;
+    aspect-ratio: 1;
+    border: 0;
+    border-radius: var(--radius);
+    background: #fff;
+    box-shadow: var(--shadow-art);
+    overflow: hidden;
+    text-decoration: none;
+  }
+
+  .product-card__media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .product-card__placeholder {
+    width: 100%;
+    height: 100%;
+    background:
+      linear-gradient(145deg, var(--accent-soft), transparent 55%),
+      linear-gradient(var(--line), var(--line));
+  }
+
+  .product-card__title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    font-weight: 500;
+  }
+
+  .product-card__title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .product-card__summary {
+    margin: 0.35rem 0 0;
+    font-size: 0.95rem;
+  }
+
+  .product-card__status {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .price {
+    margin: 0.5rem 0;
+    font-weight: 600;
+  }
+</style>

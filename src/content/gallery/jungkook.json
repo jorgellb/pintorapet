@@ -1,0 +1,29 @@
+{
+  "id": "jungkook",
+  "title": {
+    "en": "Jungkook",
+    "es": "Jungkook"
+  },
+  "group": "people",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/gallery/jungkook-0.jpeg",
+      "label": "Jungkook singer drawing",
+      "alt": {
+        "en": "Jungkook singer drawing",
+        "es": "Jungkook singer drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/gallery/jungkook-1.jpg",
+      "label": "Jungkook singer photo",
+      "alt": {
+        "en": "Jungkook singer photo",
+        "es": "Jungkook singer photo"
+      }
+    }
+  ],
+  "order": 4
+}

@@ -1,0 +1,808 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import CorreosConnection from '@/components/admin/CorreosConnection.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { euros } from '@/lib/admin/labels';
+import { countryOptions } from '@/lib/domain/countries';
+import { CORREOS_PRODUCTS } from '@/lib/server/shipping/correos';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+type Zone = {
+  id: string;
+  name_es: string;
+  name_en: string;
+  kind: 'national' | 'international';
+  countries: string[];
+  regions: string[];
+  active: boolean;
+  position: number;
+  free_over_cents: number | null;
+  delivery_es: string;
+  delivery_en: string;
+  correos_product: string | null;
+  customs: boolean;
+  shipping_rates: Array<{ max_grams: number; price_cents: number }>;
+};
+
+const [{ data: zoneRows, error }, { data: settingsRow }] = await Promise.all([
+  admin.client
+    .from('shipping_zones')
+    .select('*, shipping_rates(max_grams, price_cents)')
+    .order('position'),
+  admin.client.from('shop_settings').select('shipping_config').eq('id', 1).maybeSingle(),
+]);
+
+const zones = ((zoneRows ?? []) as Zone[]).map((z) => ({
+  ...z,
+  shipping_rates: [...z.shipping_rates].sort((a, b) => a.max_grams - b.max_grams),
+}));
+const config = (settingsRow?.shipping_config ?? {}) as {
+  packagingGrams?: number;
+  customsDescription?: string;
+  sender?: Record<string, string>;
+};
+const sender = config.sender ?? {};
+const senderReady = Boolean(sender.name && sender.address && sender.locality && sender.postalCode);
+
+const countryNames = Object.fromEntries(countryOptions('es').map((c) => [c.code, c.name]));
+const regions = [
+  { id: 'peninsula', label: 'Península' },
+  { id: 'baleares', label: 'Islas Baleares' },
+  { id: 'canarias', label: 'Canarias' },
+  { id: 'ceuta', label: 'Ceuta' },
+  { id: 'melilla', label: 'Melilla' },
+];
+const regionLabel = Object.fromEntries(regions.map((r) => [r.id, r.label]));
+
+function coverage(z: Zone): string {
+  if (z.kind === 'national') return z.regions.map((r) => regionLabel[r] ?? r).join(', ');
+  if (z.countries.includes('*')) return 'Todos los países sin otra zona';
+  const names = z.countries.map((c) => countryNames[c] ?? c);
+  return names.length > 4 ? `${names.slice(0, 4).join(', ')} y ${names.length - 4} más` : names.join(', ');
+}
+
+const kg = (grams: number) => (grams / 1000).toLocaleString('es-ES', { maximumFractionDigits: 3 });
+const blankZone: Zone = {
+  id: '',
+  name_es: '',
+  name_en: '',
+  kind: 'international',
+  countries: [],
+  regions: [],
+  active: true,
+  position: 0,
+  free_over_cents: null,
+  delivery_es: '',
+  delivery_en: '',
+  correos_product: 'S0107',
+  customs: false,
+  shipping_rates: [
+    { max_grams: 500, price_cents: 0 },
+    { max_grams: 2000, price_cents: 0 },
+  ],
+};
+---
+
+<AdminLayout title="Envíos" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Envíos</h1>
+      <p class="lead">
+        Zonas de España e internacionales con su tarifa por peso. El precio se calcula solo en el
+        carrito y en el pago según el destino y el peso de las piezas.
+      </p>
+    </div>
+  </header>
+
+  {error && <p class="err">{error.message}</p>}
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Zonas y tarifas</h2>
+        <p class="hint">
+          Cada pedido usa la primera zona activa que cubra su destino. «Resto del mundo» recoge los
+          países que no estén en otra zona.
+        </p>
+      </div>
+      <button type="button" class="btn" data-zone-new>Nueva zona</button>
+    </div>
+
+    <div class="zones" data-zones>
+      {
+        zones.map((zone) => (
+          <details class="zone" data-zone={zone.id} data-active={String(zone.active)}>
+            <summary>
+              <span class="zone__title">
+                <strong>{zone.name_es}</strong>
+                <span class="muted">{coverage(zone)}</span>
+              </span>
+              <span class="zone__chips">
+                <span class="chip chip--info">{zone.kind === 'national' ? 'Nacional' : 'Internacional'}</span>
+                {zone.shipping_rates[0] && (
+                  <span class="chip">desde {euros(zone.shipping_rates[0].price_cents)}</span>
+                )}
+                {zone.free_over_cents && <span class="chip chip--ok">gratis desde {euros(zone.free_over_cents)}</span>}
+                {zone.customs && <span class="chip chip--warn">aduana</span>}
+                {!zone.active && <span class="chip chip--danger">pausada</span>}
+              </span>
+            </summary>
+            <form class="zone-form" data-zone-form>
+              <input type="hidden" name="id" value={zone.id} />
+              <div class="grid-3">
+                <label>
+                  Nombre
+                  <input name="nameEs" value={zone.name_es} maxlength="80" required />
+                </label>
+                <label>
+                  Nombre en inglés
+                  <input name="nameEn" value={zone.name_en} maxlength="80" required />
+                </label>
+                <label>
+                  Tipo
+                  <select name="kind" data-kind>
+                    <option value="national" selected={zone.kind === 'national'}>Nacional (España)</option>
+                    <option value="international" selected={zone.kind === 'international'}>Internacional</option>
+                  </select>
+                </label>
+              </div>
+
+              <fieldset class="regions" data-regions hidden={zone.kind !== 'national'}>
+                <legend>Regiones de España</legend>
+                <div class="checks">
+                  {regions.map((r) => (
+                    <label class="check">
+                      <input type="checkbox" name="regions" value={r.id} checked={zone.regions.includes(r.id)} />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+                <p class="hint">Se reconocen por el código postal: 07 Baleares, 35 y 38 Canarias, 51 Ceuta, 52 Melilla.</p>
+              </fieldset>
+
+              <fieldset class="countries" data-countries hidden={zone.kind !== 'international'}>
+                <legend>Países</legend>
+                <label class="check">
+                  <input type="checkbox" name="world" checked={zone.countries.includes('*')} data-world />
+                  Resto del mundo (todos los países que no estén en otra zona)
+                </label>
+                <label data-country-list hidden={zone.countries.includes('*')}>
+                  Códigos de país separados por comas
+                  <input
+                    name="countries"
+                    value={zone.countries.filter((c) => c !== '*').join(', ')}
+                    placeholder="PT, FR, DE"
+                    spellcheck="false"
+                    autocomplete="off"
+                    data-country-input
+                  />
+                  <span class="country-chips" data-country-chips />
+                </label>
+              </fieldset>
+
+              <fieldset>
+                <legend>Tarifa por peso</legend>
+                <table class="rates">
+                  <thead>
+                    <tr>
+                      <th>Hasta (kg)</th>
+                      <th>Precio (€)</th>
+                      <th><span class="visually-hidden">Quitar</span></th>
+                    </tr>
+                  </thead>
+                  <tbody data-rates>
+                    {zone.shipping_rates.map((rate) => (
+                      <tr>
+                        <td>
+                          <input type="number" name="maxKg" min="0.001" max="30" step="0.001" value={rate.max_grams / 1000} required />
+                        </td>
+                        <td>
+                          <input type="number" name="price" min="0" max="1000" step="0.01" value={(rate.price_cents / 100).toFixed(2)} required />
+                        </td>
+                        <td>
+                          <button type="button" class="btn--quiet" data-rate-remove aria-label="Quitar tramo">×</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button type="button" class="btn--quiet" data-rate-add>Añadir tramo</button>
+                <p class="hint">
+                  El peso incluye el embalaje. Si un pedido pesa más que el último tramo, la tienda pide al
+                  cliente que te escriba. Último tramo: {zone.shipping_rates.length ? `${kg(zone.shipping_rates.at(-1)!.max_grams)} kg` : '—'}.
+                </p>
+              </fieldset>
+
+              <div class="grid-3">
+                <label>
+                  Envío gratis desde (€)
+                  <input
+                    type="number"
+                    name="freeOver"
+                    min="0"
+                    step="0.01"
+                    value={zone.free_over_cents ? (zone.free_over_cents / 100).toFixed(2) : ''}
+                    placeholder="Sin envío gratis"
+                  />
+                </label>
+                <label>
+                  Plazo de entrega
+                  <input name="deliveryEs" value={zone.delivery_es} maxlength="80" placeholder="2–3 días laborables" />
+                </label>
+                <label>
+                  Plazo en inglés
+                  <input name="deliveryEn" value={zone.delivery_en} maxlength="80" placeholder="2–3 working days" />
+                </label>
+              </div>
+
+              <div class="grid-3">
+                <label>
+                  Producto de Correos
+                  <select name="correosProduct">
+                    <option value="">Sin producto (seguimiento manual)</option>
+                    {CORREOS_PRODUCTS.map((p) => (
+                      <option value={p.code} selected={zone.correos_product === p.code}>
+                        {p.label} · {p.code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label class="check check--box">
+                  <input type="checkbox" name="customs" checked={zone.customs} />
+                  Necesita aduana (CN22/CN23)
+                </label>
+                <label class="switch">
+                  <input type="checkbox" role="switch" name="active" checked={zone.active} />
+                  <span>
+                    <strong>Activa</strong>
+                    <span class="hint">Pausada, la tienda no la ofrece.</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="actions">
+                <button type="submit">Guardar zona</button>
+                {zone.id && (
+                  <button type="button" class="btn--danger" data-zone-delete>
+                    Borrar
+                  </button>
+                )}
+                <p class="status" data-status hidden role="status" />
+              </div>
+            </form>
+          </details>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Remitente y paquete</h2>
+    <p class="hint">
+      Correos imprime esta dirección en la etiqueta como remitente. El peso del embalaje se suma al
+      de las piezas para elegir el tramo.
+    </p>
+    {!senderReady && <p class="note">Completa la dirección del remitente para poder crear envíos en Correos.</p>}
+    <form class="settings-form" data-settings-form>
+      <div class="grid-2">
+        <label>
+          Nombre
+          <input name="name" value={sender.name ?? ''} maxlength="50" placeholder="Meili Stringfellow" />
+        </label>
+        <label>
+          Empresa (opcional)
+          <input name="company" value={sender.company ?? ''} maxlength="50" placeholder="Pets Drawings" />
+        </label>
+      </div>
+      <label>
+        Dirección
+        <input name="address" value={sender.address ?? ''} maxlength="100" placeholder="Calle, número, piso" />
+      </label>
+      <div class="grid-3">
+        <label>
+          Código postal
+          <input name="postalCode" value={sender.postalCode ?? ''} inputmode="numeric" pattern="\d{5}" maxlength="5" />
+        </label>
+        <label>
+          Localidad
+          <input name="locality" value={sender.locality ?? ''} maxlength="40" />
+        </label>
+        <label>
+          Teléfono
+          <input name="phone" value={sender.phone ?? ''} maxlength="15" inputmode="tel" />
+        </label>
+      </div>
+      <div class="grid-3">
+        <label>
+          Email
+          <input name="email" type="email" value={sender.email ?? ''} maxlength="50" />
+        </label>
+        <label>
+          Embalaje (g)
+          <input name="packagingGrams" type="number" min="0" max="5000" step="1" value={config.packagingGrams ?? 150} required />
+        </label>
+        <label>
+          Contenido para aduana
+          <input name="customsDescription" value={config.customsDescription ?? 'Ilustraciones impresas / Printed illustrations'} maxlength="50" />
+        </label>
+      </div>
+      <div class="actions">
+        <button type="submit">Guardar</button>
+        <p class="status" data-status hidden role="status" />
+      </div>
+    </form>
+  </section>
+
+  <CorreosConnection client={admin.client} />
+
+  <template data-zone-template>
+    <details class="zone" data-zone="" open>
+      <summary>
+        <span class="zone__title"><strong>Nueva zona</strong><span class="muted">Sin guardar</span></span>
+      </summary>
+      <form class="zone-form" data-zone-form>
+        <input type="hidden" name="id" value="" />
+        <div class="grid-3">
+          <label>Nombre<input name="nameEs" maxlength="80" required /></label>
+          <label>Nombre en inglés<input name="nameEn" maxlength="80" required /></label>
+          <label>
+            Tipo
+            <select name="kind" data-kind>
+              <option value="national">Nacional (España)</option>
+              <option value="international" selected>Internacional</option>
+            </select>
+          </label>
+        </div>
+        <fieldset class="regions" data-regions hidden>
+          <legend>Regiones de España</legend>
+          <div class="checks">
+            {regions.map((r) => (
+              <label class="check"><input type="checkbox" name="regions" value={r.id} />{r.label}</label>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset class="countries" data-countries>
+          <legend>Países</legend>
+          <label class="check"><input type="checkbox" name="world" data-world />Resto del mundo (todos los países que no estén en otra zona)</label>
+          <label data-country-list>
+            Códigos de país separados por comas
+            <input name="countries" placeholder="US, CA, MX" spellcheck="false" autocomplete="off" data-country-input />
+            <span class="country-chips" data-country-chips />
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Tarifa por peso</legend>
+          <table class="rates">
+            <thead><tr><th>Hasta (kg)</th><th>Precio (€)</th><th><span class="visually-hidden">Quitar</span></th></tr></thead>
+            <tbody data-rates>
+              {blankZone.shipping_rates.map((rate) => (
+                <tr>
+                  <td><input type="number" name="maxKg" min="0.001" max="30" step="0.001" value={rate.max_grams / 1000} required /></td>
+                  <td><input type="number" name="price" min="0" max="1000" step="0.01" value="" required /></td>
+                  <td><button type="button" class="btn--quiet" data-rate-remove aria-label="Quitar tramo">×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button type="button" class="btn--quiet" data-rate-add>Añadir tramo</button>
+        </fieldset>
+        <div class="grid-3">
+          <label>Envío gratis desde (€)<input type="number" name="freeOver" min="0" step="0.01" placeholder="Sin envío gratis" /></label>
+          <label>Plazo de entrega<input name="deliveryEs" maxlength="80" placeholder="5–10 días laborables" /></label>
+          <label>Plazo en inglés<input name="deliveryEn" maxlength="80" placeholder="5–10 working days" /></label>
+        </div>
+        <div class="grid-3">
+          <label>
+            Producto de Correos
+            <select name="correosProduct">
+              <option value="">Sin producto (seguimiento manual)</option>
+              {CORREOS_PRODUCTS.map((p) => (
+                <option value={p.code} selected={p.code === blankZone.correos_product}>{p.label} · {p.code}</option>
+              ))}
+            </select>
+          </label>
+          <label class="check check--box"><input type="checkbox" name="customs" />Necesita aduana (CN22/CN23)</label>
+          <label class="switch">
+            <input type="checkbox" role="switch" name="active" checked />
+            <span><strong>Activa</strong><span class="hint">Pausada, la tienda no la ofrece.</span></span>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit">Crear zona</button>
+          <button type="button" class="btn--quiet" data-zone-discard>Descartar</button>
+          <p class="status" data-status hidden role="status"></p>
+        </div>
+      </form>
+    </details>
+  </template>
+  <script type="application/json" data-country-names set:html={JSON.stringify(countryNames)} />
+</AdminLayout>
+
+<style>
+  .panel {
+    margin-bottom: 1.25rem;
+  }
+
+  .panel h2 {
+    margin: 0 0 0.3rem;
+  }
+
+  .panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .note {
+    margin: 0.75rem 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--a-radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    font-size: 0.88rem;
+  }
+
+  .zones {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .zone {
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+    transition: box-shadow 160ms ease;
+  }
+
+  .zone[open] {
+    box-shadow: 0 10px 30px -22px rgb(22 23 26 / 0.35);
+  }
+
+  .zone[data-active='false'] summary {
+    opacity: 0.65;
+  }
+
+  .zone summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.1rem;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .zone summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .zone summary::before {
+    content: '';
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 160ms ease;
+    opacity: 0.5;
+  }
+
+  .zone[open] summary::before {
+    transform: rotate(45deg);
+  }
+
+  .zone__title {
+    display: grid;
+    flex: 1;
+    gap: 0.1rem;
+    min-width: 12rem;
+  }
+
+  .zone__title .muted {
+    font-size: 0.85rem;
+  }
+
+  .zone__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .zone-form {
+    display: grid;
+    gap: 1rem;
+    padding: 0.4rem 1.1rem 1.2rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .zone-form fieldset {
+    margin: 0;
+  }
+
+  .zone-form [hidden] {
+    display: none !important;
+  }
+
+  .grid-2,
+  .grid-3 {
+    display: grid;
+    gap: 0.85rem;
+    align-items: end;
+  }
+
+  .grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.25rem;
+  }
+
+  .check--box {
+    align-self: center;
+  }
+
+  .zone-form .rates {
+    width: 100%;
+    max-width: 26rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .rates th,
+  .rates td {
+    padding: 0.3rem 0.5rem 0.3rem 0;
+  }
+
+  .rates input {
+    width: 8rem;
+  }
+
+  .country-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+  }
+
+  .country-chips .chip[data-unknown] {
+    color: var(--danger);
+  }
+
+  .settings-form {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 0.75rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+  }
+
+  .actions .status {
+    margin: 0;
+  }
+
+  .status[data-tone='ok'] {
+    color: var(--success);
+  }
+
+  .status[data-tone='err'] {
+    color: var(--danger);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 62rem) {
+    .grid-2,
+    .grid-3 {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  type Tone = 'ok' | 'err' | 'info';
+
+  const names = JSON.parse(document.querySelector('[data-country-names]')?.textContent ?? '{}') as Record<string, string>;
+
+  async function send(url: string, method: string, body?: unknown) {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    return { ok: Boolean(res?.ok), data: (data ?? {}) as { error?: { message?: string }; id?: string } };
+  }
+
+  function sayIn(form: HTMLElement) {
+    const status = form.querySelector<HTMLElement>('[data-status]');
+    return (text: string, tone: Tone = 'info') => {
+      if (!status) return;
+      status.hidden = false;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+  }
+
+  const cents = (value: FormDataEntryValue | null) => Math.round(Number(value || 0) * 100);
+  const errorOf = (data: { error?: { message?: string } }) => data.error?.message ?? 'No hubo respuesta del servidor.';
+
+  function parseCountries(value: string) {
+    return [...new Set(value.split(/[\s,;]+/).map((c) => c.trim().toUpperCase()).filter(Boolean))];
+  }
+
+  function wireZone(zone: HTMLElement) {
+    const form = zone.querySelector<HTMLFormElement>('[data-zone-form]')!;
+    const say = sayIn(form);
+    const kind = form.querySelector<HTMLSelectElement>('[data-kind]')!;
+    const regions = form.querySelector<HTMLElement>('[data-regions]')!;
+    const countries = form.querySelector<HTMLElement>('[data-countries]')!;
+    const world = form.querySelector<HTMLInputElement>('[data-world]')!;
+    const countryList = form.querySelector<HTMLElement>('[data-country-list]')!;
+    const countryInput = form.querySelector<HTMLInputElement>('[data-country-input]')!;
+    const chips = form.querySelector<HTMLElement>('[data-country-chips]')!;
+    const rates = form.querySelector<HTMLElement>('[data-rates]')!;
+
+    const paintChips = () => {
+      chips.innerHTML = parseCountries(countryInput.value)
+        .map((code) =>
+          names[code]
+            ? `<span class="chip">${names[code]}</span>`
+            : `<span class="chip" data-unknown>${code.replace(/[^A-Z]/g, '')} ?</span>`,
+        )
+        .join('');
+    };
+    const syncKind = () => {
+      regions.hidden = kind.value !== 'national';
+      countries.hidden = kind.value !== 'international';
+      countryList.hidden = world.checked;
+    };
+    kind.addEventListener('change', syncKind);
+    world.addEventListener('change', syncKind);
+    countryInput.addEventListener('input', paintChips);
+    paintChips();
+    syncKind();
+
+    form.querySelector('[data-rate-add]')?.addEventListener('click', () => {
+      const last = rates.querySelector('tr:last-child');
+      const row = (last?.cloneNode(true) as HTMLTableRowElement | undefined) ?? document.createElement('tr');
+      const max = row.querySelector<HTMLInputElement>('[name="maxKg"]');
+      const price = row.querySelector<HTMLInputElement>('[name="price"]');
+      if (max) max.value = String(Number(max.value || 0) * 2 || 1);
+      if (price) price.value = '';
+      rates.append(row);
+      price?.focus();
+    });
+    rates.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('[data-rate-remove]');
+      if (!button) return;
+      if (rates.querySelectorAll('tr').length <= 1) {
+        say('Cada zona necesita al menos un tramo.', 'err');
+        return;
+      }
+      button.closest('tr')?.remove();
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const national = kind.value === 'national';
+      const list = national ? ['ES'] : world.checked ? ['*'] : parseCountries(String(fd.get('countries') ?? ''));
+      const unknown = list.filter((c) => c !== '*' && !names[c]);
+      if (unknown.length) {
+        say(`Estos códigos de país no los reconozco: ${unknown.join(', ')}.`, 'err');
+        return;
+      }
+      if (!national && list.length === 0) {
+        say('Añade al menos un país o marca «Resto del mundo».', 'err');
+        return;
+      }
+      const rateRows = [...rates.querySelectorAll('tr')].map((row) => ({
+        maxGrams: Math.round(Number(row.querySelector<HTMLInputElement>('[name="maxKg"]')?.value || 0) * 1000),
+        priceCents: cents(row.querySelector<HTMLInputElement>('[name="price"]')?.value ?? '0'),
+      }));
+      const freeOver = String(fd.get('freeOver') ?? '').trim();
+      const payload = {
+        zone: {
+          ...(fd.get('id') ? { id: String(fd.get('id')) } : {}),
+          nameEs: String(fd.get('nameEs') ?? ''),
+          nameEn: String(fd.get('nameEn') ?? ''),
+          kind: kind.value,
+          countries: list,
+          regions: national ? fd.getAll('regions').map(String) : [],
+          active: fd.get('active') === 'on',
+          freeOverCents: freeOver && Number(freeOver) > 0 ? cents(freeOver) : null,
+          deliveryEs: String(fd.get('deliveryEs') ?? ''),
+          deliveryEn: String(fd.get('deliveryEn') ?? ''),
+          correosProduct: String(fd.get('correosProduct') ?? '') || null,
+          customs: fd.get('customs') === 'on',
+        },
+        rates: rateRows.sort((a, b) => a.maxGrams - b.maxGrams),
+      };
+      const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (button) button.disabled = true;
+      say('Guardando…');
+      const { ok, data } = await send('/api/admin/shipping/zones/', 'POST', payload);
+      if (ok) {
+        say('Zona guardada. Actualizando…', 'ok');
+        location.reload();
+        return;
+      }
+      say(errorOf(data), 'err');
+      if (button) button.disabled = false;
+    });
+
+    form.querySelector('[data-zone-delete]')?.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta zona y sus tarifas? Los destinos que cubría dejarán de tener envío.')) return;
+      say('Borrando…');
+      const { ok, data } = await send(`/api/admin/shipping/zones/${zone.dataset.zone}/`, 'DELETE');
+      if (ok) location.reload();
+      else say(errorOf(data), 'err');
+    });
+
+    form.querySelector('[data-zone-discard]')?.addEventListener('click', () => zone.remove());
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-zone]').forEach(wireZone);
+
+  document.querySelector('[data-zone-new]')?.addEventListener('click', () => {
+    const template = document.querySelector<HTMLTemplateElement>('[data-zone-template]');
+    const list = document.querySelector('[data-zones]');
+    if (!template || !list) return;
+    const zone = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+    list.append(zone);
+    wireZone(zone);
+    zone.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    zone.querySelector<HTMLInputElement>('[name="nameEs"]')?.focus();
+  });
+
+  const settings = document.querySelector<HTMLFormElement>('[data-settings-form]');
+  settings?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const say = sayIn(settings);
+    const fd = new FormData(settings);
+    const text = (key: string) => String(fd.get(key) ?? '').trim();
+    say('Guardando…');
+    const { ok, data } = await send('/api/admin/shipping/settings/', 'PUT', {
+      packagingGrams: Number(fd.get('packagingGrams') || 0),
+      customsDescription: text('customsDescription'),
+      sender: {
+        name: text('name'),
+        company: text('company'),
+        address: text('address'),
+        locality: text('locality'),
+        postalCode: text('postalCode'),
+        phone: text('phone'),
+        email: text('email'),
+      },
+    });
+    say(ok ? 'Guardado.' : errorOf(data), ok ? 'ok' : 'err');
+  });
+</script>

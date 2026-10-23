@@ -1,0 +1,27 @@
+{
+  "id": "valentine",
+  "title": {
+    "en": "Gift Valentine",
+    "es": "Regalo de San Valentín"
+  },
+  "group": "people",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/gallery/valentine-0.jpeg",
+      "alt": {
+        "en": "Gift Valentine",
+        "es": "Regalo de San Valentín"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/gallery/valentine-1.jpg",
+      "alt": {
+        "en": "Gift Valentine",
+        "es": "Regalo de San Valentín"
+      }
+    }
+  ],
+  "order": 8
+}

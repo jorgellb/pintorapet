@@ -1,0 +1,42 @@
+{
+  "id": "doggy",
+  "title": {
+    "en": "Doggy",
+    "es": "Doggy"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/doggy-doggy-0-Doggy-my-dog-drawing-1535x1080.jpg",
+      "label": "Doggy drawing",
+      "alt": {
+        "en": "Doggy drawing",
+        "es": "Doggy drawing"
+      }
+    },
+    {
+      "role": "comparison",
+      "src": "/media/portfolio/doggy-doggy-1-Doggy-my-dog-comparing-1440x1080.jpeg",
+      "label": "Doggy comparing",
+      "alt": {
+        "en": "Doggy comparing",
+        "es": "Doggy comparing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/doggy-doggy-2-Doggy-my-dog-photo-1620x1080.jpeg",
+      "label": "Doggy photo",
+      "alt": {
+        "en": "Doggy photo",
+        "es": "Doggy photo"
+      }
+    }
+  ],
+  "order": 15,
+  "pathSlugs": {
+    "en": "doggy",
+    "es": "doggy"
+  }
+}

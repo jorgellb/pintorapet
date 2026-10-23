@@ -1,0 +1,29 @@
+{
+  "id": "mother-daughter",
+  "title": {
+    "en": "Mother and daughter",
+    "es": "Madre e hija"
+  },
+  "group": "people",
+  "assets": [
+    {
+      "role": "reference_photo",
+      "src": "/media/gallery/mother-daughter-0.jpg",
+      "label": "Mother and daughter photo",
+      "alt": {
+        "en": "Mother and daughter photo",
+        "es": "Mother and daughter photo"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/gallery/mother-daughter-1.jpeg",
+      "label": "Mother and daughter drawing",
+      "alt": {
+        "en": "Mother and daughter drawing",
+        "es": "Mother and daughter drawing"
+      }
+    }
+  ],
+  "order": 7
+}

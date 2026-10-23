@@ -1,0 +1,125 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { hasSupabase } from '@/lib/server/env';
+import { createUserServerClient } from '@/lib/server/supabase';
+import { getSessionUser, isActiveAdmin } from '@/lib/server/adminAuth';
+import { siteUrl } from '@/lib/server/env';
+
+export const prerender = false;
+
+const configured = hasSupabase();
+let notice: string | null = null;
+let errorMsg: string | null = null;
+
+const session = configured
+  ? await getSessionUser(Astro.cookies, Astro.request)
+  : null;
+
+if (session && (await isActiveAdmin(session.client, session.user.id))) {
+  return Astro.redirect('/admin/');
+}
+
+if (Astro.request.method === 'POST' && configured) {
+  const form = await Astro.request.formData();
+  const email = String(form.get('email') ?? '')
+    .trim()
+    .toLowerCase();
+  const password = String(form.get('password') ?? '');
+  const client = createUserServerClient(Astro.cookies, Astro.request);
+
+  if (!client) {
+    errorMsg = 'No se pudo conectar con Supabase.';
+  } else if (!email || !email.includes('@')) {
+    errorMsg = 'Escribe un correo válido.';
+  } else if (password.length > 0) {
+    const { data, error } = await client.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error || !data.user) {
+      errorMsg = 'El correo o la contraseña no coinciden.';
+    } else if (!(await isActiveAdmin(client, data.user.id))) {
+      await client.auth.signOut();
+      errorMsg = 'Esta cuenta no tiene acceso al panel.';
+    } else {
+      return Astro.redirect('/admin/');
+    }
+  } else {
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${siteUrl()}/admin/`,
+        shouldCreateUser: false,
+      },
+    });
+    if (error) {
+      errorMsg = 'No se pudo enviar el enlace. Revisa el correo o entra con la contraseña.';
+    } else {
+      notice = 'Si ese correo tiene acceso, te llegará un enlace para entrar.';
+    }
+  }
+}
+---
+
+<AdminLayout title="Entrar">
+  <div class="panel login">
+    <h1>Entrar al estudio</h1>
+    {
+      !configured ? (
+        <p class="err">
+          Falta configurar <code>PUBLIC_SUPABASE_URL</code> y
+          <code>PUBLIC_SUPABASE_ANON_KEY</code> para poder entrar.
+        </p>
+      ) : (
+        <>
+          {notice && <p class="note">{notice}</p>}
+          {errorMsg && <p class="err">{errorMsg}</p>}
+          <form method="post">
+            <label>
+              Correo
+              <input type="email" name="email" required maxlength="254" autocomplete="username" autofocus />
+            </label>
+            <label>
+              Contraseña
+              <input type="password" name="password" maxlength="128" autocomplete="current-password" />
+              <span class="hint">Déjala vacía para recibir un enlace de acceso por correo.</span>
+            </label>
+            <button type="submit">Entrar</button>
+          </form>
+        </>
+      )
+    }
+  </div>
+  <a class="back" href="/es/">← Volver a la web</a>
+</AdminLayout>
+
+<style>
+  .login {
+    width: min(100%, 24rem);
+  }
+
+  .login h1 {
+    margin: 0;
+    font-size: 1.75rem;
+  }
+
+  form {
+    display: grid;
+    gap: 1rem;
+  }
+
+  form button {
+    justify-self: stretch;
+  }
+
+  .note {
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--a-radius-sm);
+    background: var(--a-ok-soft);
+  }
+
+  .back {
+    margin-top: 1rem;
+  }
+</style>

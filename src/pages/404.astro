@@ -1,0 +1,5 @@
+---
+import NotFoundPage from '@/views/NotFoundPage.astro';
+const locale = Astro.currentLocale === 'es' ? 'es' : 'en';
+---
+<NotFoundPage locale={locale} />

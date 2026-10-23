@@ -1,0 +1,60 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import EntryEditor from '@/components/admin/EntryEditor.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { getGalleryItem, listMedia } from '@/lib/server/admin/editorial';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const id = Astro.params.id;
+if (!id) return Astro.redirect('/admin/gallery/');
+const row = await getGalleryItem(admin.client, id);
+if (!row) return new Response('Pieza no encontrada', { status: 404 });
+
+let media: Awaited<ReturnType<typeof listMedia>> = [];
+try {
+  media = await listMedia(admin.client);
+} catch {
+  media = [];
+}
+
+const assets = [...(row.gallery_assets ?? [])].sort(
+  (a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order,
+);
+---
+
+<AdminLayout title={row.title_es || row.title_en} email={admin.user.email}>
+  <a class="back" href="/admin/gallery/">← Galería extra</a>
+  <header class="page-head">
+    <h1>{row.title_es || row.title_en}</h1>
+  </header>
+  <EntryEditor
+    kind="gallery"
+    mode="edit"
+    id={row.id}
+    media={media.map((item) => ({ id: item.id, publicUrl: item.publicUrl, label: item.object_path }))}
+    values={{
+      group: row.item_group,
+      titleEn: row.title_en,
+      titleEs: row.title_es,
+      summaryEn: row.summary_en,
+      summaryEs: row.summary_es,
+      storyEn: row.story_en,
+      storyEs: row.story_es,
+      sortOrder: row.sort_order,
+      published: row.published,
+      assets: assets.map((asset) => ({
+        role: asset.role,
+        src: asset.src,
+        altEn: asset.alt_en,
+        altEs: asset.alt_es,
+        mediaId: asset.media_asset_id,
+      })),
+    }}
+  />
+</AdminLayout>

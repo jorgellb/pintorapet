@@ -1,0 +1,35 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const reason = Astro.url.searchParams.get('motivo');
+const notes = {
+  caducado: {
+    es: 'La reserva de tu pedido caducó antes de completar el pago, así que no se ha cobrado nada.',
+    en: 'Your order reservation expired before payment was completed, so nothing was charged.',
+  },
+  error: {
+    es: 'No pudimos confirmar el pago y no se ha cobrado nada.',
+    en: 'We could not confirm the payment and nothing was charged.',
+  },
+} as const;
+const note = reason === 'caducado' || reason === 'error' ? notes[reason][locale] : null;
+---
+
+<PublicLayout locale={locale} title={dict.checkout.cancelTitle} noindex>
+  <section class="section">
+    <div class="site-shell prose">
+      <h1 class="display h1-display">{dict.checkout.cancelTitle}</h1>
+      {note && <p>{note}</p>}
+      <p class="muted">{dict.checkout.cancelLead}</p>
+      <a class="btn" href={localizedPath(locale, 'cart')}>{dict.cart.title}</a>
+    </div>
+  </section>
+</PublicLayout>

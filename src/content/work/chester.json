@@ -1,0 +1,33 @@
+{
+  "id": "chester",
+  "title": {
+    "en": "Chester",
+    "es": "Chester"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/chester-chester-0-IMG_9321-copy-852x1080.jpg",
+      "label": "Chester",
+      "alt": {
+        "en": "Chester",
+        "es": "Chester"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/chester-chester-1-IMG_1590-865x1080.jpg",
+      "label": "Chester",
+      "alt": {
+        "en": "Chester",
+        "es": "Chester"
+      }
+    }
+  ],
+  "order": 10,
+  "pathSlugs": {
+    "en": "chester",
+    "es": "chester"
+  }
+}

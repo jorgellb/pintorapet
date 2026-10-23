@@ -1,0 +1,455 @@
+---
+import SeoFields from '@/components/admin/SeoFields.astro';
+import { galleryGroupLabel, workCategoryLabel } from '@/lib/admin/labels';
+import { siteUrl } from '@/lib/server/env';
+
+interface MediaOption {
+  id: string;
+  publicUrl: string;
+  label: string;
+}
+
+interface AssetValue {
+  role: string;
+  src: string;
+  label?: string | null;
+  altEn?: string;
+  altEs?: string;
+  mediaId?: string | null;
+}
+
+interface Props {
+  kind: 'work' | 'gallery';
+  mode: 'create' | 'edit';
+  id?: string;
+  media: MediaOption[];
+  values: {
+    legacyId?: string | null;
+    slugEn?: string;
+    slugEs?: string;
+    category?: string;
+    group?: string;
+    titleEn: string;
+    titleEs: string;
+    summaryEn?: string;
+    summaryEs?: string;
+    storyEn?: string;
+    storyEs?: string;
+    seoTitleEn?: string | null;
+    seoTitleEs?: string | null;
+    seoDescriptionEn?: string | null;
+    seoDescriptionEs?: string | null;
+    sortOrder: number;
+    published: boolean;
+    assets: AssetValue[];
+  };
+}
+
+const { kind, mode, id, media, values } = Astro.props;
+const work = kind === 'work';
+const roleLabels: Record<string, string> = {
+  drawing: 'Dibujo',
+  reference_photo: 'Foto de referencia',
+  comparison: 'Comparación',
+  process_photo: 'Proceso',
+  related_product_photo: 'Producto relacionado',
+  other: 'Otra',
+};
+const roles = work
+  ? ['drawing', 'reference_photo', 'comparison', 'process_photo', 'related_product_photo']
+  : ['drawing', 'reference_photo', 'other'];
+const categories = ['dog', 'cat', 'horse', 'people', 'other'];
+const groups = ['people', 'architecture', 'illustration', 'other'];
+const base = work ? '/api/admin/artworks/' : '/api/admin/gallery/';
+const endpoint = mode === 'create' ? base : `${base}${id}/`;
+const back = work ? '/admin/work/' : '/admin/gallery/';
+const publicUrl = work && mode === 'edit' && values.slugEs ? `/es/obra/${values.slugEs}/` : null;
+const blankAsset: AssetValue = { role: 'drawing', src: '' };
+const mediaName = (label: string) => label.split('/').pop() ?? label;
+const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
+---
+
+<form
+  class="editor"
+  data-entry-form
+  data-endpoint={endpoint}
+  data-method={mode === 'create' ? 'POST' : 'PATCH'}
+  data-back={back}
+>
+  <div class="editor-main">
+    <fieldset>
+      <legend>Textos</legend>
+      <div class="pair">
+        <label>
+          Título
+          <input name="titleEs" value={values.titleEs} required />
+        </label>
+        <label>
+          Título en inglés
+          <input name="titleEn" value={values.titleEn} required />
+        </label>
+      </div>
+      <div class="pair">
+        <label>
+          Descripción
+          <textarea name="summaryEs" rows="4">{values.summaryEs ?? ''}</textarea>
+        </label>
+        <label>
+          Descripción en inglés
+          <textarea name="summaryEn" rows="4">{values.summaryEn ?? ''}</textarea>
+        </label>
+      </div>
+      <div class="pair">
+        <label>
+          Proceso de trabajo
+          <textarea name="storyEs" rows="6">{values.storyEs ?? ''}</textarea>
+        </label>
+        <label>
+          Proceso de trabajo en inglés
+          <textarea name="storyEn" rows="6">{values.storyEn ?? ''}</textarea>
+        </label>
+      </div>
+    </fieldset>
+
+    {
+      work && (
+        <fieldset>
+          <legend>SEO</legend>
+          <p class="hint">
+            Así aparece la ficha en Google y al compartirla. Si dejas los campos vacíos se usan
+            el título y la descripción.
+          </p>
+          <div class="pair seo-pair">
+            <SeoFields
+              language="Español"
+              host={host}
+              pathPrefix="/es/obra/"
+              slugName="slugEs"
+              slug={values.slugEs ?? ''}
+              titleName="seoTitleEs"
+              descriptionName="seoDescriptionEs"
+              seoTitle={values.seoTitleEs ?? ''}
+              seoDescription={values.seoDescriptionEs ?? ''}
+              fallbackTitleName="titleEs"
+              fallbackDescriptionName="summaryEs"
+              fallbackDescriptionLabel="la descripción"
+            />
+            <SeoFields
+              language="Inglés"
+              host={host}
+              pathPrefix="/en/work/"
+              slugName="slugEn"
+              slug={values.slugEn ?? ''}
+              titleName="seoTitleEn"
+              descriptionName="seoDescriptionEn"
+              seoTitle={values.seoTitleEn ?? ''}
+              seoDescription={values.seoDescriptionEn ?? ''}
+              fallbackTitleName="titleEn"
+              fallbackDescriptionName="summaryEn"
+              fallbackDescriptionLabel="la descripción"
+            />
+          </div>
+        </fieldset>
+      )
+    }
+
+    <fieldset>
+      <legend>Imágenes</legend>
+      <p class="hint">
+        Elige un archivo de <a href="/admin/media/">Medios</a> o pega una ruta de la web,
+        como <code>/media/portfolio/…</code>. La primera imagen con papel «Dibujo» es la portada.
+      </p>
+      <div class="assets" data-assets>
+        {
+          [...values.assets, null].map((asset) => {
+            const value = asset ?? blankAsset;
+            const row = (
+              <div class="asset" data-asset-row>
+                <img class="asset-thumb" src={value.src || undefined} alt="" data-thumb />
+                <div class="asset-fields">
+                  <div class="pair">
+                    <label>
+                      Papel
+                      <select name="role">
+                        {roles.map((role) => (
+                          <option value={role} selected={value.role === role}>
+                            {roleLabels[role] ?? role}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Archivo de Medios
+                      <select name="mediaId" data-media>
+                        <option value="">Ruta manual</option>
+                        {media.map((item) => (
+                          <option value={item.id} data-url={item.publicUrl} selected={value.mediaId === item.id}>
+                            {mediaName(item.label)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    Ruta o URL
+                    <input name="src" value={value.src} required data-src />
+                  </label>
+                  <div class="pair">
+                    <label>
+                      Texto alternativo
+                      <input name="altEs" value={value.altEs ?? ''} />
+                    </label>
+                    <label>
+                      Texto alternativo en inglés
+                      <input name="altEn" value={value.altEn ?? ''} />
+                    </label>
+                  </div>
+                  {work && (
+                    <label>
+                      Etiqueta
+                      <input name="label" value={value.label ?? ''} placeholder="Ej.: Antes, Después" />
+                    </label>
+                  )}
+                  <div class="asset-actions">
+                    <button type="button" class="btn--quiet" data-up aria-label="Subir imagen">↑</button>
+                    <button type="button" class="btn--quiet" data-down aria-label="Bajar imagen">↓</button>
+                    <button type="button" class="btn--quiet btn--danger" data-remove>Quitar</button>
+                  </div>
+                </div>
+              </div>
+            );
+            return asset ? row : <template data-asset-template>{row}</template>;
+          })
+        }
+      </div>
+      <button type="button" class="btn--quiet" data-add>Añadir imagen</button>
+    </fieldset>
+  </div>
+
+  <aside class="editor-side">
+    <div class="panel">
+      <label class="switch">
+        <input type="checkbox" role="switch" name="published" checked={values.published} />
+        <span>
+          <strong>Publicada</strong>
+          <span class="hint">Visible en la web.</span>
+        </span>
+      </label>
+      {
+        work ? (
+          <label>
+            Categoría
+            <select name="category">
+              {categories.map((item) => (
+                <option value={item} selected={values.category === item}>
+                  {workCategoryLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label>
+            Grupo
+            <select name="group">
+              {groups.map((item) => (
+                <option value={item} selected={values.group === item}>
+                  {galleryGroupLabel(item)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )
+      }
+      <label>
+        Orden
+        <input type="number" name="sortOrder" min="0" step="1" value={values.sortOrder} required />
+        <span class="hint">Los números bajos salen primero.</span>
+      </label>
+      <button type="submit">{mode === 'create' ? 'Crear' : 'Guardar cambios'}</button>
+      <p class="status" data-status role="status" hidden></p>
+      {publicUrl && (
+        <a class="hint" href={publicUrl} target="_blank" rel="noreferrer">
+          Ver en la web ↗
+        </a>
+      )}
+    </div>
+  </aside>
+</form>
+
+<style>
+  .assets {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .asset {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 1rem;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .asset-thumb {
+    width: 6.5rem;
+    height: 6.5rem;
+    border-radius: 0.5rem;
+    background: var(--paper-deep);
+    object-fit: contain;
+  }
+
+  .asset-fields {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .asset-actions {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .asset-actions button {
+    min-height: 2rem;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .asset:first-of-type [data-up],
+  .asset:last-of-type [data-down] {
+    visibility: hidden;
+  }
+
+  .seo-pair {
+    align-items: start;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 40rem) {
+    .asset {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const form = document.querySelector('[data-entry-form]');
+  if (form instanceof HTMLFormElement) {
+    const assets = form.querySelector<HTMLElement>('[data-assets]');
+    const template = form.querySelector('[data-asset-template]');
+    const status = form.querySelector<HTMLElement>('[data-status]');
+    const say = (text: string) => {
+      if (!status) return;
+      status.hidden = false;
+      status.textContent = text;
+    };
+
+    const wire = (row: HTMLElement) => {
+      const select = row.querySelector<HTMLSelectElement>('[data-media]');
+      const src = row.querySelector<HTMLInputElement>('[data-src]');
+      const thumb = row.querySelector<HTMLImageElement>('[data-thumb]');
+      const show = () => {
+        if (!thumb || !src) return;
+        if (src.value) thumb.src = src.value;
+        else thumb.removeAttribute('src');
+      };
+      select?.addEventListener('change', () => {
+        const url = select.selectedOptions[0]?.dataset.url;
+        if (url && src) {
+          src.value = url;
+          show();
+        }
+      });
+      src?.addEventListener('change', show);
+      row.querySelector('[data-remove]')?.addEventListener('click', () => row.remove());
+      row.querySelector('[data-up]')?.addEventListener('click', () => {
+        const prev = row.previousElementSibling;
+        if (prev?.matches('[data-asset-row]')) prev.before(row);
+      });
+      row.querySelector('[data-down]')?.addEventListener('click', () => {
+        const next = row.nextElementSibling;
+        if (next?.matches('[data-asset-row]')) next.after(row);
+      });
+    };
+
+    assets?.querySelectorAll<HTMLElement>('[data-asset-row]').forEach(wire);
+    form.querySelector('[data-add]')?.addEventListener('click', () => {
+      if (!(template instanceof HTMLTemplateElement) || !assets) return;
+      const row = template.content.firstElementChild?.cloneNode(true);
+      if (!(row instanceof HTMLElement)) return;
+      template.before(row);
+      wire(row);
+      row.querySelector<HTMLSelectElement>('[data-media]')?.focus();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const read = (name: string) => {
+        const field = form.elements.namedItem(name);
+        return field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement
+          ? field.value
+          : '';
+      };
+      const published = form.elements.namedItem('published');
+      const payload: Record<string, unknown> = {
+        titleEn: read('titleEn'),
+        titleEs: read('titleEs'),
+        summaryEn: read('summaryEn'),
+        summaryEs: read('summaryEs'),
+        storyEn: read('storyEn'),
+        storyEs: read('storyEs'),
+        sortOrder: Number(read('sortOrder') || 0),
+        published: published instanceof HTMLInputElement ? published.checked : false,
+        assets: [...(assets?.querySelectorAll('[data-asset-row]') ?? [])].map((row) => {
+          const value = (name: string) => {
+            const field = row.querySelector(`[name="${name}"]`);
+            return field instanceof HTMLInputElement || field instanceof HTMLSelectElement ? field.value : '';
+          };
+          return {
+            role: value('role'),
+            src: value('src'),
+            label: value('label') || null,
+            altEn: value('altEn'),
+            altEs: value('altEs'),
+            mediaId: value('mediaId') || null,
+          };
+        }),
+      };
+      if (form.querySelector('[name="category"]')) {
+        payload.category = read('category');
+        payload.slugEn = read('slugEn');
+        payload.slugEs = read('slugEs');
+        payload.seoTitleEn = read('seoTitleEn');
+        payload.seoTitleEs = read('seoTitleEs');
+        payload.seoDescriptionEn = read('seoDescriptionEn');
+        payload.seoDescriptionEs = read('seoDescriptionEs');
+      } else {
+        payload.group = read('group');
+      }
+      say('Guardando…');
+      const response = await fetch(form.dataset.endpoint ?? '', {
+        method: form.dataset.method ?? 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+      const body = (await response?.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+      if (!response?.ok) {
+        say(body?.error?.message ?? 'No se pudo guardar.');
+        return;
+      }
+      if (form.dataset.method === 'POST' && body?.id) {
+        window.location.href = `${form.dataset.back}${body.id}/`;
+        return;
+      }
+      say('Cambios guardados.');
+    });
+  }
+</script>

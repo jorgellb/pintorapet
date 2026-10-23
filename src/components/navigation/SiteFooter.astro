@@ -1,0 +1,124 @@
+---
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { getLogoUrl } from '@/lib/content/siteExtras';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const logoUrl = await getLogoUrl();
+---
+
+<footer class="site-footer">
+  <div class="site-shell site-footer__grid">
+    <div class="site-footer__brand">
+      {
+        logoUrl ? (
+          <img
+            class="footer-logo"
+            src={logoUrl}
+            alt={`${dict.brand.name} ${dict.brand.byline}`}
+            width="322"
+            height="264"
+            loading="lazy"
+          />
+        ) : (
+          <p class="display footer-fallback">{dict.brand.name}</p>
+        )
+      }
+      <p class="contact">
+        <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a><br />
+        <a href="tel:+34636386531">+34 636 386 531</a>
+      </p>
+      <p class="social">
+        <a href="https://www.instagram.com/petsdrawings_meili/" rel="noopener noreferrer" target="_blank">Instagram</a>
+        <a href="https://www.facebook.com/people/Pets-Drawings-by-Meili/100089998232163/" rel="noopener noreferrer" target="_blank">Facebook</a>
+      </p>
+    </div>
+    <nav aria-label="Sections">
+      <ul>
+        <li><a href={localizedPath(locale, 'work')}>{dict.nav.work}</a></li>
+        <li><a href={localizedPath(locale, 'commissions')}>{dict.nav.commissions}</a></li>
+        <li><a href={localizedPath(locale, 'shop')}>{dict.nav.shop}</a></li>
+        <li><a href={localizedPath(locale, 'contact')}>{dict.nav.contact}</a></li>
+      </ul>
+    </nav>
+    <nav aria-label={dict.footer.legal}>
+      <ul>
+        <li><a href={localizedPath(locale, 'privacy')}>{dict.footer.privacy}</a></li>
+        <li><a href={localizedPath(locale, 'cookies')}>{dict.footer.cookies}</a></li>
+        <li><a href={localizedPath(locale, 'terms')}>{dict.footer.terms}</a></li>
+        <li><a href={localizedPath(locale, 'shipping')}>{dict.footer.shipping}</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="site-shell site-footer__base">
+    <p>{dict.footer.rights}</p>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--line);
+    padding-block: clamp(3.5rem, 7vw, 6rem) var(--space-6);
+    color: var(--ink-soft);
+  }
+
+  .site-footer a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+
+  .site-footer a:hover {
+    color: var(--ink);
+  }
+
+  .site-footer__grid {
+    display: grid;
+    gap: var(--space-7);
+  }
+
+  .footer-logo {
+    width: min(15rem, 60vw);
+    height: auto;
+    mix-blend-mode: multiply;
+  }
+
+  .footer-fallback {
+    font-size: 2.4rem;
+    margin: 0;
+  }
+
+  .contact {
+    margin: var(--space-5) 0 0;
+  }
+
+  .social {
+    display: flex;
+    gap: 1.25rem;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .site-footer__base {
+    margin-top: var(--space-8);
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  @media (min-width: 48rem) {
+    .site-footer__grid {
+      grid-template-columns: 2fr 1fr 1fr;
+      align-items: start;
+    }
+  }
+</style>

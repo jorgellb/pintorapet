@@ -1,0 +1,31 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import CartView from '@/components/shop/CartView.astro';
+import { t, type Locale } from '@/i18n';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+---
+
+<PublicLayout locale={locale} title={dict.cart.title} noindex>
+  <section class="section">
+    <div class="site-shell cart">
+      <h1 class="display h1-display">{dict.cart.title}</h1>
+      <CartView locale={locale} variant="page" />
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .cart {
+    max-width: 68rem;
+  }
+
+  .cart h1 {
+    margin-bottom: clamp(1.5rem, 4vw, 3rem);
+  }
+</style>

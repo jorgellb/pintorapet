@@ -1,0 +1,27 @@
+{
+  "id": "indian",
+  "title": {
+    "en": "Indian",
+    "es": "Indian"
+  },
+  "group": "people",
+  "assets": [
+    {
+      "role": "reference_photo",
+      "src": "/media/gallery/indian-0.jpeg",
+      "alt": {
+        "en": "Indian",
+        "es": "Indian"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/gallery/indian-1.jpeg",
+      "alt": {
+        "en": "Indian",
+        "es": "Indian"
+      }
+    }
+  ],
+  "order": 9
+}

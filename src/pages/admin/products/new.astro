@@ -1,0 +1,144 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const [{ data: categories }, { data: skus }] = await Promise.all([
+  admin.client.from('categories').select('code, name_es').order('sort_order'),
+  admin.client.from('products').select('sku'),
+]);
+
+const nextNumber =
+  Math.max(0, ...(skus ?? []).map((row) => Number(/^PD-(\d+)$/.exec(String(row.sku))?.[1] ?? 0))) + 1;
+const suggestedSku = `PD-${nextNumber}`;
+---
+
+<AdminLayout title="Nuevo producto" email={admin.user.email}>
+  <a class="back" href="/admin/products/">← Productos</a>
+  <header class="page-head">
+    <div>
+      <h1>Nuevo producto</h1>
+      <p class="lead">
+        Empieza con lo básico. Al crearlo se abre su ficha completa para añadir fotos,
+        variaciones, descripción y SEO. Nace como borrador, fuera de la tienda.
+      </p>
+    </div>
+  </header>
+
+  <form class="panel create" data-create-form>
+    <div class="pair">
+      <label>
+        Categoría
+        <select name="categoryCode" required>
+          {(categories ?? []).map((c) => <option value={c.code}>{c.name_es}</option>)}
+        </select>
+      </label>
+      <label>
+        Motivo
+        <input name="motif" required maxlength="120" placeholder="Ej.: Galgo" />
+      </label>
+    </div>
+    <div class="pair">
+      <label>
+        Título
+        <input name="esTitle" required maxlength="200" placeholder="Ej.: Taza Galgo" data-slug-source="esSlug" />
+      </label>
+      <label>
+        Título en inglés
+        <input name="enTitle" required maxlength="200" placeholder="Ej.: Greyhound Mug" data-slug-source="enSlug" />
+      </label>
+    </div>
+    <div class="pair">
+      <label>
+        Dirección
+        <input name="esSlug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="taza-galgo" />
+      </label>
+      <label>
+        Dirección en inglés
+        <input name="enSlug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="greyhound-mug" />
+      </label>
+    </div>
+    <div class="pair">
+      <label>
+        Precio (€)
+        <input type="number" name="price" min="0.01" step="0.01" required />
+      </label>
+      <label>
+        SKU
+        <input name="sku" required maxlength="60" value={suggestedSku} />
+        <span class="hint">Sugerido a partir del último producto.</span>
+      </label>
+    </div>
+    <div class="row">
+      <button type="submit">Crear producto</button>
+      <p class="status" data-create-status role="status" hidden></p>
+    </div>
+  </form>
+</AdminLayout>
+
+<style>
+  .create {
+    max-width: 48rem;
+  }
+
+  .create .pair {
+    align-items: start;
+  }
+
+  .row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+</style>
+
+<script>
+  import { slugify } from '@/lib/admin/slug';
+
+  const form = document.querySelector<HTMLFormElement>('[data-create-form]');
+  if (form) {
+    const status = form.querySelector<HTMLElement>('[data-create-status]');
+    form.querySelectorAll<HTMLInputElement>('[data-slug-source]').forEach((source) => {
+      const target = form.querySelector<HTMLInputElement>(`[name="${source.dataset.slugSource}"]`);
+      let touched = false;
+      target?.addEventListener('input', () => (touched = true));
+      source.addEventListener('input', () => {
+        if (target && !touched) target.value = slugify(source.value);
+      });
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const text = (name: string) => String(fd.get(name) ?? '').trim();
+      if (status) {
+        status.hidden = false;
+        status.textContent = 'Creando…';
+      }
+      const res = await fetch('/api/admin/products/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          categoryCode: text('categoryCode'),
+          motif: text('motif'),
+          sku: text('sku'),
+          priceCents: Math.round(Number(fd.get('price')) * 100),
+          es: { title: text('esTitle'), slug: text('esSlug') },
+          en: { title: text('enTitle'), slug: text('enSlug') },
+        }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+      if (res?.ok && data?.id) {
+        window.location.href = `/admin/products/${data.id}/#fotos`;
+      } else if (status) {
+        status.textContent = `No se pudo crear. ${data?.error?.message ?? ''}`;
+      }
+    });
+  }
+</script>

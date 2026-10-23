@@ -1,0 +1,546 @@
+/* Studio back room: same daylight paper and graphite as the public site,
+   tuned for reading data and filling forms. */
+.admin {
+  --a-sidebar: 15rem;
+  --a-radius: 8px;
+  --a-radius-sm: 6px;
+  --a-hover: #f5f6f9;
+  --a-warn: #8a5a12;
+  --a-warn-soft: #f7efdf;
+  --a-ok-soft: #e6f0ea;
+  --a-danger-soft: #f7e8ea;
+  --a-shadow: 0 1px 2px rgb(22 23 26 / 0.05), 0 8px 24px -16px rgb(22 23 26 / 0.18);
+
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.97rem;
+  line-height: 1.55;
+}
+
+.admin h1 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2rem, 3.2vw, 2.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.admin h2 {
+  margin: 2.5rem 0 0.85rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+}
+
+.admin h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.admin a {
+  color: inherit;
+}
+
+.admin .lead {
+  max-width: 44rem;
+  margin: 0 0 1.75rem;
+  color: var(--muted);
+}
+
+.admin .hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
+.admin .err {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-radius: var(--a-radius-sm);
+  background: var(--a-danger-soft);
+  color: var(--danger);
+}
+
+.admin .empty {
+  margin: 1rem 0;
+  padding: 2rem 1.25rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--a-radius);
+  color: var(--muted);
+  text-align: center;
+}
+
+.admin code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--paper-deep);
+  font-size: 0.84em;
+}
+
+.admin .status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+/* Page header: title on the left, primary action on the right */
+.admin .page-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 1.75rem;
+}
+
+.admin .page-head .lead {
+  margin: 0;
+}
+
+/* Buttons */
+.admin button,
+.admin .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  justify-self: start;
+  min-height: 2.5rem;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--light);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-soft),
+    border-color var(--dur-ui) var(--ease-soft),
+    color var(--dur-ui) var(--ease-soft);
+}
+
+.admin button:hover,
+.admin .btn:hover {
+  background: var(--ink-soft);
+  border-color: var(--ink-soft);
+  color: var(--light);
+}
+
+.admin button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.admin .btn--quiet,
+.admin button.btn--quiet {
+  background: var(--sheet);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.admin .btn--quiet:hover,
+.admin button.btn--quiet:hover {
+  background: var(--a-hover);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.admin .btn--danger,
+.admin button.btn--danger {
+  background: var(--sheet);
+  border-color: color-mix(in srgb, var(--danger) 45%, white);
+  color: var(--danger);
+}
+
+.admin .btn--danger:hover,
+.admin button.btn--danger:hover {
+  background: var(--a-danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Forms */
+.admin form {
+  margin: 0;
+}
+
+.admin fieldset {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+  margin: 0;
+  padding: 1.25rem 1.35rem 1.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--a-radius);
+  background: var(--sheet);
+}
+
+.admin legend {
+  padding: 0 0.4rem;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.admin label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.admin input:not([type='checkbox'], [type='radio'], [type='file']),
+.admin select,
+.admin textarea {
+  width: 100%;
+  max-width: 42rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--a-radius-sm);
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  transition:
+    border-color var(--dur-ui) var(--ease-soft),
+    box-shadow var(--dur-ui) var(--ease-soft);
+}
+
+.admin textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.admin input:focus-visible,
+.admin select:focus-visible,
+.admin textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.admin input[type='file'] {
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.admin input[type='checkbox'] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--ink);
+}
+
+.admin .check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.admin main img {
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* On/off switch: <label class="switch"><input type="checkbox" role="switch" /><span>…</span></label> */
+.admin .switch {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.admin .switch > span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.admin .switch input[type='checkbox'] {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 2.6rem;
+  height: 1.5rem;
+  margin: 0.05rem 0 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-soft);
+}
+
+.admin .switch input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform var(--dur-ui) var(--ease-soft);
+}
+
+.admin .switch input[type='checkbox']:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.admin .switch input[type='checkbox']:checked::after {
+  transform: translateX(1.1rem);
+}
+
+.admin .switch input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Editor: wide content column plus a sticky publish column */
+.admin .editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 19rem;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.admin .editor-main {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.admin .editor-side {
+  position: sticky;
+  top: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.admin .pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.admin .back {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.admin .back:hover {
+  color: var(--ink);
+}
+
+@media (max-width: 64rem) {
+  .admin .editor {
+    grid-template-columns: 1fr;
+  }
+
+  .admin .editor-side {
+    position: static;
+    order: -1;
+  }
+}
+
+@media (max-width: 40rem) {
+  .admin .pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Panels and cards */
+.admin .panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1.35rem 1.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--a-radius);
+  background: var(--sheet);
+  box-shadow: var(--a-shadow);
+}
+
+.admin .panel > h2:first-child,
+.admin .panel > h3:first-child {
+  margin-top: 0;
+}
+
+/* Tables */
+.admin .table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--a-radius);
+  background: var(--sheet);
+  box-shadow: var(--a-shadow);
+}
+
+.admin table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin th,
+.admin td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.admin th {
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin tbody tr:hover td {
+  background: var(--a-hover);
+}
+
+.admin td a {
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.admin td a:hover {
+  text-decoration: underline;
+}
+
+.admin td.num,
+.admin th.num {
+  text-align: right;
+}
+
+.admin .muted {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.admin .thumb {
+  display: block;
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--paper-deep);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.admin .title-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+/* Status chips */
+.admin .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.admin .chip::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.admin .chip--ok {
+  background: var(--a-ok-soft);
+  color: var(--success);
+}
+
+.admin .chip--warn {
+  background: var(--a-warn-soft);
+  color: var(--a-warn);
+}
+
+.admin .chip--danger {
+  background: var(--a-danger-soft);
+  color: var(--danger);
+}
+
+.admin .chip--info {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Filter tabs above lists */
+.admin .tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.admin .tabs a {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--sheet);
+  font-size: 0.86rem;
+  text-decoration: none;
+}
+
+.admin .tabs a:hover {
+  border-color: var(--ink);
+}
+
+.admin .tabs a[aria-current='page'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--light);
+}
+
+.admin .tabs .count {
+  margin-left: 0.3rem;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Live search above long tables */
+.admin .search {
+  max-width: 22rem;
+  margin: 0 0 1rem;
+}

@@ -1,0 +1,33 @@
+{
+  "id": "tida",
+  "title": {
+    "en": "Tida",
+    "es": "Tida"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/tida-tida-0-Tida-dog-drawing-rotated-810x1080.jpeg",
+      "label": "Tida drawing",
+      "alt": {
+        "en": "Tida drawing",
+        "es": "Tida drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/tida-tida-1-Tida-dog-photo-691x1080.jpg",
+      "label": "Tida photo",
+      "alt": {
+        "en": "Tida photo",
+        "es": "Tida photo"
+      }
+    }
+  ],
+  "order": 13,
+  "pathSlugs": {
+    "en": "tida",
+    "es": "tida"
+  }
+}

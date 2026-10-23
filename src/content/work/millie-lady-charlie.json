@@ -1,0 +1,69 @@
+{
+  "id": "millie-lady-charlie",
+  "title": {
+    "en": "Millie, Lady and Charlie",
+    "es": "Millie, Lady y Charlie"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/millie-lady-charlie-millie-lady-charlie-0-Millie-dog-drawing-1560x1080.jpg",
+      "label": "Millie drawing",
+      "alt": {
+        "en": "Millie drawing",
+        "es": "Millie drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/millie-lady-charlie-millie-lady-charlie-1-Millie-dog-photo.jpg",
+      "label": "Millie photo",
+      "alt": {
+        "en": "Millie photo",
+        "es": "Millie photo"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/millie-lady-charlie-millie-lady-charlie-2-Charlie-dog-drawing-1539x1080.jpg",
+      "label": "Charlie drawing",
+      "alt": {
+        "en": "Charlie drawing",
+        "es": "Charlie drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/millie-lady-charlie-millie-lady-charlie-3-Lady-dog-photo.jpeg",
+      "label": "Lady photo",
+      "alt": {
+        "en": "Lady photo",
+        "es": "Lady photo"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/millie-lady-charlie-millie-lady-charlie-4-Lady-dog-drawing.jpeg",
+      "label": "Lady drawing",
+      "alt": {
+        "en": "Lady drawing",
+        "es": "Lady drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/millie-lady-charlie-millie-lady-charlie-5-Charlie-dog-photo-1374x1080.jpg",
+      "label": "Charlie photo",
+      "alt": {
+        "en": "Charlie photo",
+        "es": "Charlie photo"
+      }
+    }
+  ],
+  "order": 19,
+  "pathSlugs": {
+    "en": "millie-lady-charlie",
+    "es": "millie-lady-charlie"
+  }
+}

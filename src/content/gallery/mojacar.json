@@ -1,0 +1,19 @@
+{
+  "id": "mojacar",
+  "title": {
+    "en": "Mojácar",
+    "es": "Mojácar"
+  },
+  "group": "architecture",
+  "assets": [
+    {
+      "role": "other",
+      "src": "/media/gallery/mojacar-0.jpg",
+      "alt": {
+        "en": "Mojácar",
+        "es": "Mojácar"
+      }
+    }
+  ],
+  "order": 3
+}

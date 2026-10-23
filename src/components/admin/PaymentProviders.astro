@@ -1,0 +1,504 @@
+---
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { siteUrl } from '@/lib/server/env';
+import { loadPaymentConfig, type PaymentProvider } from '@/lib/server/payments/config';
+import { listProviderRows, publicWebhookBase, webhookUrlFor } from '@/lib/server/payments/connect';
+
+interface Props {
+  client: SupabaseClient;
+}
+
+const rows = await listProviderRows(Astro.props.client).catch(() => []);
+const config = await loadPaymentConfig();
+const autoWebhooks = Boolean(publicWebhookBase());
+const origin = siteUrl();
+
+const cards = (['stripe', 'paypal'] as PaymentProvider[]).map((provider) => {
+  const row = rows.find((r) => r.provider === provider) ?? null;
+  const active = config[provider];
+  const webhook =
+    provider === 'stripe' ? Boolean(config.stripe?.webhookSecret) : Boolean(config.paypal?.webhookId);
+  return {
+    provider,
+    name: provider === 'stripe' ? 'Stripe' : 'PayPal',
+    row,
+    envOnly: !row && active?.source === 'env',
+    mode: row?.mode ?? active?.mode ?? 'test',
+    webhook,
+    webhookUrl: webhookUrlFor(provider),
+  };
+});
+---
+
+<section class="panel payments" id="cobros">
+  <div class="payments-head">
+    <h2>Cobros</h2>
+    <p class="hint">
+      Conecta Stripe para cobrar con tarjeta, Apple Pay y Google Pay, y PayPal para quien prefiera
+      pagar con su cuenta. Con los dos conectados, la compra ofrece ambos. Las claves se guardan
+      cifradas y aquí solo se ven sus últimos caracteres.
+    </p>
+    {
+      !autoWebhooks && (
+        <p class="note">
+          La web funciona ahora en <code>{origin}</code>. Los avisos de pago (webhooks) se crean solos
+          cuando conectas desde la dirección pública con https. Vuelve a conectar desde allí al
+          publicar la web.
+        </p>
+      )
+    }
+  </div>
+
+  <div class="providers">
+    {
+      cards.map((card) => (
+        <article class="provider" data-provider={card.provider}>
+          <header>
+            <h3>{card.name}</h3>
+            <div class="chips">
+              {card.row || card.envOnly ? (
+                <span class="chip chip--ok">Conectado</span>
+              ) : (
+                <span class="chip">Sin conectar</span>
+              )}
+              {(card.row || card.envOnly) &&
+                (card.mode === 'live' ? (
+                  <span class="chip chip--info">Modo real</span>
+                ) : (
+                  <span class="chip chip--warn">Modo pruebas</span>
+                ))}
+            </div>
+          </header>
+
+          {card.envOnly && (
+            <p class="hint">
+              Conectado con las variables de entorno del servidor. Conecta aquí tus claves para
+              gestionarlo desde el panel; las del panel tienen prioridad.
+            </p>
+          )}
+
+          {card.row && (
+            <>
+              <dl class="facts">
+                <div>
+                  <dt>Cuenta</dt>
+                  <dd>{card.row.account_label ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>{card.provider === 'stripe' ? 'Clave' : 'Client ID'}</dt>
+                  <dd>
+                    <code>{card.row.key_hint ?? '••••'}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Avisos de pago</dt>
+                  <dd>
+                    {card.webhook ? (
+                      <span class="chip chip--ok">Webhook activo</span>
+                    ) : (
+                      <span class="chip chip--warn">Sin webhook</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+
+              <label class="switch">
+                <input type="checkbox" role="switch" data-enabled checked={card.row.enabled} />
+                <span>
+                  <strong>Ofrecer en la compra</strong>
+                  <span class="hint">
+                    {card.provider === 'stripe'
+                      ? 'Muestra el botón «Pagar con tarjeta».'
+                      : 'Muestra el botón «Pagar con PayPal».'}
+                  </span>
+                </span>
+              </label>
+
+              {!card.webhook && card.provider === 'stripe' && (
+                <details class="manual">
+                  <summary>Configurar el webhook a mano</summary>
+                  <p class="hint">
+                    En Stripe, ve a Desarrolladores → Webhooks y añade un destino con esta dirección
+                    y los eventos <code>checkout.session.completed</code>,{' '}
+                    <code>checkout.session.async_payment_succeeded</code> y{' '}
+                    <code>checkout.session.expired</code>. Después pega aquí su secreto.
+                  </p>
+                  <code class="url">{card.webhookUrl}</code>
+                  <form class="inline" data-webhook-form>
+                    <input
+                      name="webhookSecret"
+                      type="password"
+                      placeholder="whsec_…"
+                      autocomplete="off"
+                      spellcheck="false"
+                      required
+                    />
+                    <button type="submit" class="btn--quiet">Guardar</button>
+                  </form>
+                </details>
+              )}
+
+              {!card.webhook && card.provider === 'paypal' && (
+                <p class="hint">
+                  Sin webhook, cada pago se confirma cuando el cliente vuelve de PayPal a la web. El
+                  webhook se crea solo al conectar desde la dirección pública.
+                </p>
+              )}
+
+              <div class="actions">
+                <button type="button" class="btn--quiet" data-test>
+                  Probar conexión
+                </button>
+                <button type="button" class="btn--danger" data-disconnect>
+                  Desconectar
+                </button>
+              </div>
+            </>
+          )}
+
+          <details class="connect" open={!card.row}>
+            <summary>{card.row ? 'Cambiar claves' : `Conectar ${card.name}`}</summary>
+            {card.provider === 'stripe' ? (
+              <ol class="steps">
+                <li>
+                  Entra en el{' '}
+                  <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">
+                    panel de Stripe → Claves de API
+                  </a>
+                  .
+                </li>
+                <li>
+                  Copia la <strong>clave secreta</strong>: <code>sk_live_…</code> para cobrar de
+                  verdad o <code>sk_test_…</code> para probar.
+                </li>
+                <li>Pégala aquí y pulsa Conectar. Se comprueba al momento con Stripe.</li>
+              </ol>
+            ) : (
+              <ol class="steps">
+                <li>
+                  Entra en{' '}
+                  <a href="https://developer.paypal.com/dashboard/applications" target="_blank" rel="noopener">
+                    PayPal Developer → Apps y credenciales
+                  </a>{' '}
+                  con tu cuenta de PayPal Business.
+                </li>
+                <li>
+                  Elige <strong>Sandbox</strong> para probar o <strong>Live</strong> para cobrar, y crea
+                  una app de tipo Merchant.
+                </li>
+                <li>Copia el Client ID y el Secret de esa app y pégalos aquí.</li>
+              </ol>
+            )}
+
+            <form class="connect-form" data-connect-form>
+              {card.provider === 'stripe' ? (
+                <label>
+                  Clave secreta
+                  <input
+                    name="secretKey"
+                    type="password"
+                    placeholder="sk_live_…"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                  />
+                </label>
+              ) : (
+                <>
+                  <fieldset class="modes">
+                    <legend class="visually-hidden">Modo</legend>
+                    <label class="check">
+                      <input type="radio" name="mode" value="test" checked={card.mode !== 'live'} />
+                      Pruebas (Sandbox)
+                    </label>
+                    <label class="check">
+                      <input type="radio" name="mode" value="live" checked={card.mode === 'live'} />
+                      Real (Live)
+                    </label>
+                  </fieldset>
+                  <label>
+                    Client ID
+                    <input name="clientId" autocomplete="off" spellcheck="false" required />
+                  </label>
+                  <label>
+                    Secret
+                    <input name="clientSecret" type="password" autocomplete="off" spellcheck="false" required />
+                  </label>
+                </>
+              )}
+              <button type="submit">{card.row ? 'Guardar claves' : `Conectar ${card.name}`}</button>
+            </form>
+          </details>
+
+          <p class="status" data-status hidden role="status" />
+        </article>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .payments {
+    margin-bottom: 1.25rem;
+  }
+
+  .payments-head {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .payments-head h2 {
+    margin: 0;
+  }
+
+  .note {
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--a-radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    font-size: 0.88rem;
+  }
+
+  .providers {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .provider {
+    display: grid;
+    gap: 1rem;
+    padding: 1.1rem 1.2rem 1.2rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .provider header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .provider h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 500;
+  }
+
+  .chips {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .facts div {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .facts dt {
+    color: var(--muted);
+    font-size: 0.86rem;
+  }
+
+  .facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .provider .switch {
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius-sm);
+    background: var(--sheet);
+  }
+
+  details > summary {
+    cursor: pointer;
+    font-size: 0.92rem;
+    font-weight: 500;
+  }
+
+  details[open] > summary {
+    margin-bottom: 0.75rem;
+  }
+
+  .manual {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .manual .hint + .url {
+    margin-top: 0.6rem;
+  }
+
+  .url {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
+  .inline {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+
+  .steps {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0 0 1rem;
+    padding-left: 1.2rem;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+  }
+
+  .steps a {
+    color: var(--accent);
+  }
+
+  .connect-form {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .status[data-tone='ok'] {
+    color: var(--success);
+  }
+
+  .status[data-tone='err'] {
+    color: var(--danger);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 62rem) {
+    .providers {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  type Tone = 'ok' | 'err' | 'info';
+
+  async function send(url: string, method: string, body?: unknown) {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    return { ok: Boolean(res?.ok), data: data ?? {} };
+  }
+
+  document.querySelectorAll<HTMLElement>('.provider[data-provider]').forEach((card) => {
+    const provider = card.dataset.provider!;
+    const base = `/api/admin/payments/${provider}/`;
+    const status = card.querySelector<HTMLElement>('[data-status]');
+    const say = (text: string, tone: Tone = 'info') => {
+      if (!status) return;
+      status.hidden = false;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+    const errorOf = (data: { error?: { message?: string } }) =>
+      data.error?.message ?? 'No hubo respuesta del servidor.';
+
+    card.querySelector<HTMLFormElement>('[data-connect-form]')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const button = form.querySelector('button');
+      const fields = Object.fromEntries(new FormData(form)) as Record<string, string>;
+      if (button) button.disabled = true;
+      say('Comprobando las claves…');
+      const { ok, data } = await send(base, 'POST', fields);
+      if (ok) {
+        form.reset();
+        say('Conectado. Actualizando…', 'ok');
+        location.reload();
+        return;
+      }
+      say(errorOf(data), 'err');
+      if (button) button.disabled = false;
+    });
+
+    card.querySelector<HTMLInputElement>('[data-enabled]')?.addEventListener('change', async (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      input.disabled = true;
+      const { ok, data } = await send(base, 'PATCH', { enabled: input.checked });
+      input.disabled = false;
+      if (ok) {
+        say(input.checked ? 'Se ofrece en la compra.' : 'Retirado de la compra.', 'ok');
+      } else {
+        input.checked = !input.checked;
+        say(errorOf(data), 'err');
+      }
+    });
+
+    card.querySelector<HTMLFormElement>('[data-webhook-form]')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const webhookSecret = String(new FormData(form).get('webhookSecret') ?? '');
+      const { ok, data } = await send(base, 'PATCH', { webhookSecret });
+      if (ok) {
+        say('Webhook guardado. Actualizando…', 'ok');
+        location.reload();
+      } else {
+        say(errorOf(data), 'err');
+      }
+    });
+
+    card.querySelector<HTMLButtonElement>('[data-test]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      say('Probando…');
+      const { data } = await send(`${base}test/`, 'POST');
+      say(data.message ?? errorOf(data), data.ok ? 'ok' : 'err');
+      button.disabled = false;
+    });
+
+    card.querySelector<HTMLButtonElement>('[data-disconnect]')?.addEventListener('click', async () => {
+      const name = provider === 'stripe' ? 'Stripe' : 'PayPal';
+      if (!confirm(`¿Desconectar ${name}? La tienda dejará de ofrecerlo y se borrarán las claves guardadas.`)) return;
+      say('Desconectando…');
+      const { ok, data } = await send(base, 'DELETE');
+      if (ok) location.reload();
+      else say(errorOf(data), 'err');
+    });
+  });
+</script>

@@ -1,0 +1,33 @@
+{
+  "id": "moquitos",
+  "title": {
+    "en": "Moquitos",
+    "es": "Moquitos"
+  },
+  "category": "horse",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/moquitos-moquitos-0-Moquitos-788x1080.jpeg",
+      "label": "Moquitos",
+      "alt": {
+        "en": "Moquitos",
+        "es": "Moquitos"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/moquitos-moquitos-1-MOquitos-1-871x1080.jpg",
+      "label": "Moquitos",
+      "alt": {
+        "en": "Moquitos",
+        "es": "Moquitos"
+      }
+    }
+  ],
+  "order": 11,
+  "pathSlugs": {
+    "en": "moquitos",
+    "es": "moquitos"
+  }
+}

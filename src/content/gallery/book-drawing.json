@@ -1,0 +1,19 @@
+{
+  "id": "book-drawing",
+  "title": {
+    "en": "Drawing for book",
+    "es": "Dibujo para libro"
+  },
+  "group": "illustration",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/gallery/book-drawing-0.jpg",
+      "alt": {
+        "en": "Drawing for book",
+        "es": "Dibujo para libro"
+      }
+    }
+  ],
+  "order": 10
+}

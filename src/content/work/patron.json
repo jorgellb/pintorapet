@@ -1,0 +1,33 @@
+{
+  "id": "patron",
+  "title": {
+    "en": "Patrón",
+    "es": "Patrón"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/patron-patron-0-Dog-Pedro-Arg-drawing-760x1080.jpg",
+      "label": "Patron drawing",
+      "alt": {
+        "en": "Patron drawing",
+        "es": "Patron drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/patron-patron-1-Dog-Pedro-Arg-photo-608x1080.jpg",
+      "label": "Patron photo",
+      "alt": {
+        "en": "Patron photo",
+        "es": "Patron photo"
+      }
+    }
+  ],
+  "order": 16,
+  "pathSlugs": {
+    "en": "patron",
+    "es": "patron"
+  }
+}

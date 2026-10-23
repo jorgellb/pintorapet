@@ -1,0 +1,294 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ListSearch from '@/components/admin/ListSearch.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+let items: Awaited<ReturnType<typeof listMedia>> = [];
+let loadError: string | null = null;
+try {
+  items = await listMedia(admin.client);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'No se pudo leer la biblioteca.';
+}
+
+type Item = (typeof items)[number];
+const filters = {
+  obra: { label: 'Obra y galería', test: (i: Item) => i.bucket === 'portfolio-public' },
+  tienda: { label: 'Tienda', test: (i: Item) => i.bucket === 'catalog-public' },
+  'sin-alt': { label: 'Sin texto alternativo', test: (i: Item) => !i.altEs.trim() },
+} as const;
+type FilterKey = keyof typeof filters;
+
+const param = Astro.url.searchParams.get('filtro');
+const current = param && param in filters ? (param as FilterKey) : null;
+const visible = current ? items.filter(filters[current].test) : items;
+
+function fileName(path: string): string {
+  return path.split('/').pop() ?? path;
+}
+
+function size(bytes: number | null): string {
+  if (!bytes) return '';
+  return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
+}
+---
+
+<AdminLayout title="Medios" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Medios</h1>
+      <p class="lead">
+        La biblioteca de imágenes de la obra, la galería extra y la tienda. El texto
+        alternativo describe cada imagen a buscadores y lectores de pantalla.
+      </p>
+    </div>
+    <a class="btn" href="#subir">Subir imagen</a>
+  </header>
+
+  {
+    loadError ? (
+      <p class="err">{loadError}. Aplica la migración editorial y la de storage.</p>
+    ) : (
+      <>
+        <ul class="tabs">
+          <li>
+            <a href="/admin/media/" aria-current={!current ? 'page' : undefined}>
+              Todas <span class="count">{items.length}</span>
+            </a>
+          </li>
+          {(Object.keys(filters) as FilterKey[]).map((key) => (
+            <li>
+              <a href={`/admin/media/?filtro=${key}`} aria-current={current === key ? 'page' : undefined}>
+                {filters[key].label} <span class="count">{items.filter(filters[key].test).length}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <ListSearch
+          placeholder="Buscar por nombre de archivo o texto…"
+          label="Buscar imágenes"
+          emptyText="Ninguna imagen coincide con la búsqueda."
+        />
+        {visible.length === 0 ? (
+          <p class="empty">
+            {current === 'sin-alt' ? 'Todas las imágenes tienen su texto alternativo.' : 'Todavía no hay imágenes en esta vista.'}
+          </p>
+        ) : (
+          <ul class="grid">
+            {visible.map((item) => (
+              <li
+                class="card"
+                data-search-text={`${item.object_path} ${item.altEs} ${item.altEn}`.toLowerCase()}
+              >
+                <a class="preview" href={item.publicUrl} target="_blank" rel="noreferrer">
+                  <img src={item.publicUrl} alt="" width="320" height="220" loading="lazy" decoding="async" />
+                </a>
+                <div class="meta">
+                  <span class="name" title={item.object_path}>{fileName(item.object_path)}</span>
+                  <span class="muted">
+                    {item.bucket === 'catalog-public' ? 'Tienda' : 'Obra'}
+                    {size(item.byte_size) && ` · ${size(item.byte_size)}`}
+                  </span>
+                  {!item.altEs.trim() && <span class="chip chip--warn">Falta texto</span>}
+                </div>
+                <form data-alt data-id={item.id}>
+                  <label>
+                    Texto alternativo (ES)
+                    <input name="altEs" value={item.altEs} maxlength="500" placeholder="Describe la imagen" />
+                  </label>
+                  <label>
+                    Texto alternativo (EN)
+                    <input name="altEn" value={item.altEn} maxlength="500" />
+                  </label>
+                  <div class="actions">
+                    <button type="submit">Guardar</button>
+                    <button type="button" class="btn--quiet" data-copy={item.publicUrl}>Copiar URL</button>
+                    <button type="button" class="btn--quiet btn--danger" data-delete data-id={item.id}>Eliminar</button>
+                  </div>
+                  <p class="status" data-feedback hidden />
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>
+    )
+  }
+
+  <form class="panel upload" id="subir" data-upload>
+    <h2>Subir imagen</h2>
+    <p class="hint">JPG, PNG, WebP o GIF. Después puedes elegirla al editar una ficha o un producto.</p>
+    <label>
+      Imagen
+      <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif" required />
+    </label>
+    <label>
+      Dónde se usará
+      <select name="bucket">
+        <option value="portfolio-public">Obra y galería</option>
+        <option value="catalog-public">Tienda</option>
+      </select>
+    </label>
+    <label>
+      Texto alternativo (ES)
+      <input type="text" name="altEs" maxlength="500" />
+    </label>
+    <label>
+      Texto alternativo (EN)
+      <input type="text" name="altEn" maxlength="500" />
+    </label>
+    <button type="submit">Subir</button>
+    <p class="status" data-upload-status hidden></p>
+  </form>
+</AdminLayout>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .card {
+    display: grid;
+    align-content: start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: #fff;
+  }
+
+  .card[hidden] {
+    display: none;
+  }
+
+  .preview {
+    display: block;
+    border-radius: calc(var(--a-radius) - 0.25rem);
+    background: var(--paper-deep);
+  }
+
+  .preview img {
+    display: block;
+    width: 100%;
+    height: 11rem;
+    object-fit: contain;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.6rem;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+
+  .name {
+    flex: 1 1 100%;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  form[data-alt] {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  form[data-alt] label {
+    font-size: 0.82rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .actions button {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.85rem;
+  }
+
+  .upload {
+    max-width: 34rem;
+    margin-top: 2.5rem;
+    scroll-margin-top: 1.5rem;
+  }
+
+  .upload:target {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+</style>
+
+<script>
+  const upload = document.querySelector('[data-upload]');
+  if (upload instanceof HTMLFormElement) {
+    const status = upload.querySelector<HTMLElement>('[data-upload-status]');
+    upload.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (status) {
+        status.hidden = false;
+        status.textContent = 'Subiendo…';
+      }
+      const response = await fetch('/api/admin/media/', { method: 'POST', body: new FormData(upload) }).catch(() => null);
+      if (!response?.ok) {
+        if (status) status.textContent = 'No se pudo subir la imagen.';
+        return;
+      }
+      window.location.href = '/admin/media/';
+    });
+  }
+
+  document.querySelectorAll<HTMLFormElement>('[data-alt]').forEach((form) => {
+    const feedback = form.querySelector<HTMLElement>('[data-feedback]');
+    const say = (text: string) => {
+      if (!feedback) return;
+      feedback.hidden = false;
+      feedback.textContent = text;
+    };
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const altEs = String(data.get('altEs') ?? '');
+      const response = await fetch(`/api/admin/media/${form.dataset.id}/`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ altEn: String(data.get('altEn') ?? ''), altEs }),
+      }).catch(() => null);
+      say(response?.ok ? 'Texto guardado.' : 'No se pudo guardar.');
+      if (response?.ok && altEs.trim()) form.closest('li')?.querySelector('.chip--warn')?.remove();
+    });
+
+    form.querySelector<HTMLButtonElement>('[data-copy]')?.addEventListener('click', async (event) => {
+      const url = (event.currentTarget as HTMLButtonElement).dataset.copy ?? '';
+      await navigator.clipboard.writeText(url).then(
+        () => say('URL copiada.'),
+        () => say(url),
+      );
+    });
+
+    form.querySelector<HTMLButtonElement>('[data-delete]')?.addEventListener('click', async (event) => {
+      if (!confirm('¿Eliminar esta imagen? Desaparecerá de las fichas que la usen.')) return;
+      const button = event.currentTarget as HTMLButtonElement;
+      const response = await fetch(`/api/admin/media/${button.dataset.id}/`, { method: 'DELETE' }).catch(() => null);
+      if (response?.ok) button.closest('li')?.remove();
+      else say('No se pudo eliminar. Puede que esté en uso.');
+    });
+  });
+</script>

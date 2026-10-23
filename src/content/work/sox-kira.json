@@ -1,0 +1,33 @@
+{
+  "id": "sox-kira",
+  "title": {
+    "en": "Sox & Kira",
+    "es": "Sox y Kira"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/sox-kira-sox-kira-0-Kira-Sox-1541x1080.jpeg",
+      "label": "Kira & Sox",
+      "alt": {
+        "en": "Kira & Sox",
+        "es": "Kira & Sox"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/sox-kira-sox-kira-1-photo-output-e1783718127926-1591x1080.png",
+      "label": "Kira & Sox",
+      "alt": {
+        "en": "Kira & Sox",
+        "es": "Kira & Sox"
+      }
+    }
+  ],
+  "order": 9,
+  "pathSlugs": {
+    "en": "sox-kira",
+    "es": "sox-kira"
+  }
+}

@@ -1,0 +1,26 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+---
+
+<PublicLayout locale={locale} title={dict.errors.notFoundTitle}>
+  <section class="section">
+    <div class="site-shell">
+      <h1 class="display h1-display">{dict.errors.notFoundTitle}</h1>
+      <p class="muted">{dict.errors.notFoundLead}</p>
+      <p>
+        <a class="btn" href={localizedPath(locale, 'home')}>{dict.errors.backHome}</a>
+        <a class="btn btn--ghost" href={localizedPath(locale, 'work')}>{dict.nav.work}</a>
+        <a class="btn btn--ghost" href={localizedPath(locale, 'shop')}>{dict.nav.shop}</a>
+      </p>
+    </div>
+  </section>
+</PublicLayout>

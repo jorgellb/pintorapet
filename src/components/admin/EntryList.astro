@@ -1,0 +1,130 @@
+---
+import ListSearch from '@/components/admin/ListSearch.astro';
+import { chipClass } from '@/lib/admin/labels';
+
+export interface EntryRow {
+  id: string;
+  title: string;
+  type: string;
+  typeLabel: string;
+  sortOrder: number;
+  published: boolean;
+  needsText: boolean;
+  cover: string | null;
+}
+
+interface Props {
+  base: string;
+  rows: EntryRow[];
+  types: Array<[string, string]>;
+  typeHeading: string;
+  noun: { one: string; many: string };
+}
+
+const { base, rows, types, typeHeading, noun } = Astro.props;
+const url = Astro.url;
+const filter = url.searchParams.get('filtro') ?? '';
+const type = url.searchParams.get('tipo') ?? '';
+
+const visible = rows.filter((row) => {
+  if (type && row.type !== type) return false;
+  if (filter === 'sin-texto') return row.needsText;
+  if (filter === 'ocultas') return !row.published;
+  return true;
+});
+
+const tabs = [
+  { href: base, label: 'Todas', count: rows.length, current: !filter && !type },
+  ...types
+    .map(([key, label]) => ({
+      href: `${base}?tipo=${key}`,
+      label,
+      count: rows.filter((row) => row.type === key).length,
+      current: type === key && !filter,
+    }))
+    .filter((tab) => tab.count > 0),
+  {
+    href: `${base}?filtro=sin-texto`,
+    label: 'Sin texto',
+    count: rows.filter((row) => row.needsText).length,
+    current: filter === 'sin-texto',
+  },
+  {
+    href: `${base}?filtro=ocultas`,
+    label: 'Ocultas',
+    count: rows.filter((row) => !row.published).length,
+    current: filter === 'ocultas',
+  },
+];
+---
+
+<ul class="tabs">
+  {
+    tabs.map((tab) => (
+      <li>
+        <a href={tab.href} aria-current={tab.current ? 'page' : undefined}>
+          {tab.label}
+          <span class="count">{tab.count}</span>
+        </a>
+      </li>
+    ))
+  }
+</ul>
+
+<ListSearch
+  placeholder={`Buscar ${noun.many}…`}
+  label={`Buscar ${noun.many}`}
+  emptyText={`Ninguna ${noun.one} coincide con la búsqueda.`}
+/>
+
+{
+  visible.length === 0 ? (
+    <p class="empty">No hay {noun.many} con este filtro.</p>
+  ) : (
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Título</th>
+            <th>{typeHeading}</th>
+            <th>Texto</th>
+            <th>Estado</th>
+            <th class="num">Orden</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map((row) => (
+            <tr data-search-text={`${row.title} ${row.typeLabel}`.toLowerCase()}>
+              <td>
+                <a class="title-cell" href={`${base}${row.id}/`}>
+                  {row.cover ? (
+                    <img class="thumb" src={row.cover} alt="" loading="lazy" width="48" height="48" />
+                  ) : (
+                    <span class="thumb" />
+                  )}
+                  <span>{row.title}</span>
+                </a>
+              </td>
+              <td>{row.typeLabel}</td>
+              <td>
+                {row.needsText ? (
+                  <span class={chipClass('warn')}>Falta</span>
+                ) : (
+                  <span class={chipClass('ok')}>Listo</span>
+                )}
+              </td>
+              <td>
+                {row.published ? (
+                  <span class={chipClass('ok')}>Publicada</span>
+                ) : (
+                  <span class={chipClass('neutral')}>Oculta</span>
+                )}
+              </td>
+              <td class="num muted">{row.sortOrder}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}

@@ -1,0 +1,44 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import EntryEditor from '@/components/admin/EntryEditor.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+let media: Awaited<ReturnType<typeof listMedia>> = [];
+try {
+  media = await listMedia(admin.client);
+} catch {
+  media = [];
+}
+---
+
+<AdminLayout title="Nueva pieza" email={admin.user.email}>
+  <a class="back" href="/admin/gallery/">← Galería extra</a>
+  <header class="page-head">
+    <h1>Nueva pieza</h1>
+  </header>
+  <EntryEditor
+    kind="gallery"
+    mode="create"
+    media={media.map((item) => ({ id: item.id, publicUrl: item.publicUrl, label: item.object_path }))}
+    values={{
+      group: 'other',
+      titleEn: '',
+      titleEs: '',
+      summaryEn: '',
+      summaryEs: '',
+      storyEn: '',
+      storyEs: '',
+      sortOrder: 0,
+      published: true,
+      assets: [],
+    }}
+  />
+</AdminLayout>

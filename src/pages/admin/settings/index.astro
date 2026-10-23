@@ -1,0 +1,306 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import PaymentProviders from '@/components/admin/PaymentProviders.astro';
+import { hasSupabase, hasResend, hasServiceSupabase, siteUrl } from '@/lib/server/env';
+import { checkoutProviders } from '@/lib/server/payments/config';
+import { googleMerchantConfig, metaCatalogConfig } from '@/lib/catalog/syncCatalog';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const origin = siteUrl();
+const providers = await checkoutProviders();
+const providerNames = providers.map((p) => (p === 'stripe' ? 'Stripe' : 'PayPal')).join(' y ');
+
+const { data: settings, error } = await admin.client
+  .from('shop_settings')
+  .select(
+    'public_name, sales_enabled, payments_enabled, tax_policy, config_version, cart_max_qty_per_line, cart_max_lines, cart_max_units, quote_ttl_seconds, reservation_minutes',
+  )
+  .eq('id', 1)
+  .maybeSingle();
+
+const services = [
+  { name: 'Base de datos con permisos de servidor', ok: hasServiceSupabase(), note: 'Necesaria para pedidos y subidas.' },
+  { name: 'Cobros', ok: providers.length > 0, note: providers.length ? `Se cobra con ${providerNames}.` : 'Conecta Stripe o PayPal más arriba.' },
+  { name: 'Resend', ok: hasResend(), note: 'Envía los correos de pedidos y encargos.' },
+  { name: 'Google Merchant Center', ok: Boolean(googleMerchantConfig()), note: 'Recibe el catálogo al sincronizar.' },
+  { name: 'Meta (Facebook e Instagram)', ok: Boolean(metaCatalogConfig()), note: 'Recibe el catálogo al sincronizar.' },
+];
+
+const feeds = [
+  { name: 'Google', url: `${origin}/feeds/google-merchant.xml` },
+  { name: 'Meta', url: `${origin}/feeds/meta-catalog.xml` },
+];
+---
+
+<AdminLayout title="Ajustes y catálogos" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Ajustes y catálogos</h1>
+      <p class="lead">
+        La tienda vende cuando activas la venta y los pagos. Actívalos después de
+        verificar el inventario y conectar los cobros y Resend.
+      </p>
+    </div>
+  </header>
+
+  <PaymentProviders client={admin.client} />
+
+  <div class="layout">
+    {
+      error || !settings ? (
+        <p class="err">{error?.message ?? 'Falta la fila de ajustes: aplica seed.sql.'}</p>
+      ) : (
+        <form class="panel" data-settings-form>
+          <h2>Tienda</h2>
+          <label>
+            Nombre público
+            <input name="publicName" value={settings.public_name} required maxlength="120" />
+          </label>
+          <label>
+            Texto de impuestos
+            <input name="taxPolicy" value={settings.tax_policy} required maxlength="120" />
+            <span class="hint">Se muestra junto a los precios, por ejemplo «IVA incluido».</span>
+          </label>
+          <div class="switches">
+            <label class="switch">
+              <input type="checkbox" role="switch" name="salesEnabled" checked={settings.sales_enabled} />
+              <span>
+                <strong>Venta activa</strong>
+                <span class="hint">Los productos muestran el botón de añadir a la cesta.</span>
+              </span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" role="switch" name="paymentsEnabled" checked={settings.payments_enabled} />
+              <span>
+                <strong>Pagos activos</strong>
+                <span class="hint">
+                  {providers.length ? `La cesta lleva al pago con ${providerNames}.` : 'Conecta Stripe o PayPal para poder cobrar.'}
+                </span>
+              </span>
+            </label>
+          </div>
+          <details class="limits">
+            <summary>Límites de la cesta</summary>
+            <p class="hint">
+              Hasta {settings.cart_max_lines} productos distintos y {settings.cart_max_units} unidades en
+              total, con un máximo de {settings.cart_max_qty_per_line} por producto. Un presupuesto dura{' '}
+              {Math.round(settings.quote_ttl_seconds / 60)} min y la reserva de stock{' '}
+              {settings.reservation_minutes} min. Versión de configuración {settings.config_version}.
+            </p>
+          </details>
+          <button type="submit">Guardar ajustes</button>
+          <p class="status" data-settings-status hidden></p>
+        </form>
+      )
+    }
+
+    <div class="side">
+      <section class="panel">
+        <h2>Conexiones</h2>
+        <ul class="services">
+          {
+            services.map((service) => (
+              <li class:list={{ ok: service.ok }}>
+                <span class="tick" aria-hidden="true">{service.ok ? '✓' : ''}</span>
+                <span>
+                  {service.name}
+                  <span class="hint">{service.ok ? 'Conectado' : 'Sin conectar'}. {service.note}</span>
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Catálogos de Google y Meta</h2>
+        <p class="hint">
+          Sincronizar envía el catálogo en español a las dos cuentas. Google y Meta
+          también pueden leer estas direcciones por su cuenta; añade{' '}
+          <code>?locale=en</code> para la versión en inglés. Con la venta apagada los
+          productos figuran sin stock.
+        </p>
+        <ul class="feeds">
+          {
+            feeds.map((feed) => (
+              <li>
+                <span class="muted">{feed.name}</span>
+                <code>{feed.url}</code>
+                <button type="button" class="btn--quiet" data-copy={feed.url}>Copiar</button>
+              </li>
+            ))
+          }
+        </ul>
+        <button type="button" data-sync>Sincronizar ahora</button>
+        <p class="status" data-sync-status hidden></p>
+      </section>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .side {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  label .hint {
+    font-weight: 400;
+  }
+
+  .switches {
+    display: grid;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+  }
+
+  .switch {
+    padding: 0.9rem 1rem;
+  }
+
+  .switch + .switch {
+    border-top: 1px solid var(--line);
+  }
+
+  .limits summary {
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  .limits .hint {
+    margin-top: 0.5rem;
+  }
+
+  .services,
+  .feeds {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .services li {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .services li > span:last-child {
+    display: grid;
+  }
+
+  .tick {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 1.4rem;
+    height: 1.4rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    font-size: 0.8rem;
+  }
+
+  .ok .tick {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .feeds li {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .feeds code {
+    overflow-wrap: anywhere;
+  }
+
+  .feeds button {
+    min-height: 2rem;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.82rem;
+  }
+
+  @media (max-width: 62rem) {
+    .layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const form = document.querySelector('[data-settings-form]');
+  if (form instanceof HTMLFormElement) {
+    const status = form.querySelector<HTMLElement>('[data-settings-status]');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const payload = {
+        publicName: String(fd.get('publicName') ?? ''),
+        taxPolicy: String(fd.get('taxPolicy') ?? ''),
+        salesEnabled: fd.get('salesEnabled') === 'on',
+        paymentsEnabled: fd.get('paymentsEnabled') === 'on',
+      };
+      if (status) {
+        status.hidden = false;
+        status.textContent = 'Guardando…';
+      }
+      const res = await fetch('/api/admin/shop-settings/', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      if (status) {
+        status.textContent = res?.ok
+          ? 'Ajustes guardados.'
+          : `No se pudieron guardar los ajustes. ${data?.error?.message ?? ''}`;
+      }
+    });
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(button.dataset.copy ?? '').catch(() => undefined);
+      button.textContent = 'Copiada';
+      setTimeout(() => (button.textContent = 'Copiar'), 1600);
+    });
+  });
+
+  const sync = document.querySelector('[data-sync]');
+  if (sync instanceof HTMLButtonElement) {
+    const status = document.querySelector<HTMLElement>('[data-sync-status]');
+    sync.addEventListener('click', async () => {
+      sync.disabled = true;
+      if (status) {
+        status.hidden = false;
+        status.textContent = 'Sincronizando…';
+      }
+      const res = await fetch('/api/admin/catalog-sync/', { method: 'POST' }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      if (status) {
+        const google = data?.google?.message ?? 'Google sin respuesta.';
+        const meta = data?.meta?.message ?? 'Meta sin respuesta.';
+        status.textContent = `${google} ${meta}`;
+      }
+      sync.disabled = false;
+    });
+  }
+</script>

@@ -1,0 +1,312 @@
+---
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { carrierRow } from '@/lib/server/shipping/admin';
+
+interface Props {
+  client: SupabaseClient;
+}
+
+const row = await carrierRow(Astro.props.client).catch(() => null);
+const connectedAt = row ? new Date(row.connected_at).toLocaleDateString('es-ES', { dateStyle: 'medium' }) : null;
+---
+
+<section class="panel correos" id="correos" data-correos>
+  <header class="correos__head">
+    <div>
+      <h2>Correos</h2>
+      <p class="hint">
+        Con Correos conectado, desde cada pedido creas el envío, descargas la etiqueta en PDF y el
+        cliente recibe el número de seguimiento por email. Sin conectar, añades el seguimiento a mano.
+      </p>
+    </div>
+    <div class="chips">
+      {row ? <span class="chip chip--ok">Conectado</span> : <span class="chip">Sin conectar</span>}
+      {row && (row.mode === 'live' ? <span class="chip chip--info">Modo real</span> : <span class="chip chip--warn">Modo pruebas</span>)}
+    </div>
+  </header>
+
+  {
+    row && (
+      <>
+        <dl class="facts">
+          <div>
+            <dt>Contrato</dt>
+            <dd>{row.contract_number ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Cliente · etiquetador</dt>
+            <dd>
+              {row.client_number ?? '—'} · {row.labeller_code ?? '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>Credencial API</dt>
+            <dd>
+              <code>{row.key_hint ?? '••••'}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Conectado</dt>
+            <dd>{connectedAt}</dd>
+          </div>
+        </dl>
+        <div class="actions">
+          <button type="button" class="btn--quiet" data-test>
+            Probar conexión
+          </button>
+          <button type="button" class="btn--danger" data-disconnect>
+            Desconectar
+          </button>
+        </div>
+      </>
+    )
+  }
+
+  <details class="connect" open={!row}>
+    <summary>{row ? 'Cambiar credenciales' : 'Conectar Correos'}</summary>
+    <ol class="steps">
+      <li>
+        Firma un <strong>contrato de paquetería</strong> con Correos (empresa o autónomo). Te dan el
+        número de contrato, el de cliente y el código de etiquetador.
+      </li>
+      <li>
+        Crea tu usuario en{' '}
+        <a href="https://www.correos.es/es/es/empresas" target="_blank" rel="noopener">Correos ID</a> y
+        pide acceso a las APIs de preregistro y etiquetas en el{' '}
+        <a href="https://developers.correos.es" target="_blank" rel="noopener">portal de desarrolladores</a>.
+      </li>
+      <li>
+        Correos te entrega dos pares de claves: las de <strong>Correos ID</strong> (OAuth) y las de la{' '}
+        <strong>pasarela API</strong>. Empieza en modo pruebas y pasa a real cuando la etiqueta salga bien.
+      </li>
+    </ol>
+    <form class="connect-form" data-connect-form>
+      <fieldset class="modes">
+        <legend class="visually-hidden">Modo</legend>
+        <label class="check">
+          <input type="radio" name="mode" value="test" checked={row?.mode !== 'live'} />
+          Pruebas (preproducción)
+        </label>
+        <label class="check">
+          <input type="radio" name="mode" value="live" checked={row?.mode === 'live'} />
+          Real
+        </label>
+      </fieldset>
+      <div class="grid-2">
+        <label>
+          Correos ID · client_id
+          <input name="oauthClientId" value={row?.oauth_client_id ?? ''} autocomplete="off" spellcheck="false" required />
+        </label>
+        <label>
+          Correos ID · client_secret
+          <input name="oauthClientSecret" type="password" autocomplete="off" spellcheck="false" required />
+        </label>
+        <label>
+          Pasarela API · client_id
+          <input name="gatewayClientId" value={row?.gateway_client_id ?? ''} autocomplete="off" spellcheck="false" required />
+        </label>
+        <label>
+          Pasarela API · client_secret
+          <input name="gatewayClientSecret" type="password" autocomplete="off" spellcheck="false" required />
+        </label>
+      </div>
+      <div class="grid-3">
+        <label>
+          Nº de contrato
+          <input name="contractNumber" value={row?.contract_number ?? ''} inputmode="numeric" maxlength="20" required />
+        </label>
+        <label>
+          Nº de cliente
+          <input name="clientNumber" value={row?.client_number ?? ''} inputmode="numeric" maxlength="20" required />
+        </label>
+        <label>
+          Código de etiquetador
+          <input name="labellerCode" value={row?.labeller_code ?? ''} maxlength="10" required />
+        </label>
+      </div>
+      <p class="hint">Los secretos se guardan cifrados y nunca vuelven a mostrarse.</p>
+      <button type="submit">{row ? 'Guardar credenciales' : 'Conectar Correos'}</button>
+    </form>
+  </details>
+
+  <p class="status" data-status hidden role="status"></p>
+</section>
+
+<style>
+  .correos {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .correos__head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .correos h2 {
+    margin: 0 0 0.3rem;
+  }
+
+  .chips {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 0;
+  }
+
+  .facts dt {
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  .facts dd {
+    margin: 0.15rem 0 0;
+    overflow-wrap: anywhere;
+  }
+
+  details > summary {
+    cursor: pointer;
+    font-size: 0.92rem;
+    font-weight: 500;
+  }
+
+  details[open] > summary {
+    margin-bottom: 0.75rem;
+  }
+
+  .steps {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0 0 1rem;
+    padding-left: 1.2rem;
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+  }
+
+  .steps a {
+    color: var(--accent);
+  }
+
+  .connect-form {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .grid-2,
+  .grid-3 {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .status[data-tone='ok'] {
+    color: var(--success);
+  }
+
+  .status[data-tone='err'] {
+    color: var(--danger);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 62rem) {
+    .grid-2,
+    .grid-3 {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const card = document.querySelector<HTMLElement>('[data-correos]');
+  if (card) {
+    const base = '/api/admin/shipping/correos/';
+    const status = card.querySelector<HTMLElement>('[data-status]');
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      if (!status) return;
+      status.hidden = false;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+    const send = async (url: string, method: string, body?: unknown) => {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => ({}))) ?? {};
+      return { ok: Boolean(res?.ok), data: data as { error?: { message?: string } } };
+    };
+    const errorOf = (data: { error?: { message?: string } }) => data.error?.message ?? 'No hubo respuesta del servidor.';
+
+    card.querySelector<HTMLFormElement>('[data-connect-form]')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (button) button.disabled = true;
+      say('Comprobando las credenciales con Correos…');
+      const { ok, data } = await send(base, 'POST', Object.fromEntries(new FormData(form)));
+      if (ok) {
+        say('Correos conectado. Actualizando…', 'ok');
+        location.reload();
+        return;
+      }
+      say(errorOf(data), 'err');
+      if (button) button.disabled = false;
+    });
+
+    card.querySelector<HTMLButtonElement>('[data-test]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      say('Probando…');
+      const { ok, data } = await send(`${base}test/`, 'POST');
+      say(ok ? 'Correos responde y acepta las credenciales.' : errorOf(data), ok ? 'ok' : 'err');
+      button.disabled = false;
+    });
+
+    card.querySelector<HTMLButtonElement>('[data-disconnect]')?.addEventListener('click', async () => {
+      if (!confirm('¿Desconectar Correos? Se borrarán las credenciales guardadas; los envíos ya creados siguen en Correos.')) return;
+      say('Desconectando…');
+      const { ok, data } = await send(base, 'DELETE');
+      if (ok) location.reload();
+      else say(errorOf(data), 'err');
+    });
+  }
+</script>

@@ -1,0 +1,158 @@
+{
+  "builtAt": "2026-10-21T21:05:57.184Z",
+  "source": "PROMPT Anexo C.2–C.5",
+  "groups": {
+    "about": [
+      {
+        "id": "about-1",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_2523-1390x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/about/about-1-IMG_2523-1390x1080.jpg",
+        "publicUrl": "/media/about/about-1.jpg",
+        "bytes": 310318,
+        "sha256": "805a55a515c6cf3832e07074c5ac9b5767c13ee584b379a8ee2d8688dfc149a5"
+      },
+      {
+        "id": "about-2",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/4-1565x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/about/about-2-4-1565x1080.jpg",
+        "publicUrl": "/media/about/about-2.jpg",
+        "bytes": 277720,
+        "sha256": "7122941f2982224e9c459d1d8efa90a3a68637c7bfd4f300f57aa94f502d1b0d"
+      },
+      {
+        "id": "about-3",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/1-1007x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/about/about-3-1-1007x1080.jpg",
+        "publicUrl": "/media/about/about-3.jpg",
+        "bytes": 181333,
+        "sha256": "971b127363e236682f31f4ea308650eaf7147fc16dd0603ab9f8d4ae0b4844d9"
+      },
+      {
+        "id": "about-4",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_5205-rotated-810x1080.jpeg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/about/about-4-IMG_5205-rotated-810x1080.jpeg",
+        "publicUrl": "/media/about/about-4.jpeg",
+        "bytes": 157137,
+        "sha256": "57db177bdcae6efd00776212fb229c9cea686b8004219a6566506ff3816d18f9"
+      }
+    ],
+    "commissionExamples": [
+      {
+        "id": "kira-sox-drawing",
+        "label": {
+          "en": "Kira & Sox",
+          "es": "Kira y Sox"
+        },
+        "role": "drawing",
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/Kira-Sox.heic",
+        "status": "ok",
+        "localPath": "migration/downloads/site/commissionExamples/kira-sox-drawing-Kira-Sox.heic",
+        "publicUrl": "/media/commissionExamples/kira-sox-drawing.jpg",
+        "bytes": 1587605,
+        "sha256": "1fe3c9dbe3b94ab4f135a0ed13d542e062110d27f3d2c13a67b64e4a92e31e8b"
+      },
+      {
+        "id": "kira-sox-photo",
+        "label": {
+          "en": "Kira & Sox photo",
+          "es": "Foto Kira y Sox"
+        },
+        "role": "reference_photo",
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/photo-output-e1783718127926-1591x1080.png",
+        "status": "ok",
+        "localPath": "migration/downloads/site/commissionExamples/kira-sox-photo-photo-output-e1783718127926-1591x1080.png",
+        "publicUrl": "/media/commissionExamples/kira-sox-photo.png",
+        "bytes": 1361702,
+        "sha256": "6b53583656c9c53cee8c1ae187e638f2c973c86feebfb890c0fac8017a056f6c"
+      },
+      {
+        "id": "frankie-drawing",
+        "label": {
+          "en": "Frankie drawing",
+          "es": "Dibujo de Frankie"
+        },
+        "role": "drawing",
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/French-Bulldog-drawing-1551x1080.jpeg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/commissionExamples/frankie-drawing-French-Bulldog-drawing-1551x1080.jpeg",
+        "publicUrl": "/media/commissionExamples/frankie-drawing.jpeg",
+        "bytes": 237997,
+        "sha256": "ea804861f83204b2a2263bacfb0801c9a21a9c01db06f3ff56c56265d36042b1"
+      },
+      {
+        "id": "frankie-photo",
+        "label": {
+          "en": "Frankie photo",
+          "es": "Foto de Frankie"
+        },
+        "role": "reference_photo",
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/French-Bulldog-photo-1438x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/commissionExamples/frankie-photo-French-Bulldog-photo-1438x1080.jpg",
+        "publicUrl": "/media/commissionExamples/frankie-photo.jpg",
+        "bytes": 300841,
+        "sha256": "6fd7b1c6134a7d904776c81052d1a4bda45e5c080559b0df969d28c4f3716f84"
+      }
+    ],
+    "feedbacks": [
+      {
+        "id": "feedback-1",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_8507-598x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/feedbacks/feedback-1-IMG_8507-598x1080.jpg",
+        "publicUrl": "/media/feedbacks/feedback-1.jpg",
+        "bytes": 93127,
+        "sha256": "46dfc0d0a6d64dcab0783ef9d7fd4f892949325dd20f735f1ca9bcb34867d90a"
+      },
+      {
+        "id": "feedback-2",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_8505-618x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/feedbacks/feedback-2-IMG_8505-618x1080.jpg",
+        "publicUrl": "/media/feedbacks/feedback-2.jpg",
+        "bytes": 115302,
+        "sha256": "f679618839bc16c5b7abba47168b05ce9403282d199566692e5e47beb7a69ae4"
+      },
+      {
+        "id": "feedback-3",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/08/IMG_8504-656x1080.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/feedbacks/feedback-3-IMG_8504-656x1080.jpg",
+        "publicUrl": "/media/feedbacks/feedback-3.jpg",
+        "bytes": 114014,
+        "sha256": "60b27e00edddefa690ccacb57480ef4fd809fe325e7bdf9c01c88aac3bd19fe8"
+      }
+    ],
+    "brand": [
+      {
+        "id": "logo",
+        "label": null,
+        "role": null,
+        "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/06/logo-pets-drawings.jpg",
+        "status": "ok",
+        "localPath": "migration/downloads/site/brand/logo-logo-pets-drawings.jpg",
+        "publicUrl": "/media/brand/logo.png",
+        "bytes": 19211,
+        "sha256": "cadd53c0d7741e566f916d604d5e249e5cac1aeb0e14c332bfa2405e4e16f618"
+      }
+    ]
+  }
+}

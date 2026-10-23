@@ -1,0 +1,33 @@
+{
+  "id": "mabel",
+  "title": {
+    "en": "Mabel",
+    "es": "Mabel"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/mabel-mabel-0-IMG_1562-e1786611102186-764x1080.jpg",
+      "label": "Mabel",
+      "alt": {
+        "en": "Mabel",
+        "es": "Mabel"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/mabel-mabel-1-IMG_1955-810x1080.jpg",
+      "label": "Mabel",
+      "alt": {
+        "en": "Mabel",
+        "es": "Mabel"
+      }
+    }
+  ],
+  "order": 3,
+  "pathSlugs": {
+    "en": "mabel",
+    "es": "mabel"
+  }
+}

@@ -1,0 +1,614 @@
+{
+  "fetchedAt": "2026-10-21T19:41:07.653Z",
+  "sourceUrl": "https://petsdrawings.com/wp-json/wc/store/v1/products?per_page=100&currency=EUR",
+  "apiError": null,
+  "productCount": 18,
+  "priceNotes": [],
+  "products": [
+    {
+      "legacyId": 2042,
+      "sku": "PD-2042",
+      "category": "greeting-cards",
+      "motif": "Springer Spaniel",
+      "priceCents": 349,
+      "currency": "EUR",
+      "imageIds": [
+        2043,
+        2045,
+        2044
+      ],
+      "slug": {
+        "en": "springer-spaniel-greeting-card",
+        "es": "tarjeta-springer-spaniel"
+      },
+      "title": {
+        "en": "Springer Spaniel Greeting Card",
+        "es": "Tarjeta de felicitación Springer Spaniel"
+      },
+      "summary": {
+        "en": "Springer Spaniel Greeting Card from Pets Drawings.",
+        "es": "Tarjeta de felicitación Springer Spaniel de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/springer-spaniel-greeting-card-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 349,
+      "id": "a2cd5272-699c-4820-81fc-53e179657646"
+    },
+    {
+      "legacyId": 1977,
+      "sku": "PD-1977",
+      "category": "coasters",
+      "motif": "Springer Spaniel",
+      "priceCents": 499,
+      "currency": "EUR",
+      "imageIds": [
+        1978,
+        1979,
+        1980
+      ],
+      "slug": {
+        "en": "springer-spaniel-coaster",
+        "es": "posavasos-springer-spaniel"
+      },
+      "title": {
+        "en": "Springer Spaniel Coaster",
+        "es": "Posavasos Springer Spaniel"
+      },
+      "summary": {
+        "en": "Springer Spaniel Coaster from Pets Drawings.",
+        "es": "Posavasos Springer Spaniel de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/springer-spaniel-coaster-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 499,
+      "id": "0d63902d-f6e7-47ec-84b7-c6dfc8cfb09f"
+    },
+    {
+      "legacyId": 1974,
+      "sku": "PD-1974",
+      "category": "mugs",
+      "motif": "Springer Spaniel",
+      "priceCents": 999,
+      "currency": "EUR",
+      "imageIds": [
+        1975,
+        1976
+      ],
+      "slug": {
+        "en": "springer-spaniel-mug",
+        "es": "taza-springer-spaniel"
+      },
+      "title": {
+        "en": "Springer Spaniel Mug",
+        "es": "Taza Springer Spaniel"
+      },
+      "summary": {
+        "en": "Springer Spaniel Mug from Pets Drawings.",
+        "es": "Taza Springer Spaniel de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/springer-spaniel-black-mug-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 999,
+      "id": "fb0f1033-20c1-46aa-a64e-d38ca7e971d4"
+    },
+    {
+      "legacyId": 1968,
+      "sku": "PD-1968",
+      "category": "greeting-cards",
+      "motif": "Labrador Retriever Black",
+      "priceCents": 349,
+      "currency": "EUR",
+      "imageIds": [
+        1970,
+        1971,
+        1969
+      ],
+      "slug": {
+        "en": "black-labrador-greeting-card",
+        "es": "tarjeta-labrador-negro"
+      },
+      "title": {
+        "en": "Black Labrador Retriever Greeting Card",
+        "es": "Tarjeta de felicitación Labrador Retriever negro"
+      },
+      "summary": {
+        "en": "Black Labrador Retriever Greeting Card from Pets Drawings.",
+        "es": "Tarjeta de felicitación Labrador Retriever negro de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/labrador-retriever-black-greeting-card-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 349,
+      "id": "2af71471-2f4f-4dfc-9bc0-525364c76c49"
+    },
+    {
+      "legacyId": 1964,
+      "sku": "PD-1964",
+      "category": "coasters",
+      "motif": "Labrador Retriever Black",
+      "priceCents": 499,
+      "currency": "EUR",
+      "imageIds": [
+        1965,
+        1966,
+        1967
+      ],
+      "slug": {
+        "en": "black-labrador-coaster",
+        "es": "posavasos-labrador-negro"
+      },
+      "title": {
+        "en": "Black Labrador Retriever Coaster",
+        "es": "Posavasos Labrador Retriever negro"
+      },
+      "summary": {
+        "en": "Black Labrador Retriever Coaster from Pets Drawings.",
+        "es": "Posavasos Labrador Retriever negro de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/labrador-retriever-black-coaster-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 499,
+      "id": "4de79af5-4128-4989-97f3-3d5665b53cf8"
+    },
+    {
+      "legacyId": 1961,
+      "sku": "PD-1961",
+      "category": "mugs",
+      "motif": "Labrador Retriever Black",
+      "priceCents": 999,
+      "currency": "EUR",
+      "imageIds": [
+        1962,
+        1963
+      ],
+      "slug": {
+        "en": "black-labrador-mug",
+        "es": "taza-labrador-negro"
+      },
+      "title": {
+        "en": "Black Labrador Retriever Mug",
+        "es": "Taza Labrador Retriever negro"
+      },
+      "summary": {
+        "en": "Black Labrador Retriever Mug from Pets Drawings.",
+        "es": "Taza Labrador Retriever negro de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/labrador-retriever-black-mug-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 999,
+      "id": "4e640929-6309-476b-9bbd-9a6ba55ca2fc"
+    },
+    {
+      "legacyId": 1957,
+      "sku": "PD-1957",
+      "category": "greeting-cards",
+      "motif": "Golden Retriever",
+      "priceCents": 349,
+      "currency": "EUR",
+      "imageIds": [
+        1960,
+        1958,
+        1959
+      ],
+      "slug": {
+        "en": "golden-retriever-greeting-card",
+        "es": "tarjeta-golden-retriever"
+      },
+      "title": {
+        "en": "Golden Retriever Greeting Card",
+        "es": "Tarjeta de felicitación Golden Retriever"
+      },
+      "summary": {
+        "en": "Golden Retriever Greeting Card from Pets Drawings.",
+        "es": "Tarjeta de felicitación Golden Retriever de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/golden-retriever-greeting-card-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 349,
+      "id": "e35296dd-d678-41ba-9a09-99a9ef04d65a"
+    },
+    {
+      "legacyId": 1953,
+      "sku": "PD-1953",
+      "category": "coasters",
+      "motif": "Golden Retriever",
+      "priceCents": 499,
+      "currency": "EUR",
+      "imageIds": [
+        1954,
+        1955,
+        1956
+      ],
+      "slug": {
+        "en": "golden-retriever-coaster",
+        "es": "posavasos-golden-retriever"
+      },
+      "title": {
+        "en": "Golden Retriever Coaster",
+        "es": "Posavasos Golden Retriever"
+      },
+      "summary": {
+        "en": "Golden Retriever Coaster from Pets Drawings.",
+        "es": "Posavasos Golden Retriever de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/golden-retriever-coaster-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 499,
+      "id": "12ec4f9f-5d8d-4962-9081-1d222b2af182"
+    },
+    {
+      "legacyId": 1950,
+      "sku": "PD-1950",
+      "category": "mugs",
+      "motif": "Golden Retriever",
+      "priceCents": 999,
+      "currency": "EUR",
+      "imageIds": [
+        1951,
+        1952
+      ],
+      "slug": {
+        "en": "golden-retriever-mug",
+        "es": "taza-golden-retriever"
+      },
+      "title": {
+        "en": "Golden Retriever Mug",
+        "es": "Taza Golden Retriever"
+      },
+      "summary": {
+        "en": "Golden Retriever Mug from Pets Drawings.",
+        "es": "Taza Golden Retriever de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/golden-retriever-mug-portrait-copy/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 999,
+      "id": "5c185ca6-59e9-4fe3-8853-e72256032e50"
+    },
+    {
+      "legacyId": 1944,
+      "sku": "PD-1944",
+      "category": "greeting-cards",
+      "motif": "Dachshund",
+      "priceCents": 349,
+      "currency": "EUR",
+      "imageIds": [
+        1945,
+        1946,
+        1947
+      ],
+      "slug": {
+        "en": "dachshund-greeting-card",
+        "es": "tarjeta-teckel"
+      },
+      "title": {
+        "en": "Dachshund Greeting Card",
+        "es": "Tarjeta de felicitación Teckel"
+      },
+      "summary": {
+        "en": "Dachshund Greeting Card from Pets Drawings.",
+        "es": "Tarjeta de felicitación Teckel de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/dachshund-greeting-card-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 349,
+      "id": "a63a34d6-f8fe-44c9-b872-33c98e0c499f"
+    },
+    {
+      "legacyId": 1940,
+      "sku": "PD-1940",
+      "category": "coasters",
+      "motif": "Dachshund",
+      "priceCents": 499,
+      "currency": "EUR",
+      "imageIds": [
+        1942,
+        1941,
+        1943
+      ],
+      "slug": {
+        "en": "dachshund-coaster",
+        "es": "posavasos-teckel"
+      },
+      "title": {
+        "en": "Dachshund Coaster",
+        "es": "Posavasos Teckel"
+      },
+      "summary": {
+        "en": "Dachshund Coaster from Pets Drawings.",
+        "es": "Posavasos Teckel de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/dachshund-coaster-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 499,
+      "id": "9c4b2603-d071-4699-80fb-07695e88afc4"
+    },
+    {
+      "legacyId": 1937,
+      "sku": "PD-1937",
+      "category": "mugs",
+      "motif": "Dachshund",
+      "priceCents": 999,
+      "currency": "EUR",
+      "imageIds": [
+        1938,
+        1939
+      ],
+      "slug": {
+        "en": "dachshund-mug",
+        "es": "taza-teckel"
+      },
+      "title": {
+        "en": "Dachshund Mug",
+        "es": "Taza Teckel"
+      },
+      "summary": {
+        "en": "Dachshund Mug from Pets Drawings.",
+        "es": "Taza Teckel de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/dachshund-mug-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 999,
+      "id": "89d7608d-ef54-4afa-a8dd-a90290dde67f"
+    },
+    {
+      "legacyId": 1826,
+      "sku": "PD-1826",
+      "category": "greeting-cards",
+      "motif": "Border Collie",
+      "priceCents": 349,
+      "currency": "EUR",
+      "imageIds": [
+        1827,
+        1828,
+        1829
+      ],
+      "slug": {
+        "en": "border-collie-greeting-card",
+        "es": "tarjeta-border-collie"
+      },
+      "title": {
+        "en": "Border Collie Greeting Card",
+        "es": "Tarjeta de felicitación Border Collie"
+      },
+      "summary": {
+        "en": "Border Collie Greeting Card from Pets Drawings.",
+        "es": "Tarjeta de felicitación Border Collie de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/border-collie-greeting-card-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 349,
+      "id": "78549280-7be7-4dab-b6fa-95de170b93ab"
+    },
+    {
+      "legacyId": 1822,
+      "sku": "PD-1822",
+      "category": "coasters",
+      "motif": "Border Collie",
+      "priceCents": 499,
+      "currency": "EUR",
+      "imageIds": [
+        1823,
+        1824,
+        1825
+      ],
+      "slug": {
+        "en": "border-collie-coaster",
+        "es": "posavasos-border-collie"
+      },
+      "title": {
+        "en": "Border Collie Coaster",
+        "es": "Posavasos Border Collie"
+      },
+      "summary": {
+        "en": "Border Collie Coaster from Pets Drawings.",
+        "es": "Posavasos Border Collie de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/border-collie-coaster-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 499,
+      "id": "bedbe57d-fdf1-4af9-9331-f9e680bc1a14"
+    },
+    {
+      "legacyId": 1817,
+      "sku": "PD-1817",
+      "category": "mugs",
+      "motif": "Border Collie",
+      "priceCents": 999,
+      "currency": "EUR",
+      "imageIds": [
+        1818,
+        1819
+      ],
+      "slug": {
+        "en": "border-collie-mug",
+        "es": "taza-border-collie"
+      },
+      "title": {
+        "en": "Border Collie Mug",
+        "es": "Taza Border Collie"
+      },
+      "summary": {
+        "en": "Border Collie Mug from Pets Drawings.",
+        "es": "Taza Border Collie de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/border-collie-mug-portrait-copy/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 999,
+      "id": "61337513-d42e-40af-9334-3a8c5ee4c7e1"
+    },
+    {
+      "legacyId": 1798,
+      "sku": "PD-1798",
+      "category": "coasters",
+      "motif": "Jack Russell Terrier",
+      "priceCents": 499,
+      "currency": "EUR",
+      "imageIds": [
+        1799,
+        1800,
+        1801
+      ],
+      "slug": {
+        "en": "jack-russell-coaster",
+        "es": "posavasos-jack-russell"
+      },
+      "title": {
+        "en": "Jack Russell Terrier Coaster",
+        "es": "Posavasos Jack Russell Terrier"
+      },
+      "summary": {
+        "en": "Jack Russell Terrier Coaster from Pets Drawings.",
+        "es": "Posavasos Jack Russell Terrier de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/jack-russell-terrier-coaster-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 499,
+      "id": "79c64cde-65b1-43a7-a525-f30bd4ba9a49"
+    },
+    {
+      "legacyId": 1803,
+      "sku": "PD-1803",
+      "category": "greeting-cards",
+      "motif": "Jack Russell Terrier",
+      "priceCents": 349,
+      "currency": "EUR",
+      "imageIds": [
+        1804,
+        1805
+      ],
+      "slug": {
+        "en": "jack-russell-greeting-card",
+        "es": "tarjeta-jack-russell"
+      },
+      "title": {
+        "en": "Jack Russell Terrier Greeting Card",
+        "es": "Tarjeta de felicitación Jack Russell Terrier"
+      },
+      "summary": {
+        "en": "Jack Russell Terrier Greeting Card from Pets Drawings.",
+        "es": "Tarjeta de felicitación Jack Russell Terrier de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/jack-russell-terrier-greeting-card-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 349,
+      "id": "27437ade-8baf-4312-ba7d-b55352085237"
+    },
+    {
+      "legacyId": 1789,
+      "sku": "PD-1789",
+      "category": "mugs",
+      "motif": "Jack Russell Terrier",
+      "priceCents": 999,
+      "currency": "EUR",
+      "imageIds": [
+        1790,
+        1791
+      ],
+      "slug": {
+        "en": "jack-russell-mug",
+        "es": "taza-jack-russell"
+      },
+      "title": {
+        "en": "Jack Russell Terrier Mug",
+        "es": "Taza Jack Russell Terrier"
+      },
+      "summary": {
+        "en": "Jack Russell Terrier Mug from Pets Drawings.",
+        "es": "Taza Jack Russell Terrier de Pets Drawings."
+      },
+      "description": {
+        "en": "Illustrated product from Meili’s pet portrait drawings.",
+        "es": "Producto ilustrado a partir de los retratos de mascotas de Meili."
+      },
+      "sourcePath": "/product/jack-russell-terrier-mug-portrait/",
+      "saleEnabled": false,
+      "inventoryMode": "unverified",
+      "livePriceCents": 999,
+      "id": "6bb7102d-0b8f-4e54-9488-508ccdca239f"
+    }
+  ]
+}

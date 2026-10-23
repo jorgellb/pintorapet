@@ -1,0 +1,33 @@
+{
+  "id": "rufus",
+  "title": {
+    "en": "Rufus",
+    "es": "Rufus"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/rufus-rufus-0-Rufus-762x1080.jpeg",
+      "label": "Rufus",
+      "alt": {
+        "en": "Rufus",
+        "es": "Rufus"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/rufus-rufus-1-9ad5b5d1-3593-41f0-84a1-2d622237b608-801x1080.jpg",
+      "label": "Rufus",
+      "alt": {
+        "en": "Rufus",
+        "es": "Rufus"
+      }
+    }
+  ],
+  "order": 8,
+  "pathSlugs": {
+    "en": "rufus",
+    "es": "rufus"
+  }
+}

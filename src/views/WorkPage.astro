@@ -1,0 +1,196 @@
+---
+import { loadWorks } from '@/lib/content/editorial';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath, workPath } from '@/i18n/routes';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const works = await loadWorks();
+const category = Astro.url.searchParams.get('category') ?? 'all';
+const filtered =
+  category === 'all' ? works : works.filter((w) => w.data.category === category);
+
+const categories = [
+  { id: 'all', label: dict.shop.all },
+  { id: 'dog', label: locale === 'es' ? 'Perros' : 'Dogs' },
+  { id: 'cat', label: locale === 'es' ? 'Gatos' : 'Cats' },
+  { id: 'horse', label: locale === 'es' ? 'Caballos' : 'Horses' },
+  { id: 'people', label: locale === 'es' ? 'Personas' : 'People' },
+  { id: 'other', label: locale === 'es' ? 'Otros' : 'Other' },
+] as const;
+---
+
+<PublicLayout locale={locale} title={dict.nav.work}>
+  <section class="section">
+    <div class="site-shell">
+      <h1 class="display h1-display">{dict.nav.work}</h1>
+      <p class="muted lead">
+        {
+          locale === 'es'
+            ? 'Retratos y proyectos del portfolio.'
+            : 'Portraits and projects from the portfolio.'
+        }
+      </p>
+      <div class="filters" role="navigation" aria-label={dict.shop.filterCategory}>
+        {
+          categories.map((c) => (
+            <a
+              class:list={['chip', { 'chip--active': category === c.id }]}
+              href={`${localizedPath(locale, 'work')}?category=${c.id}`}
+            >
+              {c.label}
+            </a>
+          ))
+        }
+      </div>
+      {
+        filtered.length === 0 ? (
+          <p class="muted">
+            {locale === 'es'
+              ? 'No hay obras en esta categoría.'
+              : 'No works in this category.'}
+          </p>
+        ) : (
+          <ul class="grid">
+            {filtered.map((entry) => {
+              const cover =
+                entry.data.assets.find((a) => a.role === 'drawing' && a.src)?.src ??
+                entry.data.assets.find((a) => a.src)?.src ??
+                null;
+              return (
+                <li>
+                  <a href={workPath(locale, entry.data.pathSlugs[locale])}>
+                    {
+                      cover ? (
+                        <img
+                          src={cover}
+                          alt={entry.data.title[locale]}
+                          loading="lazy"
+                          decoding="async"
+                          style={`view-transition-name: work-${entry.data.id}`}
+                        />
+                      ) : (
+                        <div class="ph" aria-hidden="true" />
+                      )
+                    }
+                    <h2 class="display">{entry.data.title[locale]}</h2>
+                    <p class="muted">
+                      {categories.find((c) => c.id === entry.data.category)?.label}
+                    </p>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        )
+      }
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .lead {
+    max-width: 36rem;
+    font-size: 1.1rem;
+  }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 1.75rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: background var(--dur-ui) var(--ease-soft), color var(--dur-ui) var(--ease-soft);
+  }
+
+  .chip:hover {
+    border-color: var(--ink);
+  }
+
+  .chip--active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--surface);
+  }
+
+  .grid {
+    list-style: none;
+    margin: clamp(2.5rem, 5vw, 4rem) 0 0;
+    padding: 0;
+    columns: 2;
+    column-gap: clamp(1.25rem, 3vw, 3rem);
+  }
+
+  .grid li {
+    break-inside: avoid;
+    margin-bottom: clamp(2rem, 4vw, 3.5rem);
+  }
+
+  .grid a {
+    display: grid;
+    gap: 0.35rem;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .grid img,
+  .ph {
+    width: 100%;
+    padding: clamp(0.4rem, 1vw, 0.8rem);
+    margin-bottom: 0.6rem;
+    transition:
+      transform 600ms var(--ease-out),
+      box-shadow 600ms var(--ease-out);
+  }
+
+  .grid a:hover img {
+    transform: translateY(-6px);
+    box-shadow:
+      0 1px 2px rgb(22 23 26 / 0.06),
+      0 20px 34px -12px rgb(22 23 26 / 0.16),
+      0 60px 90px -36px rgb(22 23 26 / 0.28);
+  }
+
+  .ph {
+    aspect-ratio: 4 / 5;
+    background: var(--paper-deep);
+  }
+
+  h2 {
+    font-style: italic;
+    font-size: clamp(1.25rem, 2vw, 1.6rem);
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+
+  h2 + p {
+    margin: 0;
+    font-size: 0.92rem;
+  }
+
+  @media (min-width: 64rem) {
+    .grid {
+      columns: 3;
+    }
+
+    .grid li:nth-child(2) {
+      margin-top: 5rem;
+    }
+  }
+</style>

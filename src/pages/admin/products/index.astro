@@ -1,0 +1,282 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ListSearch from '@/components/admin/ListSearch.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { storagePublicUrl } from '@/lib/server/storageUrl';
+import {
+  chipClass,
+  euros,
+  inventoryLabel,
+  productCategoryLabel,
+  productStatusLabel,
+} from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+type Row = {
+  id: string;
+  sku: string;
+  motif: string;
+  status: string;
+  price_cents: number;
+  sale_enabled: boolean;
+  parent_id: string | null;
+  categories: { code: string } | null;
+  product_translations: Array<{ locale: string; title: string }>;
+  inventory: { inventory_mode: string; stock_on_hand: number; stock_reserved: number } | null;
+  product_images: Array<{
+    position: number;
+    is_cover: boolean;
+    media_assets: { bucket: string; object_path: string } | null;
+  }>;
+};
+
+const { data, error } = await admin.client
+  .from('products')
+  .select(
+    'id, sku, motif, status, price_cents, sale_enabled, parent_id, categories(code), product_translations(locale, title), inventory(inventory_mode, stock_on_hand, stock_reserved), product_images(position, is_cover, media_assets(bucket, object_path))',
+  )
+  .order('editorial_order');
+
+const all = (data ?? []) as unknown as Row[];
+const variantCount = new Map<string, number>();
+for (const row of all) {
+  if (row.parent_id) variantCount.set(row.parent_id, (variantCount.get(row.parent_id) ?? 0) + 1);
+}
+const notice =
+  Astro.url.searchParams.has('borrado')
+    ? 'Producto borrado.'
+    : Astro.url.searchParams.has('archivado')
+      ? 'El producto tenía pedidos, así que queda archivado y fuera de la tienda.'
+      : null;
+
+const rows = all.filter((row) => !row.parent_id).map((row) => {
+  const images = [...(row.product_images ?? [])].sort(
+    (a, b) => Number(b.is_cover) - Number(a.is_cover) || a.position - b.position,
+  );
+  const cover = images.find((image) => image.media_assets)?.media_assets;
+  return {
+    ...row,
+    category: row.categories?.code ?? '',
+    title:
+      row.product_translations.find((t) => t.locale === 'es')?.title ??
+      row.product_translations[0]?.title ??
+      row.sku,
+    cover: cover ? storagePublicUrl(cover.bucket, cover.object_path) : null,
+    mode: row.inventory?.inventory_mode ?? 'unverified',
+    variants: variantCount.get(row.id) ?? 0,
+  };
+});
+
+const category = Astro.url.searchParams.get('categoria') ?? '';
+const inventory = Astro.url.searchParams.get('inventario') ?? '';
+const onSale = Astro.url.searchParams.get('venta') === '1';
+
+const visible = rows.filter((row) => {
+  if (category && row.category !== category) return false;
+  if (inventory && row.mode !== inventory) return false;
+  if (onSale && !row.sale_enabled) return false;
+  return true;
+});
+
+const tabs = [
+  { href: '/admin/products/', label: 'Todos', count: rows.length, current: !category && !inventory && !onSale },
+  ...['greeting-cards', 'coasters', 'mugs'].map((key) => ({
+    href: `/admin/products/?categoria=${key}`,
+    label: productCategoryLabel(key),
+    count: rows.filter((row) => row.category === key).length,
+    current: category === key,
+  })),
+  {
+    href: '/admin/products/?inventario=unverified',
+    label: 'Stock sin verificar',
+    count: rows.filter((row) => row.mode === 'unverified').length,
+    current: inventory === 'unverified',
+  },
+  {
+    href: '/admin/products/?venta=1',
+    label: 'A la venta',
+    count: rows.filter((row) => row.sale_enabled).length,
+    current: onSale,
+  },
+];
+---
+
+<AdminLayout title="Productos" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Productos</h1>
+      <p class="lead">
+        Tarjetas, posavasos y tazas. Cada producto se vende en cuanto tiene la
+        venta activada y el inventario verificado.
+      </p>
+    </div>
+    <a class="btn" href="/admin/products/new/">Nuevo producto</a>
+  </header>
+  {notice && <p class="notice" role="status">{notice}</p>}
+
+  {
+    error ? (
+      <p class="err">{error.message}</p>
+    ) : rows.length === 0 ? (
+      <p class="empty">Todavía no hay productos en la tienda.</p>
+    ) : (
+      <>
+        <ul class="tabs">
+          {tabs.map((tab) => (
+            <li>
+              <a href={tab.href} aria-current={tab.current ? 'page' : undefined}>
+                {tab.label}
+                <span class="count">{tab.count}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <ListSearch
+          placeholder="Buscar por título, motivo o SKU…"
+          label="Buscar productos"
+          emptyText="Ningún producto coincide con la búsqueda."
+        />
+        {visible.length === 0 ? (
+          <p class="empty">No hay productos con este filtro.</p>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Categoría</th>
+                  <th class="num">Precio</th>
+                  <th>Venta</th>
+                  <th>Inventario</th>
+                  <th><span class="visually-hidden">Acciones</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((row) => {
+                  const inv = inventoryLabel(row.mode);
+                  const status = productStatusLabel(row.status);
+                  return (
+                    <tr data-search-text={`${row.title} ${row.motif} ${row.sku}`.toLowerCase()}>
+                      <td>
+                        <a class="title-cell" href={`/admin/products/${row.id}/`}>
+                          {row.cover ? (
+                            <img class="thumb" src={row.cover} alt="" loading="lazy" width="48" height="48" />
+                          ) : (
+                            <span class="thumb" />
+                          )}
+                          <span>
+                            {row.title}
+                            <span class="muted sku">
+                              {row.sku}
+                              {row.variants > 0 && ` · ${row.variants + 1} opciones`}
+                            </span>
+                          </span>
+                        </a>
+                      </td>
+                      <td>{productCategoryLabel(row.category)}</td>
+                      <td class="num">{euros(row.price_cents)}</td>
+                      <td>
+                        {row.status !== 'published' ? (
+                          <span class={chipClass(status.tone)}>{status.text}</span>
+                        ) : row.sale_enabled ? (
+                          <span class={chipClass('ok')}>Activada</span>
+                        ) : (
+                          <span class={chipClass('neutral')}>Apagada</span>
+                        )}
+                      </td>
+                      <td>
+                        <span class={chipClass(inv.tone)}>{inv.text}</span>
+                        {row.mode === 'tracked' && row.inventory && (
+                          <span class="muted stock">
+                            {row.inventory.stock_on_hand - row.inventory.stock_reserved} disponibles
+                          </span>
+                        )}
+                      </td>
+                      <td class="actions">
+                        <a class="btn btn--quiet" href={`/admin/products/${row.id}/`}>Editar</a>
+                        <button
+                          type="button"
+                          class="btn--quiet btn--danger"
+                          data-delete
+                          data-id={row.id}
+                          data-title={row.title}
+                          data-variants={row.variants}
+                        >
+                          Borrar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .sku {
+    display: block;
+    font-size: 0.78rem;
+  }
+
+  .stock {
+    margin-left: 0.5rem;
+  }
+
+  .actions {
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .actions .btn,
+  .actions button {
+    min-height: 2rem;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.82rem;
+  }
+
+  .notice {
+    margin: 0 0 1.25rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--a-radius-sm);
+    background: var(--a-ok-soft);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const variants = Number(button.dataset.variants ?? 0);
+      const extra = variants > 0 ? ` y sus ${variants} variaciones` : '';
+      if (!confirm(`¿Borrar «${button.dataset.title}»${extra}? Si ya tiene pedidos se archivará.`)) return;
+      button.disabled = true;
+      const res = await fetch(`/api/admin/products/${button.dataset.id}/`, { method: 'DELETE' }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { result?: string; error?: { message?: string } } | null;
+      if (!res?.ok) {
+        button.disabled = false;
+        alert(`No se pudo borrar. ${data?.error?.message ?? ''}`);
+        return;
+      }
+      window.location.href = data?.result === 'archived' ? '/admin/products/?archivado=1' : '/admin/products/?borrado=1';
+    });
+  });
+</script>

@@ -1,0 +1,417 @@
+{
+  "version": 1,
+  "notes": [
+    "Maps legacy WordPress/WooCommerce paths to Astro localized routes (§8.3, §16.2).",
+    "Root / permanently redirects to /en/.",
+    "WooCommerce customer accounts are not migrated; /my-account/ → guest purchase help.",
+    "Product slugs with -copy are cleaned; legacy paths still redirect.",
+    "EN and ES product slugs may differ; toEs uses the Spanish slug."
+  ],
+  "redirects": [
+    {
+      "from": "/",
+      "to": "/en/",
+      "status": 301
+    },
+    {
+      "from": "/about-me/",
+      "to": "/en/about-me/",
+      "status": 301
+    },
+    {
+      "from": "/work/",
+      "to": "/en/work/",
+      "status": 301
+    },
+    {
+      "from": "/gallery/",
+      "to": "/en/gallery/",
+      "status": 301
+    },
+    {
+      "from": "/order/",
+      "to": "/en/commissions/",
+      "status": 301
+    },
+    {
+      "from": "/contact/",
+      "to": "/en/contact/",
+      "status": 301
+    },
+    {
+      "from": "/privacy-policy/",
+      "to": "/en/privacy/",
+      "status": 301
+    },
+    {
+      "from": "/cookie-policy/",
+      "to": "/en/cookies/",
+      "status": 301
+    },
+    {
+      "from": "/shop/",
+      "to": "/en/shop/",
+      "status": 301
+    },
+    {
+      "from": "/basket/",
+      "to": "/en/cart/",
+      "status": 301
+    },
+    {
+      "from": "/cart/",
+      "to": "/en/cart/",
+      "status": 301
+    },
+    {
+      "from": "/checkout/",
+      "to": "/en/checkout/",
+      "status": 301
+    },
+    {
+      "from": "/my-account/",
+      "to": "/en/account-help/",
+      "status": 301
+    },
+    {
+      "from": "/es/about-me/",
+      "to": "/es/sobre-mi/",
+      "status": 301
+    },
+    {
+      "from": "/es/work/",
+      "to": "/es/obra/",
+      "status": 301
+    },
+    {
+      "from": "/es/gallery/",
+      "to": "/es/galeria/",
+      "status": 301
+    },
+    {
+      "from": "/es/order/",
+      "to": "/es/encargos/",
+      "status": 301
+    },
+    {
+      "from": "/es/contact/",
+      "to": "/es/contacto/",
+      "status": 301
+    },
+    {
+      "from": "/es/privacy-policy/",
+      "to": "/es/privacidad/",
+      "status": 301
+    },
+    {
+      "from": "/es/cookie-policy/",
+      "to": "/es/cookies/",
+      "status": 301
+    },
+    {
+      "from": "/es/shop/",
+      "to": "/es/tienda/",
+      "status": 301
+    },
+    {
+      "from": "/es/basket/",
+      "to": "/es/carrito/",
+      "status": 301
+    },
+    {
+      "from": "/es/cart/",
+      "to": "/es/carrito/",
+      "status": 301
+    },
+    {
+      "from": "/es/checkout/",
+      "to": "/es/finalizar-compra/",
+      "status": 301
+    },
+    {
+      "from": "/es/my-account/",
+      "to": "/es/ayuda-compra/",
+      "status": 301
+    },
+    {
+      "from": "/product-category/greeting-cards/",
+      "to": "/en/shop/?category=greeting-cards",
+      "status": 301
+    },
+    {
+      "from": "/product-category/coasters/",
+      "to": "/en/shop/?category=coasters",
+      "status": 301
+    },
+    {
+      "from": "/product-category/mugs/",
+      "to": "/en/shop/?category=mugs",
+      "status": 301
+    },
+    {
+      "from": "/es/product-category/greeting-cards/",
+      "to": "/es/tienda/?category=greeting-cards",
+      "status": 301
+    },
+    {
+      "from": "/es/product-category/coasters/",
+      "to": "/es/tienda/?category=coasters",
+      "status": 301
+    },
+    {
+      "from": "/es/product-category/mugs/",
+      "to": "/es/tienda/?category=mugs",
+      "status": 301
+    },
+    {
+      "from": "/product/springer-spaniel-greeting-card-portrait/",
+      "to": "/en/shop/springer-spaniel-greeting-card/",
+      "toEs": "/es/tienda/tarjeta-springer-spaniel/",
+      "wooId": 2042,
+      "status": 301
+    },
+    {
+      "from": "/es/product/springer-spaniel-greeting-card-portrait/",
+      "to": "/es/tienda/tarjeta-springer-spaniel/",
+      "wooId": 2042,
+      "status": 301
+    },
+    {
+      "from": "/product/springer-spaniel-coaster-portrait/",
+      "to": "/en/shop/springer-spaniel-coaster/",
+      "toEs": "/es/tienda/posavasos-springer-spaniel/",
+      "wooId": 1977,
+      "status": 301
+    },
+    {
+      "from": "/es/product/springer-spaniel-coaster-portrait/",
+      "to": "/es/tienda/posavasos-springer-spaniel/",
+      "wooId": 1977,
+      "status": 301
+    },
+    {
+      "from": "/product/springer-spaniel-black-mug-portrait/",
+      "to": "/en/shop/springer-spaniel-mug/",
+      "toEs": "/es/tienda/taza-springer-spaniel/",
+      "wooId": 1974,
+      "status": 301
+    },
+    {
+      "from": "/es/product/springer-spaniel-black-mug-portrait/",
+      "to": "/es/tienda/taza-springer-spaniel/",
+      "wooId": 1974,
+      "status": 301
+    },
+    {
+      "from": "/product/labrador-retriever-black-greeting-card-portrait/",
+      "to": "/en/shop/black-labrador-greeting-card/",
+      "toEs": "/es/tienda/tarjeta-labrador-negro/",
+      "wooId": 1968,
+      "status": 301
+    },
+    {
+      "from": "/es/product/labrador-retriever-black-greeting-card-portrait/",
+      "to": "/es/tienda/tarjeta-labrador-negro/",
+      "wooId": 1968,
+      "status": 301
+    },
+    {
+      "from": "/product/labrador-retriever-black-coaster-portrait/",
+      "to": "/en/shop/black-labrador-coaster/",
+      "toEs": "/es/tienda/posavasos-labrador-negro/",
+      "wooId": 1964,
+      "status": 301
+    },
+    {
+      "from": "/es/product/labrador-retriever-black-coaster-portrait/",
+      "to": "/es/tienda/posavasos-labrador-negro/",
+      "wooId": 1964,
+      "status": 301
+    },
+    {
+      "from": "/product/labrador-retriever-black-mug-portrait/",
+      "to": "/en/shop/black-labrador-mug/",
+      "toEs": "/es/tienda/taza-labrador-negro/",
+      "wooId": 1961,
+      "status": 301
+    },
+    {
+      "from": "/es/product/labrador-retriever-black-mug-portrait/",
+      "to": "/es/tienda/taza-labrador-negro/",
+      "wooId": 1961,
+      "status": 301
+    },
+    {
+      "from": "/product/golden-retriever-greeting-card-portrait/",
+      "to": "/en/shop/golden-retriever-greeting-card/",
+      "toEs": "/es/tienda/tarjeta-golden-retriever/",
+      "wooId": 1957,
+      "status": 301
+    },
+    {
+      "from": "/es/product/golden-retriever-greeting-card-portrait/",
+      "to": "/es/tienda/tarjeta-golden-retriever/",
+      "wooId": 1957,
+      "status": 301
+    },
+    {
+      "from": "/product/golden-retriever-coaster-portrait/",
+      "to": "/en/shop/golden-retriever-coaster/",
+      "toEs": "/es/tienda/posavasos-golden-retriever/",
+      "wooId": 1953,
+      "status": 301
+    },
+    {
+      "from": "/es/product/golden-retriever-coaster-portrait/",
+      "to": "/es/tienda/posavasos-golden-retriever/",
+      "wooId": 1953,
+      "status": 301
+    },
+    {
+      "from": "/product/golden-retriever-mug-portrait-copy/",
+      "to": "/en/shop/golden-retriever-mug/",
+      "toEs": "/es/tienda/taza-golden-retriever/",
+      "wooId": 1950,
+      "status": 301
+    },
+    {
+      "from": "/es/product/golden-retriever-mug-portrait-copy/",
+      "to": "/es/tienda/taza-golden-retriever/",
+      "wooId": 1950,
+      "status": 301
+    },
+    {
+      "from": "/product/golden-retriever-mug-portrait/",
+      "to": "/en/shop/golden-retriever-mug/",
+      "toEs": "/es/tienda/taza-golden-retriever/",
+      "wooId": 1950,
+      "status": 301,
+      "note": "Fallback without -copy"
+    },
+    {
+      "from": "/product/dachshund-greeting-card-portrait/",
+      "to": "/en/shop/dachshund-greeting-card/",
+      "toEs": "/es/tienda/tarjeta-teckel/",
+      "wooId": 1944,
+      "status": 301
+    },
+    {
+      "from": "/es/product/dachshund-greeting-card-portrait/",
+      "to": "/es/tienda/tarjeta-teckel/",
+      "wooId": 1944,
+      "status": 301
+    },
+    {
+      "from": "/product/dachshund-coaster-portrait/",
+      "to": "/en/shop/dachshund-coaster/",
+      "toEs": "/es/tienda/posavasos-teckel/",
+      "wooId": 1940,
+      "status": 301
+    },
+    {
+      "from": "/es/product/dachshund-coaster-portrait/",
+      "to": "/es/tienda/posavasos-teckel/",
+      "wooId": 1940,
+      "status": 301
+    },
+    {
+      "from": "/product/dachshund-mug-portrait/",
+      "to": "/en/shop/dachshund-mug/",
+      "toEs": "/es/tienda/taza-teckel/",
+      "wooId": 1937,
+      "status": 301
+    },
+    {
+      "from": "/es/product/dachshund-mug-portrait/",
+      "to": "/es/tienda/taza-teckel/",
+      "wooId": 1937,
+      "status": 301
+    },
+    {
+      "from": "/product/border-collie-greeting-card-portrait/",
+      "to": "/en/shop/border-collie-greeting-card/",
+      "toEs": "/es/tienda/tarjeta-border-collie/",
+      "wooId": 1826,
+      "status": 301
+    },
+    {
+      "from": "/es/product/border-collie-greeting-card-portrait/",
+      "to": "/es/tienda/tarjeta-border-collie/",
+      "wooId": 1826,
+      "status": 301
+    },
+    {
+      "from": "/product/border-collie-coaster-portrait/",
+      "to": "/en/shop/border-collie-coaster/",
+      "toEs": "/es/tienda/posavasos-border-collie/",
+      "wooId": 1822,
+      "status": 301
+    },
+    {
+      "from": "/es/product/border-collie-coaster-portrait/",
+      "to": "/es/tienda/posavasos-border-collie/",
+      "wooId": 1822,
+      "status": 301
+    },
+    {
+      "from": "/product/border-collie-mug-portrait-copy/",
+      "to": "/en/shop/border-collie-mug/",
+      "toEs": "/es/tienda/taza-border-collie/",
+      "wooId": 1817,
+      "status": 301
+    },
+    {
+      "from": "/es/product/border-collie-mug-portrait-copy/",
+      "to": "/es/tienda/taza-border-collie/",
+      "wooId": 1817,
+      "status": 301
+    },
+    {
+      "from": "/product/border-collie-mug-portrait/",
+      "to": "/en/shop/border-collie-mug/",
+      "toEs": "/es/tienda/taza-border-collie/",
+      "wooId": 1817,
+      "status": 301,
+      "note": "Fallback without -copy"
+    },
+    {
+      "from": "/product/jack-russell-terrier-coaster-portrait/",
+      "to": "/en/shop/jack-russell-coaster/",
+      "toEs": "/es/tienda/posavasos-jack-russell/",
+      "wooId": 1798,
+      "status": 301
+    },
+    {
+      "from": "/es/product/jack-russell-terrier-coaster-portrait/",
+      "to": "/es/tienda/posavasos-jack-russell/",
+      "wooId": 1798,
+      "status": 301
+    },
+    {
+      "from": "/product/jack-russell-terrier-greeting-card-portrait/",
+      "to": "/en/shop/jack-russell-greeting-card/",
+      "toEs": "/es/tienda/tarjeta-jack-russell/",
+      "wooId": 1803,
+      "status": 301
+    },
+    {
+      "from": "/es/product/jack-russell-terrier-greeting-card-portrait/",
+      "to": "/es/tienda/tarjeta-jack-russell/",
+      "wooId": 1803,
+      "status": 301
+    },
+    {
+      "from": "/product/jack-russell-terrier-mug-portrait/",
+      "to": "/en/shop/jack-russell-mug/",
+      "toEs": "/es/tienda/taza-jack-russell/",
+      "wooId": 1789,
+      "status": 301
+    },
+    {
+      "from": "/es/product/jack-russell-terrier-mug-portrait/",
+      "to": "/es/tienda/taza-jack-russell/",
+      "wooId": 1789,
+      "status": 301
+    }
+  ]
+}

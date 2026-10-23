@@ -1,0 +1,109 @@
+---
+import { loadGallery } from '@/lib/content/editorial';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { getPageCopy } from '@/lib/content/pages';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const migrated = await getPageCopy('gallery', locale);
+const items = await loadGallery();
+const intro =
+  migrated.paragraphs[0] ??
+  (locale === 'es'
+    ? 'Aquí encontrarás retratos de personas y otros dibujos.'
+    : 'Here you will find portraits of people and other drawings.');
+---
+
+<PublicLayout locale={locale} title={migrated.title ?? dict.nav.gallery} description={intro}>
+  <section class="section">
+    <div class="site-shell">
+      <h1 class="display h1-display">{migrated.title ?? dict.nav.gallery}</h1>
+      <p class="muted">{intro}</p>
+      <ul class="grid">
+        {
+          items.map((entry) => {
+            const cover =
+              entry.data.assets.find((a) => a.role === 'drawing' && a.src) ??
+              entry.data.assets.find((a) => a.src);
+            if (!cover?.src) {
+              return (
+                <li>
+                  <div class="ph" aria-hidden="true" />
+                  <h2 class="display">{entry.data.title[locale]}</h2>
+                  <p class="muted">{entry.data.group}</p>
+                </li>
+              );
+            }
+            return (
+              <li>
+                <a class="thumb" href={localizedPath(locale, 'gallery', entry.data.id)}>
+                  <img
+                    src={cover.src}
+                    alt={cover.alt?.[locale] ?? entry.data.title[locale]}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <h2 class="display">{entry.data.title[locale]}</h2>
+                  <p class="muted">{entry.data.group}</p>
+                </a>
+              </li>
+            );
+          })
+        }
+      </ul>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .grid {
+    list-style: none;
+    margin: 2rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .thumb {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .grid img,
+  .ph {
+    aspect-ratio: 3/4;
+    width: 100%;
+    object-fit: contain;
+    background: #fff;
+    border: 0;
+  }
+
+  .ph {
+    background: var(--accent-soft);
+    margin-bottom: 0.75rem;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    margin: 0;
+  }
+
+  @media (min-width: 64rem) {
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+</style>

@@ -1,0 +1,360 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { aboutCopy } from '@/lib/content/seed-copy';
+import { getPageCopy } from '@/lib/content/pages';
+import { getAboutImages } from '@/lib/content/siteExtras';
+import type { Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { t } from '@/i18n';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const es = locale === 'es';
+const dict = t(locale);
+const fallback = aboutCopy[locale];
+const migrated = await getPageCopy('about', locale);
+const images = await getAboutImages();
+const title = migrated.title ?? fallback.title;
+const paragraphs = migrated.paragraphs.length > 0 ? migrated.paragraphs : fallback.body;
+const lead = paragraphs[0] ?? fallback.lead;
+const chapters = paragraphs.slice(1);
+
+const byId = new Map(images.map((image) => [image.id, image.publicUrl]));
+const portrait = byId.get('about-3') ?? images[2]?.publicUrl;
+const desk = byId.get('about-2') ?? images[1]?.publicUrl;
+const market = byId.get('about-1') ?? images[0]?.publicUrl;
+const stall = byId.get('about-4') ?? images[3]?.publicUrl;
+
+const alts = {
+  portrait: es ? 'Meili en su estudio, con un retrato a lápiz' : 'Meili in her studio, with a pencil portrait',
+  desk: es ? 'Meili dibujando un retrato de dos perros' : 'Meili drawing a portrait of two dogs',
+  market: es ? 'Meili en su puesto de un mercado' : 'Meili at her market stall',
+  stall: es ? 'Puesto de Pets Drawings en un mercado' : 'Pets Drawings stall at a market',
+};
+---
+
+<PublicLayout locale={locale} title={title} description={lead}>
+  <article class="about">
+    <header class="about__hero">
+      <div class="site-shell about__hero-grid">
+        <p class="about__eyebrow">Meili Stringfellow</p>
+        <h1 class="display about__title">{title}</h1>
+        <div class="about__intro">
+          <p class="about__lead">{lead}</p>
+          {chapters[0] && <p>{chapters[0]}</p>}
+        </div>
+        {
+          portrait && (
+            <figure class="about__figure about__portrait">
+              <img src={portrait} alt={alts.portrait} width="1080" height="1080" fetchpriority="high" decoding="async" />
+            </figure>
+          )
+        }
+      </div>
+    </header>
+
+    {
+      desk && (
+        <section class="about__studio" aria-labelledby="about-studio">
+          <div class="site-shell about__studio-grid">
+            <figure class="about__figure about__desk">
+              <img src={desk} alt={alts.desk} loading="lazy" decoding="async" />
+            </figure>
+            <div class="about__copy">
+              <h2 id="about-studio" class="display about__h2">{es ? 'En el estudio' : 'In the studio'}</h2>
+              {chapters[1] && <p>{chapters[1]}</p>}
+            </div>
+          </div>
+        </section>
+      )
+    }
+
+    <section class="about__markets" aria-labelledby="about-markets">
+      <div class="site-shell about__markets-grid">
+        <div class="about__copy">
+          <h2 id="about-markets" class="display about__h2">{es ? 'En los mercados' : 'At the markets'}</h2>
+          {chapters[2] && <p>{chapters[2]}</p>}
+          {chapters.slice(3).map((text) => <p>{text}</p>)}
+        </div>
+        {
+          market && (
+            <figure class="about__figure about__market">
+              <img src={market} alt={alts.market} loading="lazy" decoding="async" />
+            </figure>
+          )
+        }
+        {
+          stall && (
+            <figure class="about__figure about__stall">
+              <img src={stall} alt={alts.stall} loading="lazy" decoding="async" />
+            </figure>
+          )
+        }
+      </div>
+    </section>
+
+    <section class="about__close">
+      <div class="site-shell">
+        <p class="display about__invite">
+          {es ? '¿Dibujamos a tu compañero?' : 'Shall we draw your companion?'}
+        </p>
+        <p class="about__links">
+          <a class="btn" href={localizedPath(locale, 'commissions')}>{dict.home.ctaCommission}</a>
+          <a class="btn btn--ghost" href={localizedPath(locale, 'work')}>{dict.nav.work}</a>
+          <a class="btn btn--ghost" href={localizedPath(locale, 'shop')}>{dict.nav.shop}</a>
+        </p>
+      </div>
+    </section>
+  </article>
+</PublicLayout>
+
+<style>
+  .about__hero {
+    padding-bottom: clamp(2rem, 5vw, 4rem);
+  }
+
+  .about__hero-grid {
+    display: grid;
+    gap: 1rem 2rem;
+  }
+
+  .about__eyebrow {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .about__eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 2rem;
+    height: 1px;
+    margin-right: 0.7rem;
+    vertical-align: middle;
+    background: currentColor;
+  }
+
+  .about__title {
+    margin: 0;
+    font-size: clamp(4.2rem, 12vw, 9rem);
+    line-height: 0.86;
+    letter-spacing: -0.055em;
+  }
+
+  .about__intro {
+    display: grid;
+    gap: 1rem;
+    max-width: 34rem;
+  }
+
+  .about__intro p {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.65;
+    color: var(--ink-soft);
+  }
+
+  .about__lead {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+    line-height: 1.35;
+    color: var(--ink);
+  }
+
+  .about__figure {
+    margin: 0;
+  }
+
+  .about__figure img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    padding: 0.55rem;
+    background: #fff;
+  }
+
+  .about__portrait {
+    rotate: -2.5deg;
+    animation: settle 1.1s var(--ease-out) both;
+  }
+
+  .about__portrait img {
+    aspect-ratio: 4 / 5;
+    object-position: 50% 20%;
+  }
+
+  .about__studio {
+    background: var(--paper-deep);
+    padding-block: clamp(3rem, 7vw, 6rem);
+  }
+
+  .about__studio-grid,
+  .about__markets-grid {
+    display: grid;
+    gap: clamp(1.5rem, 4vw, 3.5rem);
+    align-items: center;
+  }
+
+  .about__desk {
+    rotate: 1.5deg;
+  }
+
+  .about__desk img {
+    aspect-ratio: 5 / 4;
+    object-position: 60% 50%;
+  }
+
+  .about__copy {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .about__h2 {
+    margin: 0;
+    font-size: clamp(2.4rem, 5vw, 4.2rem);
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+  }
+
+  .about__copy p {
+    margin: 0;
+    max-width: 36rem;
+    font-size: 1.08rem;
+    line-height: 1.65;
+    color: var(--ink-soft);
+    white-space: pre-line;
+  }
+
+  .about__markets {
+    padding-block: clamp(3rem, 8vw, 7rem);
+  }
+
+  .about__market,
+  .about__stall {
+    animation: settle 1.1s var(--ease-out) both;
+  }
+
+  .about__market {
+    rotate: -3deg;
+  }
+
+  .about__stall {
+    rotate: 2.5deg;
+    animation-delay: 0.15s;
+  }
+
+  .about__market img,
+  .about__stall img {
+    aspect-ratio: 4 / 5;
+    object-position: 50% 40%;
+  }
+
+  .about__close {
+    padding-bottom: clamp(4rem, 8vw, 7rem);
+    text-align: center;
+  }
+
+  .about__invite {
+    margin: 0 auto 1.5rem;
+    max-width: 16ch;
+    font-size: clamp(2.4rem, 5vw, 4rem);
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    font-style: italic;
+  }
+
+  .about__links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  @keyframes settle {
+    from {
+      opacity: 0;
+      transform: translateY(18px) rotate(-6deg);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (max-width: 63.99rem) {
+    .about__portrait {
+      margin-top: 0.5rem;
+    }
+
+    .about__stall {
+      margin-top: -1.5rem;
+      margin-left: 12%;
+      width: 78%;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .about__hero-grid {
+      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-rows: auto auto 1fr;
+      align-items: end;
+      min-height: 70svh;
+    }
+
+    .about__eyebrow {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .about__title {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .about__intro {
+      grid-column: 1;
+      grid-row: 3;
+      align-self: start;
+      margin-top: 1.5rem;
+    }
+
+    .about__portrait {
+      grid-column: 2;
+      grid-row: 1 / -1;
+      align-self: center;
+      width: min(100%, 28rem);
+      justify-self: end;
+      margin-top: -1rem;
+    }
+
+    .about__studio-grid {
+      grid-template-columns: 1.15fr 0.85fr;
+    }
+
+    .about__markets-grid {
+      grid-template-columns: 0.8fr 1fr 0.85fr;
+      align-items: end;
+    }
+
+    .about__market {
+      margin-bottom: 3rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .about__portrait,
+    .about__market,
+    .about__stall {
+      animation: none;
+    }
+  }
+</style>

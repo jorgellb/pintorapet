@@ -1,0 +1,62 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import EntryList, { type EntryRow } from '@/components/admin/EntryList.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { listGallery } from '@/lib/server/admin/editorial';
+import { hasSupabase } from '@/lib/server/env';
+import { galleryGroupLabel } from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+let rows: EntryRow[] = [];
+let loadError: string | null = null;
+try {
+  rows = (await listGallery(admin.client)).map((row) => ({
+    id: row.id,
+    title: row.title_es || row.title_en,
+    type: row.item_group,
+    typeLabel: galleryGroupLabel(row.item_group),
+    sortOrder: row.sort_order,
+    published: row.published,
+    needsText: !row.summary_es?.trim() && !row.story_es?.trim(),
+    cover: row.cover,
+  }));
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'No se pudo leer la galería.';
+}
+
+const types: Array<[string, string]> = ['people', 'architecture', 'illustration', 'other'].map(
+  (key) => [key, galleryGroupLabel(key)],
+);
+---
+
+<AdminLayout title="Galería extra" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Galería extra</h1>
+      <p class="lead">Personas, arquitectura e ilustración, fuera del portfolio de mascotas.</p>
+    </div>
+    <a class="btn" href="/admin/gallery/new/">Nueva pieza</a>
+  </header>
+  {
+    loadError ? (
+      <p class="err">{loadError}</p>
+    ) : rows.length === 0 ? (
+      <p class="empty">
+        Todavía no hay piezas. <a href="/admin/gallery/new/">Crea la primera</a>.
+      </p>
+    ) : (
+      <EntryList
+        base="/admin/gallery/"
+        rows={rows}
+        types={types}
+        typeHeading="Grupo"
+        noun={{ one: 'pieza', many: 'piezas' }}
+      />
+    )
+  }
+</AdminLayout>

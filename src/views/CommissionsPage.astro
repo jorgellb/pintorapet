@@ -1,0 +1,210 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { getPageCopy } from '@/lib/content/pages';
+import { getCommissionExamples } from '@/lib/content/siteExtras';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const migrated = await getPageCopy('commissions', locale);
+const examples = await getCommissionExamples();
+const title = migrated.title ?? dict.commissions.title;
+const intro =
+  migrated.paragraphs.length > 0
+    ? migrated.paragraphs
+    : [dict.commissions.lead];
+
+const examplePairs = [
+  {
+    id: 'kira-sox',
+    title: locale === 'es' ? 'Kira y Sox' : 'Kira & Sox',
+    drawing: examples.find((e) => e.id === 'kira-sox-drawing'),
+    photo: examples.find((e) => e.id === 'kira-sox-photo'),
+  },
+  {
+    id: 'frankie',
+    title: 'Frankie',
+    drawing: examples.find((e) => e.id === 'frankie-drawing'),
+    photo: examples.find((e) => e.id === 'frankie-photo'),
+  },
+].filter((p) => p.drawing?.publicUrl || p.photo?.publicUrl);
+---
+
+<PublicLayout locale={locale} title={title} description={intro[0]}>
+  <section class="section">
+    <div class="site-shell layout">
+      <div>
+        <h1 class="display h1-display">{dict.commissions.title}</h1>
+        {intro.map((p) => <p class="lead">{p}</p>)}
+        <ul class="prices">
+          <li>{dict.commissions.priceA4}</li>
+          <li>{dict.commissions.priceA3}</li>
+          <li>{dict.commissions.priceExtra}</li>
+        </ul>
+        <p class="muted">{dict.commissions.estimateNote}</p>
+        <p>
+          <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a>
+          ·
+          <a href="https://wa.me/34636386531">WhatsApp</a>
+        </p>
+      </div>
+      <form class="form" method="post" action="/api/commissions/">
+        <h2>{dict.commissions.formTitle}</h2>
+        <input type="hidden" name="locale" value={locale} />
+        <label>
+          {dict.forms.name}
+          <input name="name" required maxlength="120" />
+        </label>
+        <label>
+          {dict.forms.email}
+          <input name="email" type="email" required maxlength="254" />
+        </label>
+        <label>
+          {dict.forms.size}
+          <select name="size" required>
+            <option value="A4">A4</option>
+            <option value="A3">A3</option>
+            <option value="undecided">{locale === 'es' ? 'Por decidir' : 'Undecided'}</option>
+          </select>
+        </label>
+        <label>
+          {dict.forms.subjects}
+          <input name="subjects" type="number" min="1" max="10" value="1" required />
+        </label>
+        <label>
+          {dict.forms.message}
+          <textarea name="message" rows="5" required maxlength="5000"></textarea>
+        </label>
+        <button class="btn" type="submit">{dict.commissions.submit}</button>
+      </form>
+    </div>
+  </section>
+
+  {
+    examplePairs.length > 0 && (
+      <section class="section examples">
+        <div class="site-shell">
+          <h2 class="display h2-display">{dict.commissions.examples}</h2>
+          <p class="muted">{dict.commissions.examplesLead}</p>
+          <div class="example-list">
+            {examplePairs.map((pair) => (
+              <article class="example">
+                <h3 class="display">{pair.title}</h3>
+                <ul>
+                  {pair.photo?.publicUrl && (
+                    <li>
+                      <img
+                        src={pair.photo.publicUrl}
+                        alt={pair.photo.label?.[locale] ?? pair.title}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <p class="muted">
+                        {locale === 'es' ? 'Fotografía' : 'Photograph'}
+                      </p>
+                    </li>
+                  )}
+                  {pair.drawing?.publicUrl && (
+                    <li>
+                      <img
+                        src={pair.drawing.publicUrl}
+                        alt={pair.drawing.label?.[locale] ?? pair.title}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <p class="muted">
+                        {locale === 'es' ? 'Dibujo' : 'Drawing'}
+                      </p>
+                    </li>
+                  )}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+</PublicLayout>
+
+<style>
+  .layout {
+    display: grid;
+    gap: 2.5rem;
+  }
+
+  .example-list {
+    display: grid;
+    gap: 2.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .example h3 {
+    font-size: 1.6rem;
+    margin: 0 0 0.75rem;
+  }
+
+  .example ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .example img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    background: #fff;
+    border: 0;
+  }
+
+  .lead {
+    max-width: 36rem;
+  }
+
+  .prices {
+    padding-left: 1.1rem;
+    color: var(--ink);
+  }
+
+  .form {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1.5rem;
+    background: rgb(255 255 255 / 0.86);
+    border: 0;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-art);
+  }
+
+  label {
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+
+  input,
+  select,
+  textarea {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #fff;
+  }
+
+  @media (min-width: 64rem) {
+    .layout {
+      grid-template-columns: 1.1fr 0.9fr;
+      align-items: start;
+    }
+  }
+</style>

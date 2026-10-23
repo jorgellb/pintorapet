@@ -1,0 +1,60 @@
+{
+  "name": "pets-drawings",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck": "astro check",
+    "lint": "astro check",
+    "migration:verify": "node scripts/migration/validate-manifests.mjs",
+    "migration:fetch": "node scripts/migration/fetch-catalog.mjs",
+    "migration:assets": "node scripts/migration/fetch-assets.mjs",
+    "migration:publish-media": "node scripts/migration/publish-catalog-media.mjs",
+    "migration:artworks": "node scripts/migration/build-artworks.mjs",
+    "migration:gallery": "node scripts/migration/build-gallery.mjs",
+    "migration:extras": "node scripts/migration/build-site-extras.mjs",
+    "migration:pages": "python3 scripts/migration/extract-pages.py",
+    "migration:import-sql": "node scripts/migration/generate-product-import-sql.mjs",
+    "migration:validate": "node scripts/migration/validate-manifests.mjs",
+    "admin:bootstrap": "node scripts/bootstrap-admin.mjs",
+    "editorial:import": "node scripts/editorial-import.mjs",
+    "storage:upload": "node scripts/upload-storage.mjs"
+  },
+  "dependencies": {
+    "@astrojs/react": "^7.1.1",
+    "@astrojs/vercel": "^11.0.16",
+    "@fontsource/bodoni-moda": "^5.3.0",
+    "@fontsource/fraunces": "^5.3.0",
+    "@fontsource/manrope": "^5.3.0",
+    "@fontsource/outfit": "^5.3.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "astro": "^7.4.2",
+    "nanoid": "^6.0.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "resend": "^6.34.1",
+    "stripe": "^23.0.0",
+    "zod": "^4.6.7"
+  },
+  "packageManager": "pnpm@10.18.1",
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

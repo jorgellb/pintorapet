@@ -1,0 +1,29 @@
+{
+  "id": "mothers-day",
+  "title": {
+    "en": "Mother's Day present",
+    "es": "Regalo del Día de la Madre"
+  },
+  "group": "people",
+  "assets": [
+    {
+      "role": "reference_photo",
+      "src": "/media/gallery/mothers-day-0.jpeg",
+      "label": "Mother's Day Present photo",
+      "alt": {
+        "en": "Mother's Day Present photo",
+        "es": "Mother's Day Present photo"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/gallery/mothers-day-1.jpeg",
+      "label": "Mother's Day present drawing",
+      "alt": {
+        "en": "Mother's Day present drawing",
+        "es": "Mother's Day present drawing"
+      }
+    }
+  ],
+  "order": 5
+}

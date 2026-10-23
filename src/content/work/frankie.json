@@ -1,0 +1,33 @@
+{
+  "id": "frankie",
+  "title": {
+    "en": "Frankie",
+    "es": "Frankie"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/frankie-frankie-0-French-Bulldog-drawing-1551x1080.jpeg",
+      "label": "Frankie drawing",
+      "alt": {
+        "en": "Frankie drawing",
+        "es": "Frankie drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/frankie-frankie-1-French-Bulldog-photo-1438x1080.jpg",
+      "label": "Frankie photo",
+      "alt": {
+        "en": "Frankie photo",
+        "es": "Frankie photo"
+      }
+    }
+  ],
+  "order": 14,
+  "pathSlugs": {
+    "en": "frankie",
+    "es": "frankie"
+  }
+}

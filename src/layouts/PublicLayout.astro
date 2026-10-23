@@ -1,0 +1,63 @@
+---
+import '@/styles/global.css';
+import SiteHeader from '@/components/navigation/SiteHeader.astro';
+import SiteFooter from '@/components/navigation/SiteFooter.astro';
+import VisitBeacon from '@/components/analytics/VisitBeacon.astro';
+import CartDrawer from '@/components/shop/CartDrawer.astro';
+import { t, type Locale } from '@/i18n';
+
+interface Props {
+  locale: Locale;
+  title: string;
+  description?: string;
+  /** Replaces the whole `<title>`, brand included. */
+  seoTitle?: string | null;
+  /** Absolute or root-relative image for link previews. */
+  image?: string | null;
+  /** Defaults to the current path. */
+  canonicalPath?: string;
+  noindex?: boolean;
+}
+
+const { locale, title, description, seoTitle, image, canonicalPath, noindex = false } = Astro.props;
+const dict = t(locale);
+const siteTitle = seoTitle?.trim() || `${title} · ${dict.brand.name}`;
+const origin = Astro.site ?? 'https://petsdrawings.com';
+const canonical = new URL(canonicalPath ?? Astro.url.pathname, origin).href;
+const ogImage = image ? new URL(image, origin).href : null;
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{siteTitle}</title>
+    {description && <meta name="description" content={description} />}
+    {noindex && <meta name="robots" content="noindex,nofollow" />}
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={dict.brand.name} />
+    <meta property="og:title" content={siteTitle} />
+    {description && <meta property="og:description" content={description} />}
+    <meta property="og:url" content={canonical} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+    <link
+      rel="alternate"
+      hreflang={locale === 'en' ? 'es' : 'en'}
+      href={Astro.url.pathname.replace(`/${locale}/`, `/${locale === 'en' ? 'es' : 'en'}/`)}
+    />
+    <meta name="generator" content={Astro.generator} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{dict.nav.skip}</a>
+    <SiteHeader locale={locale} />
+    <main id="main">
+      <slot />
+    </main>
+    <SiteFooter locale={locale} />
+    <CartDrawer locale={locale} />
+    <VisitBeacon locale={locale} />
+  </body>
+</html>

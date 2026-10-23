@@ -1,0 +1,35 @@
+{
+  "id": "dogs-a3-2",
+  "title": {
+    "en": "Dogs A3",
+    "es": "Perros A3"
+  },
+  "category": "dog",
+  "summary": {
+    "en": "Second Dogs A3 group — kept distinct from the first.",
+    "es": "Segundo grupo Dogs A3 — distinto del primero."
+  },
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/dogs-a3-2-dogs-a3-2-0-IMG_1585-1528x1080.jpg",
+      "alt": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/dogs-a3-2-dogs-a3-2-1-BE046129-13D3-42A6-87A1-F3C54DF4DE2B-1620x1080.jpg",
+      "alt": {
+        "en": "Dogs A3",
+        "es": "Perros A3"
+      }
+    }
+  ],
+  "order": 2,
+  "pathSlugs": {
+    "en": "dogs-a3-2",
+    "es": "dogs-a3-2"
+  }
+}

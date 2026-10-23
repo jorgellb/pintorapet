@@ -1,0 +1,468 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
+import { countryOptions } from '@/lib/domain/countries';
+import { trackingUrl } from '@/lib/server/shipping/correos';
+import { carrierRow } from '@/lib/server/shipping/admin';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const { data: order } = await admin.client
+  .from('orders')
+  .select('*, order_items(product_title, product_sku, quantity, unit_price_cents, line_subtotal_cents)')
+  .eq('id', Astro.params.id ?? '')
+  .maybeSingle();
+if (!order) return Astro.redirect('/admin/orders/');
+
+const correos = await carrierRow(admin.client).catch(() => null);
+const names = Object.fromEntries(countryOptions('es').map((c) => [c.code, c.name]));
+const address = (order.shipping_address ?? null) as Record<string, string> | null;
+const pay = paymentLabel(order.payment_status);
+const fulfillment = fulfillmentLabel(order.fulfillment_status);
+const paid = order.payment_status === 'paid';
+const sent = order.fulfillment_status === 'shipped' || order.fulfillment_status === 'completed';
+const hasCorreosShipment = order.carrier === 'correos' && Boolean(order.carrier_shipment_code);
+const trackLink =
+  order.tracking_code && order.carrier === 'correos' ? trackingUrl(order.tracking_code, 'es') : null;
+const carriers = ['Correos', 'Correos Express', 'SEUR', 'MRW', 'GLS', 'DHL', 'UPS', 'Otro'];
+const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'completed'];
+const carrierName = (value: string | null) =>
+  value === 'correos' ? 'Correos' : value ? value : '—';
+---
+
+<AdminLayout title={`Pedido ${order.reference}`} email={admin.user.email}>
+  <a class="back" href="/admin/orders/">← Pedidos</a>
+  <header class="page-head">
+    <div>
+      <h1><code>{order.reference}</code></h1>
+      <p class="lead">
+        {shortDate(order.created_at)} · {order.payment_provider === 'paypal' ? 'PayPal' : 'Stripe'}
+      </p>
+    </div>
+    <div class="chips">
+      <span class={chipClass(pay.tone)}>{pay.text}</span>
+      <span class={chipClass(fulfillment.tone)}>{fulfillment.text}</span>
+    </div>
+  </header>
+
+  {
+    order.shipping_destination_ok === false && (
+      <p class="alert">
+        La dirección que escribió el cliente al pagar está fuera de la zona cobrada (
+        {order.shipping_zone_name}). Revisa el envío antes de prepararlo; puede faltar o sobrar
+        importe de envío.
+      </p>
+    )
+  }
+
+  <div class="detail">
+    <section class="panel">
+      <h2>Piezas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Pieza</th>
+            <th class="num">Cant.</th>
+            <th class="num">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            (order.order_items ?? []).map((item: { product_title: string; product_sku: string; quantity: number; line_subtotal_cents: number }) => (
+              <tr>
+                <td>
+                  {item.product_title}
+                  <span class="muted line">{item.product_sku}</span>
+                </td>
+                <td class="num">{item.quantity}</td>
+                <td class="num">{euros(item.line_subtotal_cents)}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+      <dl class="totals">
+        <div><dt>Subtotal</dt><dd>{euros(order.subtotal_cents)}</dd></div>
+        <div><dt>Envío{order.shipping_zone_name ? ` · ${order.shipping_zone_name}` : ''}</dt><dd>{order.shipping_cents ? euros(order.shipping_cents) : 'Gratis'}</dd></div>
+        <div class="totals__grand"><dt>Total</dt><dd>{euros(order.total_cents)}</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <h2>Cliente y dirección</h2>
+      <p class="contact">
+        <strong>{address?.name || order.customer_name || '—'}</strong>
+        {order.customer_email && (
+          <a class="line" href={`mailto:${order.customer_email}?subject=${encodeURIComponent(`Tu pedido ${order.reference}`)}`}>
+            {order.customer_email}
+          </a>
+        )}
+        {address?.phone && <span class="line">{address.phone}</span>}
+      </p>
+      {
+        address ? (
+          <address>
+            {address.line1}
+            {address.line2 && <><br />{address.line2}</>}
+            <br />
+            {address.postal_code} {address.city}
+            {address.state && <>, {address.state}</>}
+            <br />
+            {names[address.country?.toUpperCase()] ?? address.country}
+          </address>
+        ) : (
+          <p class="muted">La dirección llega cuando se confirma el pago.</p>
+        )
+      }
+      <dl class="facts">
+        <div><dt>Zona cobrada</dt><dd>{order.shipping_zone_name ?? '—'}</dd></div>
+        <div>
+          <dt>Destino elegido</dt>
+          <dd>
+            {order.shipping_country ? names[order.shipping_country] ?? order.shipping_country : '—'}
+            {order.shipping_postal_code && ` · ${order.shipping_postal_code}`}
+          </dd>
+        </div>
+        <div><dt>Peso con embalaje</dt><dd>{order.shipping_weight_grams ? `${order.shipping_weight_grams} g` : '—'}</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <section class="panel shipping" data-shipping-panel data-id={order.id}>
+    <h2>Envío</h2>
+    {
+      !paid ? (
+        <p class="muted">El envío se prepara cuando el pedido está pagado.</p>
+      ) : (
+        <>
+          <div class="state">
+            <label>
+              Estado
+              <select data-fulfillment>
+                {fulfillmentSteps.map((step) => (
+                  <option value={step} selected={order.fulfillment_status === step}>
+                    {fulfillmentLabel(step).text}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {order.tracking_code && (
+              <div class="tracking">
+                <span class="muted">Seguimiento · {carrierName(order.carrier)}</span>
+                <code>{order.tracking_code}</code>
+                {trackLink && (
+                  <a href={trackLink} target="_blank" rel="noopener">
+                    Ver en Correos ↗
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+
+          {hasCorreosShipment ? (
+            <div class="box">
+              <p>
+                <strong>Envío creado en Correos</strong>
+                <span class="muted line">
+                  {order.label_created_at ? `Etiqueta lista desde ${shortDate(order.label_created_at)}` : ''}
+                </span>
+              </p>
+              <div class="actions">
+                <a class="btn" href={`/api/admin/orders/${order.id}/shipment/`} target="_blank" rel="noopener">
+                  Descargar etiqueta (PDF)
+                </a>
+                {!sent && (
+                  <button type="button" class="btn--quiet" data-mark-sent data-code={order.tracking_code}>
+                    Marcar enviado y avisar al cliente
+                  </button>
+                )}
+                {!sent && (
+                  <button type="button" class="btn--danger" data-cancel>
+                    Anular envío
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : correos ? (
+            <div class="box">
+              <p>
+                <strong>Crear el envío en Correos</strong>
+                <span class="muted line">
+                  Registra el paquete con la dirección del cliente y genera la etiqueta y el número de
+                  seguimiento.
+                </span>
+              </p>
+              <div class="actions">
+                <button type="button" class="btn" data-create disabled={!address}>
+                  Crear envío en Correos
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p class="hint">
+              Con <a href="/admin/shipping/#correos">Correos conectado</a> crearías el envío y la etiqueta desde
+              aquí. Mientras tanto, prepáralo en la oficina o en Correos online y añade el seguimiento abajo.
+            </p>
+          )}
+
+          <details class="manual" open={!order.tracking_code && !correos}>
+            <summary>{order.tracking_code ? 'Cambiar el seguimiento' : 'Añadir seguimiento a mano'}</summary>
+            <form class="manual-form" data-tracking-form>
+              <label>
+                Transportista
+                <select name="carrier">
+                  {carriers.map((c) => (
+                    <option value={c === 'Correos' ? 'correos' : c} selected={carrierName(order.carrier) === c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Número de seguimiento
+                <input name="trackingCode" value={order.tracking_code ?? ''} required minlength="4" maxlength="60" pattern="[A-Za-z0-9\-]+" spellcheck="false" autocomplete="off" />
+              </label>
+              <label class="check">
+                <input type="checkbox" name="notify" checked />
+                Avisar al cliente por email
+              </label>
+              <button type="submit">Guardar y marcar enviado</button>
+            </form>
+          </details>
+        </>
+      )
+    }
+    <p class="status" data-status hidden role="status"></p>
+  </section>
+</AdminLayout>
+
+<style>
+  .chips {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .alert {
+    margin: 0 0 1.25rem;
+    padding: 0.8rem 1rem;
+    border-radius: var(--a-radius-sm);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger);
+  }
+
+  .detail {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+    margin-bottom: 1.25rem;
+  }
+
+  .panel h2 {
+    margin: 0 0 0.75rem;
+  }
+
+  .line {
+    display: block;
+    font-size: 0.88rem;
+  }
+
+  .contact {
+    margin: 0;
+  }
+
+  address {
+    margin: 0.75rem 0 1rem;
+    font-style: normal;
+    line-height: 1.5;
+  }
+
+  .totals,
+  .facts {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0.75rem 0 0;
+  }
+
+  .totals div,
+  .facts div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .totals dt,
+  .facts dt {
+    color: var(--muted);
+  }
+
+  .totals dd,
+  .facts dd {
+    margin: 0;
+    text-align: right;
+  }
+
+  .totals__grand {
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--line);
+    font-weight: 600;
+  }
+
+  .shipping {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .state {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 2rem;
+    align-items: end;
+  }
+
+  .tracking {
+    display: grid;
+    gap: 0.2rem;
+  }
+
+  .box {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius-sm);
+    background: var(--sheet);
+  }
+
+  .box p {
+    margin: 0;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .manual > summary {
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .manual-form {
+    display: grid;
+    grid-template-columns: 12rem minmax(0, 18rem) auto auto;
+    gap: 0.75rem 1rem;
+    align-items: end;
+    margin-top: 0.75rem;
+  }
+
+  .status[data-tone='ok'] {
+    color: var(--success);
+  }
+
+  .status[data-tone='err'] {
+    color: var(--danger);
+  }
+
+  @media (max-width: 62rem) {
+    .detail,
+    .manual-form {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  const panel = document.querySelector<HTMLElement>('[data-shipping-panel]');
+  if (panel) {
+    const id = panel.dataset.id!;
+    const base = `/api/admin/orders/${id}/shipment/`;
+    const status = panel.querySelector<HTMLElement>('[data-status]');
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      if (!status) return;
+      status.hidden = false;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+    const send = async (url: string, method: string, body?: unknown) => {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => ({}))) ?? {};
+      return { ok: Boolean(res?.ok), data: data as { error?: { message?: string } } };
+    };
+    const errorOf = (data: { error?: { message?: string } }) => data.error?.message ?? 'No hubo respuesta del servidor.';
+    const run = async (button: HTMLButtonElement | null, busy: string, call: () => ReturnType<typeof send>, done: string) => {
+      if (button) button.disabled = true;
+      say(busy);
+      const { ok, data } = await call();
+      if (ok) {
+        say(done, 'ok');
+        location.reload();
+        return;
+      }
+      say(errorOf(data), 'err');
+      if (button) button.disabled = false;
+    };
+
+    panel.querySelector<HTMLButtonElement>('[data-create]')?.addEventListener('click', (event) =>
+      run(event.currentTarget as HTMLButtonElement, 'Registrando el envío en Correos…', () => send(base, 'POST'), 'Envío creado. Actualizando…'),
+    );
+
+    panel.querySelector<HTMLButtonElement>('[data-cancel]')?.addEventListener('click', (event) => {
+      if (!confirm('¿Anular el envío en Correos? La etiqueta dejará de valer.')) return;
+      void run(event.currentTarget as HTMLButtonElement, 'Anulando…', () => send(base, 'DELETE'), 'Envío anulado. Actualizando…');
+    });
+
+    panel.querySelector<HTMLButtonElement>('[data-mark-sent]')?.addEventListener('click', (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      void run(
+        button,
+        'Guardando…',
+        () => send(base, 'PUT', { carrier: 'correos', trackingCode: button.dataset.code, notify: true }),
+        'Marcado como enviado; el cliente recibirá el seguimiento.',
+      );
+    });
+
+    const form = panel.querySelector<HTMLFormElement>('[data-tracking-form]');
+    form?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      void run(
+        form.querySelector('button'),
+        'Guardando…',
+        () =>
+          send(base, 'PUT', {
+            carrier: String(fd.get('carrier') ?? 'correos'),
+            trackingCode: String(fd.get('trackingCode') ?? '').trim(),
+            notify: fd.get('notify') === 'on',
+          }),
+        'Seguimiento guardado.',
+      );
+    });
+
+    const select = panel.querySelector<HTMLSelectElement>('[data-fulfillment]');
+    let saved = select?.value;
+    select?.addEventListener('change', async () => {
+      select.disabled = true;
+      const { ok, data } = await send(`/api/admin/orders/${id}/`, 'PATCH', { fulfillmentStatus: select.value });
+      select.disabled = false;
+      if (ok) {
+        saved = select.value;
+        say('Estado actualizado.', 'ok');
+      } else {
+        select.value = saved ?? select.value;
+        say(errorOf(data), 'err');
+      }
+    });
+  }
+</script>

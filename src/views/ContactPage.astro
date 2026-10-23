@@ -1,0 +1,159 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { getPageCopy } from '@/lib/content/pages';
+import { getFeedbackImages } from '@/lib/content/siteExtras';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const migrated = await getPageCopy('contact', locale);
+const feedbacks = await getFeedbackImages();
+const title = migrated.title ?? dict.contact.title;
+const intro =
+  migrated.paragraphs.length > 0 ? migrated.paragraphs : [dict.contact.lead];
+---
+
+<PublicLayout locale={locale} title={title} description={intro[0]}>
+  <section class="section">
+    <div class="site-shell layout">
+      <div>
+        <h1 class="display h1-display">{title}</h1>
+        {intro.map((p) => <p class="lead">{p}</p>)}
+        <p>
+          <strong>{dict.contact.email}:</strong>
+          <a href="mailto:info@petsdrawings.com">info@petsdrawings.com</a><br />
+          <strong>{dict.contact.phone}:</strong>
+          <a href="tel:+34636386531">+34 636 386 531</a><br />
+          <strong>{dict.contact.whatsapp}:</strong>
+          <a href="https://wa.me/34636386531">WhatsApp</a>
+        </p>
+        <p class="social">
+          <a href="https://www.instagram.com/petsdrawings_meili/" rel="noopener noreferrer" target="_blank">Instagram</a>
+          ·
+          <a href="https://www.facebook.com/people/Pets-Drawings-by-Meili/100089998232163/" rel="noopener noreferrer" target="_blank">Facebook</a>
+        </p>
+      </div>
+      <form class="form" method="post" action="/api/contact/">
+        <h2>{dict.contact.formTitle}</h2>
+        <input type="hidden" name="locale" value={locale} />
+        <label>
+          {dict.forms.name}
+          <input name="name" required maxlength="120" />
+        </label>
+        <label>
+          {dict.forms.email}
+          <input name="email" type="email" required maxlength="254" />
+        </label>
+        <label>
+          {dict.forms.reason}
+          <input name="reason" maxlength="120" />
+        </label>
+        <label>
+          {dict.forms.message}
+          <textarea name="message" rows="5" required maxlength="5000"></textarea>
+        </label>
+        <button class="btn" type="submit">{dict.contact.submit}</button>
+      </form>
+    </div>
+  </section>
+
+  {
+    feedbacks.length > 0 && (
+      <section class="section feedbacks">
+        <div class="site-shell">
+          <h2 class="display h2-display">{dict.contact.feedbacks}</h2>
+          <ul class="feedback-grid">
+            {feedbacks.map((item, index) => (
+              <li>
+                <a href={item.publicUrl!} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={item.publicUrl!}
+                    alt={`${dict.contact.feedbackAlt} ${index + 1}`}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <span class="visually-hidden">{dict.contact.openFeedback}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    )
+  }
+</PublicLayout>
+
+<style>
+  .layout {
+    display: grid;
+    gap: 2.5rem;
+  }
+
+  .lead {
+    max-width: 36rem;
+  }
+
+  .form {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1.5rem;
+    background: rgb(255 255 255 / 0.86);
+    border: 0;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-art);
+  }
+
+  label {
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 600;
+  }
+
+  input,
+  textarea {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  .feedback-grid {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .feedback-grid img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    background: #fff;
+    border: 0;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  @media (min-width: 64rem) {
+    .layout {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .feedback-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.5rem;
+    }
+  }
+</style>

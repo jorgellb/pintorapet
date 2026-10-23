@@ -1,0 +1,31 @@
+{
+  "id": "lucky-estrella",
+  "title": {
+    "en": "Lucky and Estrella",
+    "es": "Lucky y Estrella"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/lucky-estrella-lucky-estrella-0-Lucky-and-Estrella-dogs-drawing-1-758x1080.jpg",
+      "alt": {
+        "en": "Lucky and Estrella",
+        "es": "Lucky y Estrella"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/lucky-estrella-lucky-estrella-1-Lucky-and-Estrella-dogs-photo-792x1080.jpg",
+      "alt": {
+        "en": "Lucky and Estrella",
+        "es": "Lucky y Estrella"
+      }
+    }
+  ],
+  "order": 17,
+  "pathSlugs": {
+    "en": "lucky-estrella",
+    "es": "lucky-estrella"
+  }
+}

@@ -1,0 +1,329 @@
+---
+import '@/styles/global.css';
+import '@/styles/admin.css';
+
+interface Props {
+  title: string;
+  email?: string | null;
+}
+
+const { title, email = null } = Astro.props;
+const path = Astro.url.pathname;
+
+const groups: Array<{ label: string | null; items: Array<{ href: string; label: string }> }> = [
+  { label: null, items: [{ href: '/admin/', label: 'Inicio' }] },
+  {
+    label: 'Contenido',
+    items: [
+      { href: '/admin/work/', label: 'Obra' },
+      { href: '/admin/gallery/', label: 'Galería extra' },
+      { href: '/admin/media/', label: 'Medios' },
+    ],
+  },
+  {
+    label: 'Tienda',
+    items: [
+      { href: '/admin/products/', label: 'Productos' },
+      { href: '/admin/orders/', label: 'Pedidos' },
+      { href: '/admin/shipping/', label: 'Envíos' },
+      { href: '/admin/settings/', label: 'Ajustes y catálogos' },
+    ],
+  },
+  {
+    label: 'Clientes',
+    items: [
+      { href: '/admin/commissions/', label: 'Encargos' },
+      { href: '/admin/analytics/', label: 'Visitas' },
+    ],
+  },
+];
+
+function isCurrent(href: string): boolean {
+  return href === '/admin/' ? path === '/admin/' : path.startsWith(href);
+}
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>{title} · Estudio</title>
+  </head>
+  <body class="admin">
+    {
+      email ? (
+        <div class="shell" data-shell>
+          <aside class="side" aria-label="Panel">
+            <div class="side__top">
+              <a class="side__brand" href="/admin/">
+                <img src="/media/brand/logo.png" alt="" width="48" height="48" />
+                <span>
+                  <strong>Pets Drawings</strong>
+                  <em>Estudio</em>
+                </span>
+              </a>
+              <button
+                type="button"
+                class="side__toggle btn--quiet"
+                aria-expanded="false"
+                aria-controls="admin-nav"
+                data-nav-toggle
+              >
+                Menú
+              </button>
+            </div>
+            <nav id="admin-nav" class="side__nav" data-nav>
+              {groups.map((group) => (
+                <div class="side__group">
+                  {group.label && <p class="side__label">{group.label}</p>}
+                  <ul>
+                    {group.items.map((item) => (
+                      <li>
+                        <a href={item.href} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+                          {item.label}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <div class="side__foot">
+                <a class="side__site" href="/es/" target="_blank" rel="noopener">
+                  Ver la web ↗
+                </a>
+                <p class="side__who">{email}</p>
+                <form method="post" action="/admin/">
+                  <input type="hidden" name="action" value="signout" />
+                  <button type="submit" class="btn--quiet">Cerrar sesión</button>
+                </form>
+              </div>
+            </nav>
+          </aside>
+          <main class="main" id="main">
+            <slot />
+          </main>
+        </div>
+      ) : (
+        <main class="solo" id="main">
+          <a class="solo__brand" href="/admin/">
+            <img src="/media/brand/logo.png" alt="Pets Drawings" width="96" height="96" />
+          </a>
+          <slot />
+        </main>
+      )
+    }
+  </body>
+</html>
+
+<style>
+  .shell {
+    display: grid;
+    grid-template-columns: var(--a-sidebar) minmax(0, 1fr);
+    min-height: 100vh;
+  }
+
+  .side {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 1.4rem 1rem 1.25rem;
+    border-right: 1px solid var(--line);
+    background: var(--sheet);
+    overflow-y: auto;
+  }
+
+  .side__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .side__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0 0.4rem;
+    text-decoration: none;
+  }
+
+  .side__brand img {
+    width: 2.75rem;
+    height: auto;
+  }
+
+  .side__brand span {
+    display: grid;
+    line-height: 1.15;
+  }
+
+  .side__brand strong {
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+
+  .side__brand em {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    color: var(--muted);
+  }
+
+  .side__toggle {
+    display: none;
+  }
+
+  .side__nav {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1.35rem;
+    margin-top: 2rem;
+  }
+
+  .side__label {
+    margin: 0 0 0.35rem;
+    padding: 0 0.75rem;
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .side__group ul {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .side__group a {
+    position: relative;
+    display: block;
+    padding: 0.45rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.93rem;
+    text-decoration: none;
+    color: var(--ink-soft);
+  }
+
+  .side__group a:hover {
+    background: var(--a-hover);
+    color: var(--ink);
+  }
+
+  .side__group a[aria-current='page'] {
+    background: var(--paper-deep);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .side__group a[aria-current='page']::before {
+    content: '';
+    position: absolute;
+    left: -1rem;
+    top: 0.45rem;
+    bottom: 0.45rem;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--ink);
+  }
+
+  .side__foot {
+    display: grid;
+    gap: 0.6rem;
+    margin-top: auto;
+    padding: 1.25rem 0.75rem 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .side__site {
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .side__site:hover {
+    text-decoration: underline;
+  }
+
+  .side__who {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+  }
+
+  .main {
+    width: 100%;
+    max-width: 76rem;
+    padding: 2.75rem clamp(1.25rem, 4vw, 3.5rem) 5rem;
+  }
+
+  .solo {
+    width: min(100% - 2.5rem, 26rem);
+    margin: 0 auto;
+    padding: 4rem 0;
+  }
+
+  .solo__brand {
+    display: block;
+    width: 6rem;
+    margin: 0 auto 2rem;
+  }
+
+  @media (max-width: 60rem) {
+    .shell {
+      grid-template-columns: 1fr;
+    }
+
+    .side {
+      position: sticky;
+      z-index: 20;
+      height: auto;
+      padding: 0.75rem 1rem;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      overflow: visible;
+    }
+
+    .side__toggle {
+      display: inline-flex;
+    }
+
+    .side__nav {
+      display: none;
+      margin-top: 1rem;
+      padding-bottom: 0.5rem;
+    }
+
+    .side[data-open] .side__nav {
+      display: flex;
+    }
+
+    .side__group a[aria-current='page']::before {
+      display: none;
+    }
+
+    .main {
+      padding-top: 1.75rem;
+    }
+  }
+</style>
+
+<script>
+  const toggle = document.querySelector('[data-nav-toggle]');
+  const side = toggle?.closest('.side');
+  if (toggle instanceof HTMLButtonElement && side instanceof HTMLElement) {
+    toggle.addEventListener('click', () => {
+      const open = !side.hasAttribute('data-open');
+      side.toggleAttribute('data-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+  }
+</script>

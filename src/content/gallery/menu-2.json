@@ -1,0 +1,19 @@
+{
+  "id": "menu-2",
+  "title": {
+    "en": "Menu",
+    "es": "Menú"
+  },
+  "group": "illustration",
+  "assets": [
+    {
+      "role": "other",
+      "src": "/media/gallery/menu-2-0.jpg",
+      "alt": {
+        "en": "Menu",
+        "es": "Menú"
+      }
+    }
+  ],
+  "order": 2
+}

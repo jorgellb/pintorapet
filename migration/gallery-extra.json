@@ -1,0 +1,294 @@
+{
+  "builtAt": "2026-10-21T19:59:19.666Z",
+  "source": "PROMPT Anexo C.1",
+  "itemCount": 10,
+  "downloadErrors": 0,
+  "items": [
+    {
+      "id": "menu-1",
+      "order": 1,
+      "group": "illustration",
+      "title": {
+        "en": "Menu",
+        "es": "Menú"
+      },
+      "assets": [
+        {
+          "role": "other",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_4756-764x1080.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 167075,
+          "sha256": "37388f7fa7ad05df60ab10e37e2a9b2ce0093c6201c33256f41107b7ab125244",
+          "localPath": "migration/downloads/gallery/menu-1-0-IMG_4756-764x1080.jpg",
+          "publicUrl": "/media/gallery/menu-1-0.jpg"
+        }
+      ]
+    },
+    {
+      "id": "menu-2",
+      "order": 2,
+      "group": "illustration",
+      "title": {
+        "en": "Menu",
+        "es": "Menú"
+      },
+      "assets": [
+        {
+          "role": "other",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2026/07/IMG_4757-764x1080.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 119666,
+          "sha256": "6ea471b0e381ef2928e20a7770e0f9ae8090ec0690bd77e0d67af43da0a513d8",
+          "localPath": "migration/downloads/gallery/menu-2-0-IMG_4757-764x1080.jpg",
+          "publicUrl": "/media/gallery/menu-2-0.jpg"
+        }
+      ]
+    },
+    {
+      "id": "mojacar",
+      "order": 3,
+      "group": "architecture",
+      "title": {
+        "en": "Mojácar",
+        "es": "Mojácar"
+      },
+      "assets": [
+        {
+          "role": "other",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2025/03/IMG_6106.heic",
+          "note": "HEIC original converted via convert-heic.py",
+          "status": "ok",
+          "bytes": 2028458,
+          "sha256": "0930ff60dce8a33f3b612fb2cf63a184318aa2ca071ab1b0eaf1e85697fbc9d0",
+          "localPath": "migration/downloads/gallery/mojacar-0-IMG_6106.heic",
+          "publicUrl": "/media/gallery/mojacar-0.jpg"
+        }
+      ]
+    },
+    {
+      "id": "jungkook",
+      "order": 4,
+      "group": "people",
+      "title": {
+        "en": "Jungkook",
+        "es": "Jungkook"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": "Jungkook singer drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Jungkook-singer-drawing-742x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 127582,
+          "sha256": "6daef3dc36db1970ce2657083529ebd3b709ab9466a75cc7d3bf17c44aa50da5",
+          "localPath": "migration/downloads/gallery/jungkook-0-Jungkook-singer-drawing-742x1080.jpeg",
+          "publicUrl": "/media/gallery/jungkook-0.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": "Jungkook singer photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Jungkook-singer-photo-833x1080.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 127935,
+          "sha256": "290679ebc50d45b0066eaeb1d936ae02a583c3905f42fd9aaf43d5ad4d29c3dc",
+          "localPath": "migration/downloads/gallery/jungkook-1-Jungkook-singer-photo-833x1080.jpg",
+          "publicUrl": "/media/gallery/jungkook-1.jpg"
+        }
+      ]
+    },
+    {
+      "id": "mothers-day",
+      "order": 5,
+      "group": "people",
+      "title": {
+        "en": "Mother's Day present",
+        "es": "Regalo del Día de la Madre"
+      },
+      "assets": [
+        {
+          "role": "reference_photo",
+          "label": "Mother's Day Present photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/05/Mother%C2%B4s-Day-Present-photo-736x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 130030,
+          "sha256": "5e4e4d96cdad61ffa85c9c6739b8ca8cb450169a5e1b45906c620bc5c9f01de1",
+          "localPath": "migration/downloads/gallery/mothers-day-0-Mother´s-Day-Present-photo-736x1080.jpeg",
+          "publicUrl": "/media/gallery/mothers-day-0.jpeg"
+        },
+        {
+          "role": "drawing",
+          "label": "Mother's Day present drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/05/Mother%C2%B4s-Day-present-drawing-805x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 164017,
+          "sha256": "aeb789749a2832723678a103a07b4e11df7355e041d657e0c1db7b5ebc036398",
+          "localPath": "migration/downloads/gallery/mothers-day-1-Mother´s-Day-present-drawing-805x1080.jpeg",
+          "publicUrl": "/media/gallery/mothers-day-1.jpeg"
+        }
+      ]
+    },
+    {
+      "id": "dylan-mia-jaedon",
+      "order": 6,
+      "group": "people",
+      "title": {
+        "en": "Dylan, Mia, and Jaedon",
+        "es": "Dylan, Mia y Jaedon"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/IMG_8876-749x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 127637,
+          "sha256": "b9a7a723c2ac6811043e54ccb649d00abf3d43d6850e26f3e60bf9645127749d",
+          "localPath": "migration/downloads/gallery/dylan-mia-jaedon-0-IMG_8876-749x1080.jpeg",
+          "publicUrl": "/media/gallery/dylan-mia-jaedon-0.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/IMG_3564.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 174951,
+          "sha256": "0cb3a7554ce15c0ef737981ab00efae2a2f026984f32ec573907766632a43777",
+          "localPath": "migration/downloads/gallery/dylan-mia-jaedon-1-IMG_3564.jpg",
+          "publicUrl": "/media/gallery/dylan-mia-jaedon-1.jpg"
+        }
+      ]
+    },
+    {
+      "id": "mother-daughter",
+      "order": 7,
+      "group": "people",
+      "title": {
+        "en": "Mother and daughter",
+        "es": "Madre e hija"
+      },
+      "assets": [
+        {
+          "role": "reference_photo",
+          "label": "Mother and daughter photo",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Mother-and-photo.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 96282,
+          "sha256": "57e861ae254489f74fa2297999e011a26c38839c3324dd07acbd18461d7f21ce",
+          "localPath": "migration/downloads/gallery/mother-daughter-0-Mother-and-photo.jpg",
+          "publicUrl": "/media/gallery/mother-daughter-0.jpg"
+        },
+        {
+          "role": "drawing",
+          "label": "Mother and daughter drawing",
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Mother-and-daughter-drawing-791x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 150115,
+          "sha256": "862f48d09abb9fd54c725dc648ee64dff74ac8a8a7516a1b9a4248c40f02756a",
+          "localPath": "migration/downloads/gallery/mother-daughter-1-Mother-and-daughter-drawing-791x1080.jpeg",
+          "publicUrl": "/media/gallery/mother-daughter-1.jpeg"
+        }
+      ]
+    },
+    {
+      "id": "valentine",
+      "order": 8,
+      "group": "people",
+      "title": {
+        "en": "Gift Valentine",
+        "es": "Regalo de San Valentín"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/IMG_3419-761x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 144213,
+          "sha256": "57993bb19a503f20826783358a5eff1036a05bdd82de640a1b40acf6413320be",
+          "localPath": "migration/downloads/gallery/valentine-0-IMG_3419-761x1080.jpeg",
+          "publicUrl": "/media/gallery/valentine-0.jpeg"
+        },
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/IMG_3188.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 47953,
+          "sha256": "d759d674eca92a0d96c2db0806abe7689d20a8a329243a62a6336c6fb8cc094a",
+          "localPath": "migration/downloads/gallery/valentine-1-IMG_3188.jpg",
+          "publicUrl": "/media/gallery/valentine-1.jpg"
+        }
+      ]
+    },
+    {
+      "id": "indian",
+      "order": 9,
+      "group": "people",
+      "title": {
+        "en": "Indian",
+        "es": "Indian"
+      },
+      "assets": [
+        {
+          "role": "reference_photo",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/04/Indian-photo-710x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 165541,
+          "sha256": "9a7293482d970fc319436b35cffb55f41f746592173edd9423dca98fead02cc4",
+          "localPath": "migration/downloads/gallery/indian-0-Indian-photo-710x1080.jpeg",
+          "publicUrl": "/media/gallery/indian-0.jpeg"
+        },
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/03/Indian-drawing-765x1080.jpeg",
+          "note": null,
+          "status": "ok",
+          "bytes": 183641,
+          "sha256": "ef27fca910ffb6e41f980c279df554ff76535dff43093ee9850b734771bae50c",
+          "localPath": "migration/downloads/gallery/indian-1-Indian-drawing-765x1080.jpeg",
+          "publicUrl": "/media/gallery/indian-1.jpeg"
+        }
+      ]
+    },
+    {
+      "id": "book-drawing",
+      "order": 10,
+      "group": "illustration",
+      "title": {
+        "en": "Drawing for book",
+        "es": "Dibujo para libro"
+      },
+      "assets": [
+        {
+          "role": "drawing",
+          "label": null,
+          "sourceUrl": "https://petsdrawings.com/wp-content/uploads/2023/03/drawing-for-book-762x1080.jpg",
+          "note": null,
+          "status": "ok",
+          "bytes": 193910,
+          "sha256": "49e72c410bdb6653f70abdb6fa2313939513bb7f34697b7e0b834040c6f20db0",
+          "localPath": "migration/downloads/gallery/book-drawing-0-drawing-for-book-762x1080.jpg",
+          "publicUrl": "/media/gallery/book-drawing-0.jpg"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import EntryList, { type EntryRow } from '@/components/admin/EntryList.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { listArtworks } from '@/lib/server/admin/editorial';
+import { hasSupabase } from '@/lib/server/env';
+import { workCategoryLabel } from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+let rows: EntryRow[] = [];
+let loadError: string | null = null;
+try {
+  rows = (await listArtworks(admin.client)).map((row) => ({
+    id: row.id,
+    title: row.title_es || row.title_en,
+    type: row.category,
+    typeLabel: workCategoryLabel(row.category),
+    sortOrder: row.sort_order,
+    published: row.published,
+    needsText: !row.summary_es?.trim() && !row.story_es?.trim(),
+    cover: row.cover,
+  }));
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'No se pudieron leer las fichas.';
+}
+
+const types: Array<[string, string]> = ['dog', 'cat', 'horse', 'people', 'other'].map((key) => [
+  key,
+  workCategoryLabel(key),
+]);
+---
+
+<AdminLayout title="Obra" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Obra</h1>
+      <p class="lead">
+        Las fichas del portfolio. Cada una lleva el dibujo, la foto de referencia,
+        una descripción y el proceso de trabajo.
+      </p>
+    </div>
+    <a class="btn" href="/admin/work/new/">Nueva ficha</a>
+  </header>
+  {
+    loadError ? (
+      <p class="err">{loadError}</p>
+    ) : rows.length === 0 ? (
+      <p class="empty">
+        Todavía no hay fichas. <a href="/admin/work/new/">Crea la primera</a>.
+      </p>
+    ) : (
+      <EntryList
+        base="/admin/work/"
+        rows={rows}
+        types={types}
+        typeHeading="Categoría"
+        noun={{ one: 'ficha', many: 'fichas' }}
+      />
+    )
+  }
+</AdminLayout>

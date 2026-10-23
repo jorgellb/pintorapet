@@ -1,0 +1,35 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const reference = Astro.url.searchParams.get('ref')?.slice(0, 40) ?? '';
+---
+
+<PublicLayout locale={locale} title={dict.checkout.successPending} noindex>
+  <section class="section">
+    <div class="site-shell prose">
+      <h1 class="display h1-display">{dict.checkout.successPending}</h1>
+      {
+        reference && (
+          <p>
+            {locale === 'es' ? 'Referencia del pedido: ' : 'Order reference: '}
+            <strong>{reference}</strong>
+          </p>
+        )
+      }
+      <p class="muted">
+        {
+          locale === 'es'
+            ? 'Te enviaremos un correo en cuanto el pago quede confirmado, con el resumen de tu pedido.'
+            : 'We will email you as soon as the payment is confirmed, with a summary of your order.'
+        }
+      </p>
+    </div>
+  </section>
+</PublicLayout>

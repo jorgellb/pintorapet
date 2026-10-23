@@ -1,0 +1,31 @@
+---
+import SimplePage from '@/views/SimplePage.astro';
+import { getLegalDoc, type LegalPageKey } from '@/lib/content/legal';
+import type { Locale } from '@/i18n';
+
+interface Props {
+  locale: Locale;
+  pageKey: LegalPageKey;
+}
+
+const { locale, pageKey } = Astro.props;
+const doc = getLegalDoc(pageKey, locale);
+---
+
+<SimplePage locale={locale} title={doc.title}>
+  <p class="updated">
+    {
+      locale === 'es'
+        ? `Actualizado: ${doc.updated} · Pendiente de revisión final de la titular.`
+        : `Updated: ${doc.updated} · Pending final owner review before live sales.`
+    }
+  </p>
+  {doc.paragraphs.map((p) => <p>{p}</p>)}
+</SimplePage>
+
+<style>
+  .updated {
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+</style>

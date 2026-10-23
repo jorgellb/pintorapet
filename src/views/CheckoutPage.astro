@@ -1,0 +1,361 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { hasServiceSupabase } from '@/lib/server/env';
+import { checkoutProviders } from '@/lib/server/payments/config';
+import ShippingEstimate from '@/components/shop/ShippingEstimate.astro';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const providers = hasServiceSupabase() ? await checkoutProviders() : [];
+const ready = providers.length > 0;
+const labels = {
+  stripe: locale === 'es' ? 'Pagar con tarjeta' : 'Pay by card',
+  paypal: locale === 'es' ? 'Pagar con PayPal' : 'Pay with PayPal',
+};
+---
+
+<PublicLayout locale={locale} title={dict.cart.checkout} noindex>
+  <section class="section">
+    <div class="site-shell prose">
+      <h1 class="display h1-display">{dict.cart.checkout}</h1>
+      {
+        ready ? (
+          <div
+            data-checkout-root
+            data-locale={locale}
+            data-cart-href={localizedPath(locale, 'cart')}
+            data-empty={
+              locale === 'es' ? 'Tu carrito está vacío.' : 'Your cart is empty.'
+            }
+            data-busy={
+              locale === 'es' ? 'Preparando pago…' : 'Preparing checkout…'
+            }
+            data-error={
+              locale === 'es'
+                ? 'No se pudo iniciar el pago. Revisa disponibilidad o inténtalo de nuevo.'
+                : 'Checkout could not start. Check availability or try again.'
+            }
+            data-shipping-error={dict.shipping.unavailable}
+          >
+            <div class="checkout-grid">
+              <section class="checkout-step" aria-labelledby="checkout-dest">
+                <h2 id="checkout-dest" class="checkout-step__title">
+                  <span aria-hidden="true">1</span>
+                  {dict.shipping.destination}
+                </h2>
+                <ShippingEstimate locale={locale} expanded />
+                <p class="checkout-step__note">{dict.shipping.addressNote}</p>
+              </section>
+
+              <section class="checkout-step checkout-step--pay" aria-labelledby="checkout-pay">
+                <h2 id="checkout-pay" class="checkout-step__title">
+                  <span aria-hidden="true">2</span>
+                  {locale === 'es' ? 'Pago' : 'Payment'}
+                </h2>
+                <dl class="checkout-total">
+                  <div>
+                    <dt>{dict.cart.subtotal}</dt>
+                    <dd data-checkout-subtotal>—</dd>
+                  </div>
+                  <div>
+                    <dt>{dict.shipping.label}</dt>
+                    <dd data-checkout-shipping>—</dd>
+                  </div>
+                  <div class="checkout-total__grand">
+                    <dt>{dict.shipping.total}</dt>
+                    <dd data-checkout-total>—</dd>
+                  </div>
+                </dl>
+                <p class="muted checkout-step__note" data-checkout-required>{dict.shipping.required}</p>
+                <div class="pay-options">
+                  {providers.map((provider, index) => (
+                    <button
+                      class:list={['btn', { 'btn--ghost': index > 0 }]}
+                      type="button"
+                      data-checkout-start={provider}
+                      disabled
+                    >
+                      {labels[provider]}
+                    </button>
+                  ))}
+                </div>
+                <p class="muted checkout-step__note">
+                  {
+                    locale === 'es'
+                      ? 'Confirmamos precios y stock justo antes de abrir la página de pago segura.'
+                      : 'We confirm prices and stock right before opening the secure payment page.'
+                  }
+                </p>
+                <p class="status muted" data-checkout-status hidden></p>
+              </section>
+            </div>
+          </div>
+        ) : (
+          <p class="muted">
+            {
+              locale === 'es'
+                ? 'El pago en línea abrirá muy pronto. Mientras tanto, escríbenos y te ayudamos con tu pedido.'
+                : 'Online payment opens very soon. In the meantime, write to us and we will help with your order.'
+            }
+          </p>
+        )
+      }
+      <p>
+        <a class="btn btn--ghost" href={localizedPath(locale, 'cart')}>
+          {dict.cart.title}
+        </a>
+      </p>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .pay-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .checkout-grid {
+    display: grid;
+    gap: 1.5rem;
+    margin: 1.5rem 0 2rem;
+  }
+
+  @media (min-width: 52rem) {
+    .checkout-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: start;
+    }
+  }
+
+  .checkout-step {
+    display: grid;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-radius: var(--radius-dialog, 1rem);
+    background: var(--surface);
+    box-shadow: var(--shadow-art);
+  }
+
+  .checkout-step__title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 500;
+  }
+
+  .checkout-step__title span {
+    display: grid;
+    place-items: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--surface);
+    font-family: var(--font-body, inherit);
+    font-size: 0.85rem;
+  }
+
+  .checkout-step__note {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .checkout-total {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+  }
+
+  .checkout-total div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .checkout-total dt {
+    color: var(--muted);
+  }
+
+  .checkout-total dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .checkout-total__grand {
+    margin-top: 0.4rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .checkout-total__grand dt {
+    color: var(--ink);
+  }
+
+  .checkout-total__grand dd {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    letter-spacing: -0.02em;
+  }
+</style>
+
+<script>
+  import { CART_EVENT, readCart } from '@/stores/cart';
+  import { readDestination, isCompleteDestination, type Destination } from '@/stores/destination';
+
+  const root = document.querySelector('[data-checkout-root]');
+  if (root instanceof HTMLElement) {
+    const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-checkout-start]'));
+    const status = root.querySelector('[data-checkout-status]');
+    const required = root.querySelector<HTMLElement>('[data-checkout-required]');
+    const subtotalEl = root.querySelector<HTMLElement>('[data-checkout-subtotal]')!;
+    const shippingEl = root.querySelector<HTMLElement>('[data-checkout-shipping]')!;
+    const totalEl = root.querySelector<HTMLElement>('[data-checkout-total]')!;
+    const locale = root.dataset.locale === 'es' ? 'es' : 'en';
+    const emptyLabel = root.dataset.empty ?? 'Empty';
+    const busyLabel = root.dataset.busy ?? 'Busy';
+    const errorLabel = root.dataset.error ?? 'Error';
+    const shippingErrorLabel = root.dataset.shippingError ?? errorLabel;
+    const money = new Intl.NumberFormat(locale === 'es' ? 'es-ES' : 'en-IE', {
+      style: 'currency',
+      currency: 'EUR',
+    });
+    let itemsCents: number | null = null;
+    let shipping: { cents: number; destination: Destination } | null = null;
+    let busy = false;
+
+    function setStatus(text: string, show = true) {
+      if (!(status instanceof HTMLElement)) return;
+      status.hidden = !show;
+      status.textContent = text;
+    }
+
+    function paint() {
+      subtotalEl.textContent = itemsCents === null ? '—' : money.format(itemsCents / 100);
+      shippingEl.textContent = shipping ? root!.querySelector('[data-ship-value]')?.textContent ?? '' : '—';
+      totalEl.textContent =
+        itemsCents !== null && shipping ? money.format((itemsCents + shipping.cents) / 100) : '—';
+      const ready = Boolean(shipping) && readCart().items.length > 0;
+      if (required) required.hidden = ready;
+      for (const button of buttons) button.disabled = busy || !ready;
+    }
+
+    async function loadSubtotal() {
+      const items = readCart().items;
+      if (items.length === 0) {
+        itemsCents = null;
+        setStatus(emptyLabel);
+        paint();
+        return;
+      }
+      try {
+        const res = await fetch('/api/cart/lines/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ locale, ids: items.map((i) => i.productId) }),
+        });
+        const data = (await res.json()) as { lines: Array<{ productId: string; unitAmountCents: number }> };
+        const price = new Map(data.lines.map((l) => [l.productId, l.unitAmountCents]));
+        itemsCents = items.reduce((sum, i) => sum + (price.get(i.productId) ?? 0) * i.quantity, 0);
+      } catch {
+        itemsCents = null;
+      }
+      paint();
+    }
+
+    root.addEventListener('shipping:update', (event) => {
+      const detail = (event as CustomEvent<{ ready: boolean; cents?: number; destination?: Destination }>).detail;
+      shipping = detail.ready && detail.destination ? { cents: detail.cents ?? 0, destination: detail.destination } : null;
+      paint();
+    });
+    window.addEventListener(CART_EVENT, () => void loadSubtotal());
+
+    async function start(provider: string) {
+      const cart = readCart();
+      if (cart.items.length === 0) {
+        setStatus(emptyLabel);
+        return;
+      }
+      const destination = readDestination();
+      if (!isCompleteDestination(destination)) {
+        paint();
+        return;
+      }
+      busy = true;
+      paint();
+      setStatus(busyLabel);
+
+      try {
+        const quoteRes = await fetch('/api/cart/quote/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            locale,
+            items: cart.items,
+            shippingCountry: destination.country,
+            shippingPostalCode: destination.postalCode || undefined,
+          }),
+        });
+        const quote = await quoteRes.json();
+        if (!quoteRes.ok || !quote.quoteId) {
+          const code = String(quote?.error?.message ?? '');
+          throw new Error(code.startsWith('SHIPPING_') ? 'shipping' : 'quote');
+        }
+
+        const attemptId = crypto.randomUUID();
+        const createRes = await fetch('/api/checkout/create/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            provider,
+            locale,
+            quoteId: quote.quoteId,
+            attemptId,
+            items: cart.items,
+          }),
+        });
+        const created = await createRes.json();
+        if (!createRes.ok || !created.url) {
+          throw new Error(String(created?.error?.message ?? '').startsWith('SHIPPING_') ? 'shipping' : 'checkout');
+        }
+        if (created.reference && created.accessToken) {
+          try {
+            sessionStorage.setItem(
+              'petsdrawings.orderAccess.v1',
+              JSON.stringify({
+                reference: created.reference,
+                accessToken: created.accessToken,
+              }),
+            );
+          } catch {
+            // Ignore quota / private mode.
+          }
+        }
+        window.location.assign(created.url);
+      } catch (err) {
+        setStatus(err instanceof Error && err.message === 'shipping' ? shippingErrorLabel : errorLabel);
+        busy = false;
+        paint();
+      }
+    }
+
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        void start(button.dataset.checkoutStart ?? 'stripe');
+      });
+    }
+
+    void loadSubtotal();
+  }
+</script>

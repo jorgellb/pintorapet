@@ -1,0 +1,33 @@
+{
+  "id": "nara",
+  "title": {
+    "en": "Nara",
+    "es": "Nara"
+  },
+  "category": "dog",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/nara-nara-0-Dubi-dog-Nara-drawing-755x1080.jpg",
+      "label": "Nara drawing",
+      "alt": {
+        "en": "Nara drawing",
+        "es": "Nara drawing"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/nara-nara-1-Dubi-dog-Nara-photo.jpg",
+      "label": "Nara photo",
+      "alt": {
+        "en": "Nara photo",
+        "es": "Nara photo"
+      }
+    }
+  ],
+  "order": 18,
+  "pathSlugs": {
+    "en": "nara",
+    "es": "nara"
+  }
+}

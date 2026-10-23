@@ -1,0 +1,208 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const dict = t(locale);
+const title = locale === 'es' ? 'Estado del pedido' : 'Order status';
+---
+
+<PublicLayout locale={locale} title={title} noindex>
+  <section class="section">
+    <div
+      class="site-shell"
+      data-order-status
+      data-locale={locale}
+      data-tracking={dict.shipping.tracking}
+      data-track={dict.shipping.trackParcel}
+      data-error={
+        locale === 'es'
+          ? 'Pedido no encontrado o token no válido.'
+          : 'Order not found or access token invalid.'
+      }
+      data-missing={
+        locale === 'es'
+          ? 'Introduce la referencia y el token de acceso.'
+          : 'Enter the order reference and access token.'
+      }
+    >
+      <h1 class="display h1-display">{title}</h1>
+      <p class="muted lead">
+        {
+          locale === 'es'
+            ? 'Consulta con la referencia del pedido y el token que recibiste al pagar. Sin un token válido no se muestran datos personales.'
+            : 'Look up with your order reference and the access token shown when you paid. Without a valid token, no personal data is shown.'
+        }
+      </p>
+
+      <form class="form" data-order-form>
+        <label>
+          {dict.checkout.reference}
+          <input name="reference" required maxlength="64" autocomplete="off" />
+        </label>
+        <label>
+          {locale === 'es' ? 'Token de acceso' : 'Access token'}
+          <input name="accessToken" required minlength="24" maxlength="200" autocomplete="off" />
+        </label>
+        <button class="btn" type="submit">
+          {locale === 'es' ? 'Consultar' : 'Look up'}
+        </button>
+      </form>
+
+      <p class="status muted" data-order-message hidden></p>
+      <div class="result" data-order-result hidden></div>
+
+      <p class="links">
+        <a href={localizedPath(locale, 'shop')}>{dict.nav.shop}</a>
+        ·
+        <a href={localizedPath(locale, 'contact')}>{dict.nav.contact}</a>
+      </p>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .lead {
+    max-width: 36rem;
+  }
+
+  .form {
+    display: grid;
+    gap: 0.85rem;
+    max-width: 28rem;
+    margin-top: 1.5rem;
+  }
+
+  label {
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+
+  input {
+    font: inherit;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #fff;
+  }
+
+  .result {
+    margin-top: 1.75rem;
+    padding: 1.25rem;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    max-width: 36rem;
+  }
+
+  .result :global(ul) {
+    list-style: none;
+    margin: 1rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .links {
+    margin-top: 2rem;
+  }
+</style>
+
+<script>
+  const root = document.querySelector('[data-order-status]');
+  if (root instanceof HTMLElement) {
+    const form = root.querySelector('[data-order-form]');
+    const message = root.querySelector('[data-order-message]');
+    const result = root.querySelector('[data-order-result]');
+    const locale = root.dataset.locale === 'es' ? 'es' : 'en';
+    const errorLabel = root.dataset.error ?? 'Error';
+    const missingLabel = root.dataset.missing ?? 'Missing';
+    const trackingLabel = root.dataset.tracking ?? 'Tracking';
+    const trackLabel = root.dataset.track ?? 'Track';
+
+    // Prefill from query or sessionStorage (set before Stripe redirect).
+    const params = new URLSearchParams(window.location.search);
+    const stored = (() => {
+      try {
+        return JSON.parse(sessionStorage.getItem('petsdrawings.orderAccess.v1') || 'null');
+      } catch {
+        return null;
+      }
+    })();
+    if (form instanceof HTMLFormElement) {
+      const refInput = form.elements.namedItem('reference');
+      const tokenInput = form.elements.namedItem('accessToken');
+      if (refInput instanceof HTMLInputElement) {
+        refInput.value = params.get('ref') || stored?.reference || '';
+      }
+      if (tokenInput instanceof HTMLInputElement) {
+        tokenInput.value = params.get('token') || stored?.accessToken || '';
+      }
+    }
+
+    function setMessage(text: string, show = true) {
+      if (!(message instanceof HTMLElement)) return;
+      message.hidden = !show;
+      message.textContent = text;
+    }
+
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!(form instanceof HTMLFormElement)) return;
+      const fd = new FormData(form);
+      const reference = String(fd.get('reference') ?? '').trim();
+      const accessToken = String(fd.get('accessToken') ?? '').trim();
+      if (!reference || accessToken.length < 24) {
+        setMessage(missingLabel);
+        return;
+      }
+      setMessage(locale === 'es' ? 'Buscando…' : 'Looking up…');
+      if (result instanceof HTMLElement) result.hidden = true;
+
+      const res = await fetch('/api/orders/lookup/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ reference, accessToken, locale }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(data?.error?.message || errorLabel);
+        return;
+      }
+
+      setMessage('', false);
+      if (result instanceof HTMLElement) {
+        result.hidden = false;
+        const esc = (value: unknown) =>
+          String(value ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+        const items = (data.items || [])
+          .map(
+            (i: { title: string; quantity: number; lineTotalFormatted: string }) =>
+              `<li><strong>${esc(i.title)}</strong> × ${esc(i.quantity)} — ${esc(i.lineTotalFormatted)}</li>`,
+          )
+          .join('');
+        const ship = data.shipping ?? {};
+        const tracking = ship.trackingCode
+          ? `<p class="tracking">${esc(trackingLabel)}${ship.carrier ? ` · ${esc(ship.carrier)}` : ''}: <code>${esc(ship.trackingCode)}</code>
+             ${ship.trackingUrl ? `<br/><a href="${esc(ship.trackingUrl)}" target="_blank" rel="noopener">${esc(trackLabel)} ↗</a>` : ''}</p>`
+          : '';
+        result.innerHTML = `
+          <p><strong>${esc(data.reference)}</strong></p>
+          <p>${locale === 'es' ? 'Pago' : 'Payment'}: ${esc(data.paymentStatus)}<br/>
+             ${locale === 'es' ? 'Preparación' : 'Fulfillment'}: ${esc(data.fulfillmentStatus)}</p>
+          <p>${locale === 'es' ? 'Total' : 'Total'}: ${esc(data.totals?.totalFormatted ?? '')}</p>
+          ${ship.zoneName ? `<p>${locale === 'es' ? 'Envío' : 'Shipping'}: ${esc(ship.zoneName)}</p>` : ''}
+          ${tracking}
+          ${data.customerEmail ? `<p>${esc(data.customerName ?? '')} &lt;${esc(data.customerEmail)}&gt;</p>` : ''}
+          <ul>${items}</ul>
+        `;
+      }
+    });
+  }
+</script>

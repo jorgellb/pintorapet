@@ -1,0 +1,30 @@
+---
+interface Props {
+  placeholder: string;
+  label: string;
+  emptyText: string;
+}
+
+const { placeholder, label, emptyText } = Astro.props;
+---
+
+<input class="search" type="search" placeholder={placeholder} aria-label={label} data-search />
+<p class="empty" data-search-empty hidden>{emptyText}</p>
+
+<script>
+  const input = document.querySelector('[data-search]');
+  const empty = document.querySelector('[data-search-empty]');
+  if (input instanceof HTMLInputElement) {
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-search-text]')];
+    input.addEventListener('input', () => {
+      const query = input.value.trim().toLowerCase();
+      let shown = 0;
+      for (const row of rows) {
+        const match = !query || (row.dataset.searchText ?? '').includes(query);
+        row.hidden = !match;
+        if (match) shown += 1;
+      }
+      if (empty instanceof HTMLElement) empty.hidden = shown > 0 || rows.length === 0;
+    });
+  }
+</script>

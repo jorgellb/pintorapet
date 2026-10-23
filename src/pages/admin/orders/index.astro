@@ -1,0 +1,208 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ListSearch from '@/components/admin/ListSearch.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const { data, error } = await admin.client
+  .from('orders')
+  .select(
+    'id, reference, payment_status, payment_provider, fulfillment_status, total_cents, customer_name, customer_email, created_at, shipping_zone_name, shipping_country, tracking_code, shipping_destination_ok, order_items(product_title, quantity)',
+  )
+  .order('created_at', { ascending: false })
+  .limit(200);
+
+const orders = data ?? [];
+const toShip = (o: (typeof orders)[number]) =>
+  o.payment_status === 'paid' && (o.fulfillment_status === 'unfulfilled' || o.fulfillment_status === 'preparing');
+
+const filters = {
+  'por-enviar': { label: 'Por enviar', test: toShip },
+  pagados: { label: 'Pagados', test: (o: (typeof orders)[number]) => o.payment_status === 'paid' },
+  revisar: { label: 'Revisar', test: (o: (typeof orders)[number]) => o.payment_status === 'review' },
+} as const;
+type FilterKey = keyof typeof filters;
+
+const param = Astro.url.searchParams.get('filtro');
+const current = param && param in filters ? (param as FilterKey) : null;
+const visible = current ? orders.filter(filters[current].test) : orders;
+const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'completed'];
+const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum, o) => sum + o.total_cents, 0);
+---
+
+<AdminLayout title="Pedidos" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Pedidos</h1>
+      <p class="lead">
+        Compras de la tienda. Los pagos confirmados aparecen como pagados; abre un pedido para ver
+        la dirección, crear el envío en Correos o añadir el seguimiento.
+      </p>
+    </div>
+  </header>
+
+  {
+    error ? (
+      <p class="err">{error.message}</p>
+    ) : orders.length === 0 ? (
+      <p class="empty">Los pedidos aparecerán aquí cuando la tienda abra las ventas.</p>
+    ) : (
+      <>
+        <p class="summary">
+          <span><strong>{orders.filter(toShip).length}</strong> por enviar</span>
+          <span><strong>{euros(paidTotal)}</strong> cobrado en total</span>
+        </p>
+        <ul class="tabs">
+          <li>
+            <a href="/admin/orders/" aria-current={!current ? 'page' : undefined}>
+              Todos <span class="count">{orders.length}</span>
+            </a>
+          </li>
+          {(Object.keys(filters) as FilterKey[]).map((key) => (
+            <li>
+              <a href={`/admin/orders/?filtro=${key}`} aria-current={current === key ? 'page' : undefined}>
+                {filters[key].label} <span class="count">{orders.filter(filters[key].test).length}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <ListSearch
+          placeholder="Buscar por referencia, cliente o producto…"
+          label="Buscar pedidos"
+          emptyText="Ningún pedido coincide con la búsqueda."
+        />
+        {visible.length === 0 ? (
+          <p class="empty">No hay pedidos en esta vista.</p>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Cliente</th>
+                  <th>Pago</th>
+                  <th>Envío</th>
+                  <th class="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((o) => {
+                  const pay = paymentLabel(o.payment_status);
+                  const items = o.order_items ?? [];
+                  const itemText = items.map((i) => `${i.quantity}× ${i.product_title}`).join(', ');
+                  return (
+                    <tr
+                      id={o.reference}
+                      data-search-text={`${o.reference} ${o.customer_name ?? ''} ${o.customer_email ?? ''} ${itemText}`.toLowerCase()}
+                    >
+                      <td>
+                        <a href={`/admin/orders/${o.id}/`}><code>{o.reference}</code></a>
+                        <span class="muted line">{shortDate(o.created_at)}</span>
+                        {itemText && <span class="muted line items">{itemText}</span>}
+                      </td>
+                      <td>
+                        {o.customer_name ?? '—'}
+                        {o.customer_email && (
+                          <a class="muted line" href={`mailto:${o.customer_email}?subject=${encodeURIComponent(`Tu pedido ${o.reference}`)}`}>
+                            {o.customer_email}
+                          </a>
+                        )}
+                      </td>
+                      <td>
+                        <span class={chipClass(pay.tone)}>{pay.text}</span>
+                        <span class="muted line">{o.payment_provider === 'paypal' ? 'PayPal' : 'Stripe'}</span>
+                      </td>
+                      <td>
+                        {o.payment_status === 'paid' ? (
+                          <select data-fulfillment data-id={o.id} aria-label={`Envío del pedido ${o.reference}`}>
+                            {fulfillmentSteps.map((step) => (
+                              <option value={step} selected={o.fulfillment_status === step}>
+                                {fulfillmentLabel(step).text}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span class="muted">—</span>
+                        )}
+                        {o.shipping_zone_name && <span class="muted line">{o.shipping_zone_name}</span>}
+                        {o.tracking_code && <span class="muted line"><code>{o.tracking_code}</code></span>}
+                        {o.shipping_destination_ok === false && (
+                          <a class="chip chip--danger line-chip" href={`/admin/orders/${o.id}/`}>Revisar destino</a>
+                        )}
+                      </td>
+                      <td class="num">{euros(o.total_cents)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p class="status" data-fulfillment-feedback hidden />
+      </>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    margin: 0 0 1.25rem;
+    color: var(--muted);
+  }
+
+  .summary strong {
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 500;
+  }
+
+  .line {
+    display: block;
+    font-size: 0.82rem;
+  }
+
+  .items {
+    max-width: 22rem;
+  }
+
+  select {
+    min-width: 9.5rem;
+  }
+
+  .line-chip {
+    margin-top: 0.35rem;
+  }
+</style>
+
+<script>
+  const feedback = document.querySelector<HTMLElement>('[data-fulfillment-feedback]');
+  document.querySelectorAll<HTMLSelectElement>('[data-fulfillment]').forEach((select) => {
+    let saved = select.value;
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      const res = await fetch(`/api/admin/orders/${select.dataset.id}/`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fulfillmentStatus: select.value }),
+      }).catch(() => null);
+      select.disabled = false;
+      if (res?.ok) saved = select.value;
+      else select.value = saved;
+      if (feedback) {
+        feedback.hidden = false;
+        feedback.textContent = res?.ok ? 'Envío actualizado.' : 'No se pudo actualizar el envío. Inténtalo de nuevo.';
+      }
+    });
+  });
+</script>

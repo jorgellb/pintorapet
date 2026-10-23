@@ -1,0 +1,36 @@
+---
+interface Props {
+  src: string | null;
+  alt: string;
+  class?: string;
+}
+
+const { src, alt, class: className } = Astro.props;
+---
+
+{
+  src ? (
+    <img class={className} src={src} alt={alt} loading="lazy" decoding="async" />
+  ) : (
+    <div class:list={[className, 'ph']} aria-hidden="true" />
+  )
+}
+
+<style>
+  img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    background: #fff;
+    border: 0;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-art);
+  }
+
+  .ph {
+    aspect-ratio: 1;
+    background: var(--paper-deep);
+    border: 0;
+    border-radius: var(--radius);
+  }
+</style>

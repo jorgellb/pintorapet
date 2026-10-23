@@ -1,0 +1,42 @@
+{
+  "id": "smokey",
+  "title": {
+    "en": "Smokey",
+    "es": "Smokey"
+  },
+  "category": "cat",
+  "assets": [
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/smokey-smokey-0-IMG_3394-pdf-755x1080.jpg",
+      "label": "Smokey",
+      "alt": {
+        "en": "Smokey",
+        "es": "Smokey"
+      }
+    },
+    {
+      "role": "drawing",
+      "src": "/media/portfolio/smokey-smokey-1-IMG_3427-pdf-810x1080.jpg",
+      "label": "Smocky",
+      "alt": {
+        "en": "Smocky",
+        "es": "Smocky"
+      }
+    },
+    {
+      "role": "reference_photo",
+      "src": "/media/portfolio/smokey-smokey-2-1000056511.jpg",
+      "label": "Smoky",
+      "alt": {
+        "en": "Smoky",
+        "es": "Smoky"
+      }
+    }
+  ],
+  "order": 5,
+  "pathSlugs": {
+    "en": "smokey",
+    "es": "smokey"
+  }
+}

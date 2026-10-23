@@ -1,0 +1,5 @@
+---
+import WorkDetailPage from '@/views/WorkDetailPage.astro';
+const { slug } = Astro.params;
+---
+<WorkDetailPage locale="en" slug={slug!} />

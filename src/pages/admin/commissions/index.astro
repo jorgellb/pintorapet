@@ -1,0 +1,247 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ListSearch from '@/components/admin/ListSearch.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { chipClass, commissionLabel, shortDate } from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const { data, error } = await admin.client
+  .from('commission_requests')
+  .select('id, reference, locale, contact_name, contact_email, size_hint, subjects, message, status, created_at')
+  .order('created_at', { ascending: false })
+  .limit(200);
+
+const rows = data ?? [];
+const statuses = ['received', 'reviewing', 'quoted', 'accepted', 'declined', 'closed'];
+const current = Astro.url.searchParams.get('estado') ?? '';
+const visible = current ? rows.filter((row) => row.status === current) : rows;
+
+const tabs = [
+  { href: '/admin/commissions/', label: 'Todos', count: rows.length, current: !current },
+  ...statuses
+    .map((key) => ({
+      href: `/admin/commissions/?estado=${key}`,
+      label: commissionLabel(key).text,
+      count: rows.filter((row) => row.status === key).length,
+      current: current === key,
+    }))
+    .filter((tab) => tab.count > 0 || tab.current),
+];
+---
+
+<AdminLayout title="Encargos" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Encargos</h1>
+      <p class="lead">
+        Peticiones de retrato desde el formulario de la web. Abre cada una para
+        leer el mensaje y cambia su estado según avance.
+      </p>
+    </div>
+  </header>
+
+  {
+    error ? (
+      <p class="err">{error.message}</p>
+    ) : rows.length === 0 ? (
+      <p class="empty">Los encargos que lleguen desde el formulario aparecerán aquí.</p>
+    ) : (
+      <>
+        <ul class="tabs">
+          {tabs.map((tab) => (
+            <li>
+              <a href={tab.href} aria-current={tab.current ? 'page' : undefined}>
+                {tab.label}
+                <span class="count">{tab.count}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <ListSearch
+          placeholder="Buscar por nombre, correo o mascota…"
+          label="Buscar encargos"
+          emptyText="Ningún encargo coincide con la búsqueda."
+        />
+        {visible.length === 0 ? (
+          <p class="empty">No hay encargos con este estado.</p>
+        ) : (
+          <ul class="requests">
+            {visible.map((row) => {
+              const label = commissionLabel(row.status);
+              return (
+                <li
+                  id={row.reference}
+                  data-search-text={`${row.contact_name} ${row.contact_email} ${row.subjects ?? ''} ${row.reference}`.toLowerCase()}
+                >
+                  <details class="panel">
+                    <summary>
+                      <span class="who">
+                        <strong>{row.contact_name}</strong>
+                        <span class="muted">{row.subjects || 'Sin detalle de la mascota'}</span>
+                      </span>
+                      <span class={chipClass(label.tone)} data-chip>
+                        {label.text}
+                      </span>
+                      <span class="muted">{shortDate(row.created_at)}</span>
+                    </summary>
+                    <div class="body">
+                      <p class="message">{row.message}</p>
+                      <dl>
+                        <div>
+                          <dt>Correo</dt>
+                          <dd>
+                            <a href={`mailto:${row.contact_email}?subject=${encodeURIComponent(`Tu encargo ${row.reference}`)}`}>
+                              {row.contact_email}
+                            </a>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Tamaño</dt>
+                          <dd>{row.size_hint || '—'}</dd>
+                        </div>
+                        <div>
+                          <dt>Idioma</dt>
+                          <dd>{row.locale === 'es' ? 'Español' : 'Inglés'}</dd>
+                        </div>
+                        <div>
+                          <dt>Referencia</dt>
+                          <dd>
+                            <code>{row.reference}</code>
+                          </dd>
+                        </div>
+                      </dl>
+                      <label class="status-field">
+                        Estado
+                        <select data-commission-status data-id={row.id}>
+                          {statuses.map((key) => (
+                            <option value={key} selected={row.status === key}>
+                              {commissionLabel(key).text}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <p class="status" data-commission-feedback hidden />
+                    </div>
+                  </details>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .requests {
+    display: grid;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  details.panel {
+    padding: 0;
+    gap: 0;
+  }
+
+  summary {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .who {
+    display: grid;
+  }
+
+  .body {
+    display: grid;
+    gap: 1rem;
+    padding: 0 1.25rem 1.25rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .message {
+    margin: 1rem 0 0;
+    max-width: 44rem;
+    white-space: pre-line;
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 0.75rem 1.5rem;
+    margin: 0;
+  }
+
+  dt {
+    color: var(--muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .status-field {
+    max-width: 16rem;
+  }
+
+  @media (max-width: 40rem) {
+    summary {
+      grid-template-columns: 1fr auto;
+    }
+
+    summary > .muted:last-child {
+      grid-column: 1 / -1;
+    }
+  }
+</style>
+
+<script>
+  import { chipClass, commissionLabel } from '@/lib/admin/labels';
+
+  document.querySelectorAll<HTMLSelectElement>('[data-commission-status]').forEach((select) => {
+    const item = select.closest('li');
+    const chip = item?.querySelector<HTMLElement>('[data-chip]');
+    const feedback = item?.querySelector<HTMLElement>('[data-commission-feedback]');
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      const res = await fetch(`/api/admin/commissions/${select.dataset.id}/`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: select.value }),
+      }).catch(() => null);
+      select.disabled = false;
+      if (feedback) {
+        feedback.hidden = false;
+        feedback.textContent = res?.ok ? 'Estado guardado.' : 'No se pudo guardar el estado. Inténtalo de nuevo.';
+      }
+      if (res?.ok && chip) {
+        const label = commissionLabel(select.value);
+        chip.className = chipClass(label.tone);
+        chip.textContent = label.text;
+      }
+    });
+  });
+</script>

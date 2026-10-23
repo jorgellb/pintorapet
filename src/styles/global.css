@@ -1,0 +1,249 @@
+@import './fonts.css';
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+
+/* Cross-document transitions: artworks carry their view-transition-name
+   (work-<id>) so a drawing glides from the wall into its own page. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: 320ms var(--ease-soft) both vt-out;
+}
+
+::view-transition-new(root) {
+  animation: 520ms var(--ease-out) 80ms both vt-in;
+}
+
+::view-transition-group(*) {
+  animation-duration: 700ms;
+  animation-timing-function: var(--ease-out);
+}
+
+@keyframes vt-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition {
+    navigation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+  transition: color var(--dur-ui) var(--ease-soft);
+}
+
+a:hover {
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -100%;
+  z-index: 1000;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-art);
+}
+
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+.site-shell {
+  width: min(100% - 2.5rem, var(--max-editorial));
+  margin-inline: auto;
+}
+
+@media (min-width: 48rem) {
+  .site-shell {
+    width: min(100% - 5rem, var(--max-editorial));
+  }
+}
+
+@media (min-width: 80rem) {
+  .site-shell {
+    width: min(100% - 8rem, var(--max-editorial));
+  }
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-optical-sizing: auto;
+}
+
+.h1-display {
+  font-size: clamp(3rem, 7vw, 6.5rem);
+  margin: 0 0 0.75rem;
+}
+
+.h1-hero {
+  font-size: clamp(3.4rem, 9vw, 9rem);
+}
+
+.h2-display {
+  font-size: clamp(2.3rem, 4.6vw, 4.4rem);
+  margin: 0 0 0.75rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 3.1rem;
+  padding: 0.85rem 1.6rem;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--light);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-soft),
+    color var(--dur-ui) var(--ease-soft),
+    border-color var(--dur-ui) var(--ease-soft);
+}
+
+.btn:hover {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+  color: var(--light);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.btn--ghost:hover {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.section {
+  padding-block: clamp(4rem, 10vw, 9rem);
+  position: relative;
+}
+
+/* The logo hangs below the menu bar, so every public page starts beneath it. */
+#main {
+  padding-top: 3rem;
+}
+
+#main > .section:first-child {
+  padding-top: 1.5rem;
+}
+
+@media (min-width: 64rem) {
+  #main {
+    padding-top: 8.25rem;
+  }
+}
+
+.price {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Artwork and product photos hang on the wall */
+main img {
+  background: var(--sheet);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-art);
+}
+
+.form {
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-art);
+}
+
+input,
+select,
+textarea {
+  border-radius: var(--radius);
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+
+.chip {
+  border-radius: 999px;
+}

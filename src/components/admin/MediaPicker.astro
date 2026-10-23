@@ -1,0 +1,219 @@
+---
+export interface PickerItem {
+  id: string;
+  url: string;
+  name: string;
+  bucket: string;
+  altEs: string;
+}
+
+interface Props {
+  items: PickerItem[];
+  defaultBucket?: 'catalog-public' | 'portfolio-public';
+}
+
+const { items, defaultBucket = 'catalog-public' } = Astro.props;
+const buckets = [
+  { key: 'catalog-public', label: 'Tienda' },
+  { key: 'portfolio-public', label: 'Obra y galería' },
+  { key: '', label: 'Todas' },
+];
+---
+
+<dialog class="picker" data-media-picker data-default-bucket={defaultBucket} aria-labelledby="picker-title">
+  <form method="dialog" class="picker__frame">
+    <header class="picker__head">
+      <h2 id="picker-title">Elegir de Medios</h2>
+      <button type="submit" class="btn--quiet picker__close" value="cancel" aria-label="Cerrar">✕</button>
+    </header>
+
+    <div class="picker__bar">
+      <ul class="tabs" role="list">
+        {
+          buckets.map((bucket) => (
+            <li>
+              <a href="#" data-picker-bucket={bucket.key}>
+                {bucket.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+      <input class="search" type="search" placeholder="Buscar por nombre o texto…" aria-label="Buscar imágenes" data-picker-search />
+      <label class="btn btn--quiet picker__upload">
+        Subir imágenes
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden data-picker-upload />
+      </label>
+    </div>
+
+    <ul class="picker__grid" data-picker-grid>
+      {
+        items.map((item) => (
+          <li data-picker-item data-id={item.id} data-url={item.url} data-name={item.name} data-bucket={item.bucket} data-alt={item.altEs} data-search-text={`${item.name} ${item.altEs}`.toLowerCase()}>
+            <button type="button" aria-pressed="false" title={item.name}>
+              <img src={item.url} alt="" loading="lazy" decoding="async" />
+              <span class="picker__check" aria-hidden="true">✓</span>
+              <span class="picker__name">{item.name}</span>
+            </button>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="empty" data-picker-empty hidden>No hay imágenes en esta vista. Súbelas con el botón de arriba.</p>
+
+    <footer class="picker__foot">
+      <p class="status" data-picker-status>Ninguna seleccionada</p>
+      <a class="hint" href="/admin/media/" target="_blank" rel="noreferrer">Abrir Medios ↗</a>
+      <button type="button" data-picker-confirm disabled>Añadir</button>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  .picker {
+    width: min(64rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    padding: 0;
+    border: 0;
+    border-radius: var(--a-radius);
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .picker::backdrop {
+    background: rgb(22 23 26 / 0.45);
+  }
+
+  .picker__frame {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    max-height: calc(100dvh - 2rem);
+  }
+
+  .picker__head,
+  .picker__bar,
+  .picker__foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: center;
+    padding: 1rem 1.25rem;
+  }
+
+  .picker__head {
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .picker__head h2 {
+    margin: 0;
+  }
+
+  .picker__close {
+    min-height: 2.25rem;
+    padding: 0.3rem 0.8rem;
+  }
+
+  .picker__bar .tabs {
+    margin: 0;
+  }
+
+  .picker__bar .search {
+    flex: 1 1 14rem;
+    margin: 0;
+  }
+
+  .picker__upload {
+    cursor: pointer;
+  }
+
+  .picker__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.25rem 1.25rem 1.25rem;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .picker__grid li[hidden] {
+    display: none;
+  }
+
+  .picker__grid button {
+    position: relative;
+    display: grid;
+    gap: 0.35rem;
+    width: 100%;
+    min-height: 0;
+    padding: 0.4rem;
+    border: 2px solid transparent;
+    border-radius: var(--a-radius);
+    background: var(--paper);
+    color: var(--ink);
+    text-align: left;
+  }
+
+  .picker__grid button:hover {
+    border-color: var(--line-strong);
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .picker__grid button[aria-pressed='true'] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .picker__grid button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .picker__grid img {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 0.4rem;
+    background: var(--paper-deep);
+    object-fit: contain;
+  }
+
+  .picker__check {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    display: none;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.8rem;
+  }
+
+  [aria-pressed='true'] .picker__check {
+    display: grid;
+  }
+
+  .picker__name {
+    overflow: hidden;
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .picker__foot {
+    justify-content: flex-end;
+    border-top: 1px solid var(--line);
+  }
+
+  .picker__foot .status {
+    margin-right: auto;
+  }
+
+  .empty {
+    margin: 0 1.25rem 1.25rem;
+  }
+</style>
