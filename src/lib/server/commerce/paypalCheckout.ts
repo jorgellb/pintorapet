@@ -10,6 +10,7 @@ import {
   type PaypalOrder,
 } from '@/lib/server/payments/paypal';
 import { mapPgError } from './pgErrors';
+import { sendOrderEmails } from './outbox';
 
 export type PaypalOutcome = {
   status: 'paid' | 'review' | 'pending' | 'expired' | 'not_found';
@@ -77,6 +78,7 @@ export async function finalizePaypalOrder(
     p_shipping_address: fromForm ? null : shippingOf(order),
   });
   if (applyErr) throw mapPgError(applyErr);
+  await sendOrderEmails(supabase, attempt.order_id);
 
   const status = (applied as { status?: string } | null)?.status === 'review' ? 'review' : 'paid';
   return { status, ...base };

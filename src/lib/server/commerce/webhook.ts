@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
 import { CommerceError } from './errors';
 import { mapPgError } from './pgErrors';
+import { sendOrderEmails } from './outbox';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
 import { stripeFor } from './stripeClient';
 
@@ -82,6 +83,7 @@ export async function handleStripeEvent(
       });
 
       if (error) throw mapPgError(error);
+      await sendOrderEmails(supabase, orderId);
       return { handled: true, detail: data };
     }
 

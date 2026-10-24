@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
-import { emailFrom, hasResend } from '@/lib/server/env';
+import { emailAdmin, emailFrom, hasResend, siteUrl } from '@/lib/server/env';
 import { mapPgError } from './pgErrors';
 import { CommerceError } from './errors';
 
@@ -36,6 +36,23 @@ function renderTemplate(
       text: `Reference: ${payload.reference}\nFrom: ${payload.name} <${payload.email}>\nSize: ${payload.size}\nSubjects: ${payload.subjects}\n\n${payload.message ?? ''}`,
     };
   }
+  if (templateKey === 'order_paid_admin') {
+    return {
+      subject: `Pedido nuevo ${payload.reference ?? ''}`,
+      text: `Hay un pedido nuevo pagado: ${payload.reference ?? ''}\n\n${siteUrl()}/admin/orders/${payload.order_id ?? ''}/`,
+    };
+  }
+  if (templateKey === 'messages_overflow') {
+    const what = payload.form === 'commission' ? 'solicitudes de encargo' : 'mensajes de contacto';
+    return {
+      subject: `Avalancha de ${what} (${payload.day ?? ''})`,
+      text:
+        `Hoy han llegado muchas más ${what} de lo normal; puede ser un ataque. ` +
+        `Todas están guardadas, pero a partir de ahora no te avisaremos de cada una por correo hasta mañana.\n\n` +
+        `Revisa ${siteUrl()}/admin/antibot/` +
+        (payload.form === 'commission' ? ` y ${siteUrl()}/admin/commissions/` : ''),
+    };
+  }
   if (templateKey === 'order_paid_customer') {
     return {
       subject:
@@ -68,27 +85,12 @@ function renderTemplate(
   };
 }
 
-export async function processOutboxBatch(
+/** Send rows already claimed by `owner`, marking each sent or failed (retried by the cron). */
+async function sendClaimed(
   supabase: SupabaseClient,
-  limit = 20,
-): Promise<{ claimed: number; sent: number; failed: number }> {
-  if (!hasResend()) {
-    throw new CommerceError(
-      'NOT_CONFIGURED',
-      'RESEND_API_KEY required for outbox',
-      503,
-    );
-  }
-
-  const owner = `outbox:${process.pid}:${Date.now()}`;
-  const { data, error } = await supabase.rpc('claim_outbox', {
-    p_limit: limit,
-    p_lease_seconds: 60,
-    p_worker_id: owner,
-  });
-  if (error) throw mapPgError(error);
-
-  const rows = (data ?? []) as OutboxRow[];
+  rows: OutboxRow[],
+  owner: string,
+): Promise<{ sent: number; failed: number }> {
   const resend = new Resend(import.meta.env.RESEND_API_KEY);
   let sent = 0;
   let failed = 0;
@@ -102,7 +104,8 @@ export async function processOutboxBatch(
       );
       const { error: sendErr } = await resend.emails.send({
         from: emailFrom(),
-        to: row.recipient,
+        // Rows for the studio say 'admin' (see apply_payment).
+        to: row.recipient === 'admin' ? emailAdmin() : row.recipient,
         subject: rendered.subject,
         text: rendered.text,
       });
@@ -142,5 +145,49 @@ export async function processOutboxBatch(
     }
   }
 
-  return { claimed: rows.length, sent, failed };
+  return { sent, failed };
+}
+
+export async function processOutboxBatch(
+  supabase: SupabaseClient,
+  limit = 20,
+): Promise<{ claimed: number; sent: number; failed: number }> {
+  if (!hasResend()) {
+    throw new CommerceError(
+      'NOT_CONFIGURED',
+      'RESEND_API_KEY required for outbox',
+      503,
+    );
+  }
+
+  const owner = `outbox:${process.pid}:${Date.now()}`;
+  const { data, error } = await supabase.rpc('claim_outbox', {
+    p_limit: limit,
+    p_lease_seconds: 60,
+    p_worker_id: owner,
+  });
+  if (error) throw mapPgError(error);
+
+  const rows = (data ?? []) as OutboxRow[];
+  return { claimed: rows.length, ...(await sendClaimed(supabase, rows, owner)) };
+}
+
+/**
+ * Send an order's queued emails now (paid, shipped) instead of waiting for
+ * the daily cron. Never throws: whatever fails stays queued for the cron.
+ */
+export async function sendOrderEmails(supabase: SupabaseClient, orderId: string): Promise<void> {
+  if (!hasResend()) return;
+  try {
+    const owner = `order:${orderId}:${Date.now()}`;
+    const { data, error } = await supabase.rpc('claim_outbox_for_order', {
+      p_order_id: orderId,
+      p_lease_seconds: 60,
+      p_worker_id: owner,
+    });
+    if (error) throw error;
+    await sendClaimed(supabase, (data ?? []) as OutboxRow[], owner);
+  } catch (err) {
+    console.error('order emails left for the outbox cron', orderId, err);
+  }
 }

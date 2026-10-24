@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CommerceError } from '@/lib/server/commerce/errors';
+import { sendOrderEmails } from '@/lib/server/commerce/outbox';
 import { mapPgError } from '@/lib/server/commerce/pgErrors';
 import { createServiceClient } from '@/lib/server/supabase';
 import {
@@ -281,5 +282,6 @@ export async function markShipped(
       },
       { onConflict: 'dedupe_key', ignoreDuplicates: true },
     );
+    if (service) await sendOrderEmails(service, id);
   }
 }

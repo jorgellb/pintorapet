@@ -75,16 +75,40 @@ async function sendNow(opts: {
 /** emailNow: false leaves the email to the daily outbox cron (anti-bot mail cap). */
 type Delivery = { emailNow?: boolean };
 
-/** Deferred notifications to the studio waiting in the outbox at most; past it the message is only saved. */
+/** Deferred notifications to the studio waiting in the outbox at most; past it, one digest a day. */
 const MAX_DEFERRED = 50;
 
-async function canDefer(supabase: SupabaseClient): Promise<boolean> {
-  const { count, error } = await supabase
-    .from('notification_outbox')
-    .select('id', { count: 'exact', head: true })
-    .in('template_key', ['contact_admin', 'commission_admin'])
-    .in('status', ['pending', 'failed']);
-  return !error && (count ?? 0) < MAX_DEFERRED;
+/**
+ * Queue the studio's email about a new message. When the anti-bot mail cap
+ * deferred it and many are already waiting, queue instead a single digest
+ * for the day: the message is saved either way, nothing is dropped silently.
+ */
+async function notifyStudio(
+  supabase: SupabaseClient,
+  emailNow: boolean,
+  form: 'contact' | 'commission',
+  row: Parameters<typeof enqueueOutbox>[1],
+): Promise<void> {
+  if (!emailNow) {
+    const { count, error } = await supabase
+      .from('notification_outbox')
+      .select('id', { count: 'exact', head: true })
+      .in('template_key', ['contact_admin', 'commission_admin'])
+      .eq('status', 'pending');
+    if (error || (count ?? 0) >= MAX_DEFERRED) {
+      const day = new Date().toISOString().slice(0, 10);
+      console.warn('anti-bot mail cap: message saved, studio gets one digest', form, day);
+      await enqueueOutbox(supabase, {
+        dedupeKey: `messages_overflow:${form}:${day}`,
+        recipient: emailAdmin(),
+        locale: 'es',
+        templateKey: 'messages_overflow',
+        payload: { form, day },
+      });
+      return;
+    }
+  }
+  await enqueueOutbox(supabase, row);
 }
 
 export async function submitContact(
@@ -117,22 +141,19 @@ export async function submitContact(
   if (error) throw mapPgError(error);
 
   const id = data.id as string;
-  // Deferred by the anti-bot mail cap: queue it only while the backlog is small.
-  if (emailNow || (await canDefer(supabase))) {
-    await enqueueOutbox(supabase, {
-      dedupeKey: `contact:${id}:admin`,
-      recipient: emailAdmin(),
-      locale: body.locale,
-      templateKey: 'contact_admin',
-      payload: {
-        id,
-        name: body.name,
-        email: body.email,
-        reason: body.reason ?? null,
-        message: body.message,
-      },
-    });
-  }
+  await notifyStudio(supabase, emailNow, 'contact', {
+    dedupeKey: `contact:${id}:admin`,
+    recipient: emailAdmin(),
+    locale: body.locale,
+    templateKey: 'contact_admin',
+    payload: {
+      id,
+      name: body.name,
+      email: body.email,
+      reason: body.reason ?? null,
+      message: body.message,
+    },
+  });
 
   // Best-effort immediate send; outbox remains for retry/cron.
   if (emailNow) {
@@ -192,23 +213,21 @@ export async function submitCommission(
   if (error) throw mapPgError(error);
   const id = data.id as string;
 
-  if (emailNow || (await canDefer(supabase))) {
-    await enqueueOutbox(supabase, {
-      dedupeKey: `commission:${id}:admin`,
-      recipient: emailAdmin(),
-      locale: body.locale,
-      templateKey: 'commission_admin',
-      payload: {
-        id,
-        reference,
-        name: body.name,
-        email: body.email,
-        size: body.size,
-        subjects: body.subjects,
-        message: body.message,
-      },
-    });
-  }
+  await notifyStudio(supabase, emailNow, 'commission', {
+    dedupeKey: `commission:${id}:admin`,
+    recipient: emailAdmin(),
+    locale: body.locale,
+    templateKey: 'commission_admin',
+    payload: {
+      id,
+      reference,
+      name: body.name,
+      email: body.email,
+      size: body.size,
+      subjects: body.subjects,
+      message: body.message,
+    },
+  });
 
   if (emailNow) {
     try {
