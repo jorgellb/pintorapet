@@ -75,6 +75,18 @@ async function sendNow(opts: {
 /** emailNow: false leaves the email to the daily outbox cron (anti-bot mail cap). */
 type Delivery = { emailNow?: boolean };
 
+/** Deferred notifications to the studio waiting in the outbox at most; past it the message is only saved. */
+const MAX_DEFERRED = 50;
+
+async function canDefer(supabase: SupabaseClient): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('notification_outbox')
+    .select('id', { count: 'exact', head: true })
+    .in('template_key', ['contact_admin', 'commission_admin'])
+    .in('status', ['pending', 'failed']);
+  return !error && (count ?? 0) < MAX_DEFERRED;
+}
+
 export async function submitContact(
   body: {
     locale: 'en' | 'es';
@@ -105,19 +117,22 @@ export async function submitContact(
   if (error) throw mapPgError(error);
 
   const id = data.id as string;
-  await enqueueOutbox(supabase, {
-    dedupeKey: `contact:${id}:admin`,
-    recipient: emailAdmin(),
-    locale: body.locale,
-    templateKey: 'contact_admin',
-    payload: {
-      id,
-      name: body.name,
-      email: body.email,
-      reason: body.reason ?? null,
-      message: body.message,
-    },
-  });
+  // Deferred by the anti-bot mail cap: queue it only while the backlog is small.
+  if (emailNow || (await canDefer(supabase))) {
+    await enqueueOutbox(supabase, {
+      dedupeKey: `contact:${id}:admin`,
+      recipient: emailAdmin(),
+      locale: body.locale,
+      templateKey: 'contact_admin',
+      payload: {
+        id,
+        name: body.name,
+        email: body.email,
+        reason: body.reason ?? null,
+        message: body.message,
+      },
+    });
+  }
 
   // Best-effort immediate send; outbox remains for retry/cron.
   if (emailNow) {
@@ -177,21 +192,23 @@ export async function submitCommission(
   if (error) throw mapPgError(error);
   const id = data.id as string;
 
-  await enqueueOutbox(supabase, {
-    dedupeKey: `commission:${id}:admin`,
-    recipient: emailAdmin(),
-    locale: body.locale,
-    templateKey: 'commission_admin',
-    payload: {
-      id,
-      reference,
-      name: body.name,
-      email: body.email,
-      size: body.size,
-      subjects: body.subjects,
-      message: body.message,
-    },
-  });
+  if (emailNow || (await canDefer(supabase))) {
+    await enqueueOutbox(supabase, {
+      dedupeKey: `commission:${id}:admin`,
+      recipient: emailAdmin(),
+      locale: body.locale,
+      templateKey: 'commission_admin',
+      payload: {
+        id,
+        reference,
+        name: body.name,
+        email: body.email,
+        size: body.size,
+        subjects: body.subjects,
+        message: body.message,
+      },
+    });
+  }
 
   if (emailNow) {
     try {

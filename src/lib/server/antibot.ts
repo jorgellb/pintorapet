@@ -247,6 +247,15 @@ export async function inspect(submission: Submission): Promise<Verdict> {
   return { verdict: gate.verdict, score, reasons: gate.reasons };
 }
 
+/** Tell the gate a sign-in worked: it never counts against the owner (see antibot_signed_in). */
+export async function reportSignedIn(fields: Record<string, unknown>): Promise<void> {
+  const payload = typeof fields._ab_token === 'string' ? readToken(fields._ab_token) : null;
+  const service = createServiceClient();
+  if (!payload || !service) return;
+  const { error } = await service.rpc('antibot_signed_in', { p_nonce: payload.n });
+  if (error) console.error('antibot_signed_in failed', error.message);
+}
+
 /** The posted fields without the ones the gate added, for strict schemas. */
 export function withoutAntibotFields(raw: Record<string, unknown>): Record<string, unknown> {
   const rest = { ...raw };

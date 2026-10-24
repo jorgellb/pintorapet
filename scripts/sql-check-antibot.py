@@ -106,6 +106,28 @@ try:
     cur.execute("insert into public.antibot_events (form, ip_hash, email_hash, verdict, reasons) select 'sign_in', 'o' || lpad(g::text, 39, '0'), %s, 'rate', '{rate_ip}' from generate_series(1, 30) g", (many,))
     check('rate-limited attempts do not stretch a lock-out', gate('sign_in', 'o' * 38 + '50', many, 'u' * 22 + '50')['verdict'], 'allow')
     check('one account guessed from many IPs is capped at 20', gate('sign_in', 'o' * 38 + '99', many, 'u' * 22 + '99'), {'verdict': 'rate', 'reasons': ['rate_email_spread']})
+    owner = 'c' * 40; home = 'd' * 40
+    for i in range(8):
+        gate('sign_in', home, owner, 'h' * 22 + f'{i:02d}')
+        cur.execute("select public.antibot_signed_in(%s)", ('h' * 22 + f'{i:02d}',))
+    check('signing in successfully never counts against the owner', gate('sign_in', home, owner, 'h' * 22 + '50')['verdict'], 'allow')
+    for i in range(25):
+        gate('sign_in', 'e' * 38 + f'{i:02d}', owner, 'g' * 22 + f'{i:02d}')
+    check('guessing from many IPs caps strangers', gate('sign_in', 'e' * 38 + '99', owner, 'g' * 22 + '99')['reasons'], ['rate_email_spread'])
+    check('but not the owner at home', gate('sign_in', home, owner, 'h' * 22 + '51')['verdict'], 'allow')
+
+    cur.execute("reset role")
+    cur.execute("""insert into notification_outbox (dedupe_key, recipient, locale, template_key, payload, status, next_run_at) values
+      ('abtest:contact', 'info@example.com', 'es', 'contact_admin', '{}', 'pending', now() - interval '2 days'),
+      ('abtest:order', 'ana@example.com', 'es', 'order_paid_customer', '{}', 'pending', now() - interval '1 minute')""")
+    cur.execute("select template_key from public.claim_outbox(1, 60, 'abtest')")
+    check('order emails go before notifications to the studio', cur.fetchone()[0], 'order_paid_customer')
+    as_role('anon')
+    denied('anon cannot report a sign-in', "select public.antibot_signed_in('x')")
+    as_role('authenticated', '66666666-6666-4666-8666-666666666666')
+    denied('a signed-in visitor cannot report a sign-in', "select public.antibot_signed_in('x')")
+    as_role('service_role')
+
     cur.execute("savepoint s")
     try:
         gate('nope', ip); check('unknown forms are rejected', 'accepted', 'rejected')

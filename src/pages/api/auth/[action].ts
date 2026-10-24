@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { localizedPath, type Locale } from '@/i18n/routes';
 import { passwordSchema, safeNext } from '@/lib/domain/accountProfile';
 import { authErrorKey } from '@/lib/server/account';
-import { clientIp, formFields, inspect, type AntibotForm } from '@/lib/server/antibot';
+import { clientIp, formFields, inspect, reportSignedIn, type AntibotForm } from '@/lib/server/antibot';
 import { setFlash } from '@/lib/server/flash';
 import { createUserServerClient } from '@/lib/server/supabase';
 
@@ -70,7 +70,9 @@ export const POST: APIRoute = async (context) => {
 
   if (action === 'sign-in') {
     const { error } = await client.auth.signInWithPassword({ email, password });
-    return error ? back(authErrorKey(error.message)) : redirect(next, 303);
+    if (error) return back(authErrorKey(error.message));
+    await reportSignedIn(formFields(form));
+    return redirect(next, 303);
   }
 
   if (action === 'register') {
