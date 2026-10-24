@@ -1,0 +1,983 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { loadWorks } from '@/lib/content/editorial';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
+import {
+  HERO_DESIGNS,
+  HERO_EXTRAS,
+  HERO_LINKS,
+  defaultCopy,
+  loadHeroContent,
+  resolveHero,
+  type HeroCopy,
+  type HeroDesign,
+  type HeroImage,
+} from '@/lib/content/homeHero';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const [content, works] = await Promise.all([loadHeroContent(), loadWorks()]);
+let media: Awaited<ReturnType<typeof listMedia>> = [];
+try {
+  media = await listMedia(admin.client);
+} catch {
+  media = [];
+}
+
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
+const mediaById = new Map(media.map((item) => [item.id, item]));
+const nameOf = (image: HeroImage) =>
+  image.mediaId && mediaById.get(image.mediaId)
+    ? mediaDisplayName(mediaById.get(image.mediaId)!.object_path)
+    : mediaDisplayName(image.src);
+
+// What the home shows today when a slot is left empty.
+const noImages = { ...content, images: { main: null, photo: null, extras: [] } };
+const automatic = resolveHero(noImages, works, 'es');
+const automaticCaption = {
+  es: resolveHero({ ...noImages, copy: { ...content.copy, es: { ...content.copy.es, photoCaption: '' } } }, works, 'es').photo?.caption ?? '',
+  en: resolveHero({ ...noImages, copy: { ...content.copy, en: { ...content.copy.en, photoCaption: '' } } }, works, 'en').photo?.caption ?? '',
+};
+
+const designs: Record<HeroDesign, { name: string; text: string }> = {
+  collage: {
+    name: 'Estudio',
+    text: 'El dibujo en la pared del estudio, rodeado de otros retratos y de la foto de la que salió.',
+  },
+  reveal: {
+    name: 'Revelado',
+    text: 'La foto original se convierte en el dibujo. Quien visita arrastra el lápiz para comparar.',
+  },
+  wall: {
+    name: 'En la pared',
+    text: 'Un solo dibujo enmarcado y colgado bajo un foco, con su cartela de museo.',
+  },
+  sketchbook: {
+    name: 'Cuaderno',
+    text: 'Un cuaderno de bocetos abierto sobre la mesa: las palabras a un lado, el dibujo al otro.',
+  },
+  salon: {
+    name: 'Salón',
+    text: 'Una pared llena de retratos de todos los tamaños, con el mensaje en el centro.',
+  },
+};
+
+const uses: Record<HeroDesign, string> = {
+  collage: 'Usa: imagen principal, foto original y 4 obras más.',
+  reveal: 'Usa: imagen principal y foto original.',
+  wall: 'Usa: imagen principal.',
+  sketchbook: 'Usa: imagen principal y foto original.',
+  salon: 'Usa: imagen principal y 7 obras más.',
+};
+
+const linkLabels: Record<(typeof HERO_LINKS)[number], string> = {
+  commissions: 'Encargos',
+  shop: 'Tienda',
+  work: 'Obra',
+  gallery: 'Galería extra',
+  about: 'Sobre mí',
+  contact: 'Contacto',
+};
+
+const fields: Array<{ key: keyof HeroCopy; label: string; long?: boolean; hint?: string }> = [
+  { key: 'eyebrow', label: 'Antetítulo', hint: 'La línea pequeña en mayúsculas encima del título.' },
+  { key: 'titleTop', label: 'Título · primera línea' },
+  { key: 'titleBottom', label: 'Título · segunda línea', hint: 'Sale en cursiva y en azul. Puede quedar vacía.' },
+  { key: 'lead', label: 'Mensaje', long: true },
+  { key: 'photoCaption', label: 'Pie de la foto original', hint: 'Vacío: «la foto de» y el nombre de la obra destacada.' },
+];
+
+const defaults = { es: defaultCopy('es'), en: defaultCopy('en') };
+const featuredOptions = works
+  .filter((w) => w.data.assets.some((a) => a.role === 'drawing' && a.src))
+  .map((w) => ({ id: w.id, title: w.data.title.es }))
+  .sort((a, b) => a.title.localeCompare(b.title, 'es'));
+---
+
+<AdminLayout title="Portada" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Portada</h1>
+      <p class="lead">
+        Lo primero que se ve al entrar en la web: el diseño, sus textos en los dos idiomas y sus imágenes.
+        Lo que dejes vacío toma el texto original o las imágenes de la obra destacada.
+      </p>
+    </div>
+    <a class="btn btn--quiet" href="/es/" target="_blank" rel="noreferrer">Ver la portada ↗</a>
+  </header>
+
+  <form class="hero-admin" data-hero-form novalidate>
+    <section class="panel">
+      <h2>Diseño</h2>
+      <div class="designs" role="radiogroup" aria-label="Diseño de la portada">
+        {
+          HERO_DESIGNS.map((design) => (
+            <label class="design">
+              <input type="radio" name="design" value={design} checked={content.design === design} />
+              <span class="design__art" aria-hidden="true">
+                {design === 'collage' && (
+                  <svg viewBox="0 0 120 76">
+                    <rect x="6" y="14" width="34" height="5" rx="1" />
+                    <rect x="6" y="23" width="26" height="5" rx="1" class="soft" />
+                    <rect x="54" y="18" width="42" height="30" class="sheet" transform="rotate(-2 75 33)" />
+                    <rect x="46" y="8" width="14" height="17" class="sheet" transform="rotate(-6 53 16)" />
+                    <rect x="100" y="6" width="15" height="19" class="sheet" transform="rotate(5 107 15)" />
+                    <rect x="101" y="40" width="14" height="18" class="sheet" transform="rotate(-4 108 49)" />
+                    <rect x="44" y="46" width="16" height="20" class="sheet" transform="rotate(-9 52 56)" />
+                    <path d="M58 52 q6 -8 14 -6" class="line" />
+                  </svg>
+                )}
+                {design === 'reveal' && (
+                  <svg viewBox="0 0 120 76">
+                    <rect x="6" y="20" width="36" height="6" rx="1" />
+                    <rect x="6" y="30" width="28" height="6" rx="1" class="soft" />
+                    <rect x="6" y="44" width="30" height="3" rx="1" class="soft" />
+                    <rect x="54" y="10" width="60" height="56" class="sheet" />
+                    <rect x="84" y="13" width="27" height="50" class="photo" />
+                    <path d="M84 13 V63" class="line" />
+                    <circle cx="84" cy="38" r="5" class="sheet" />
+                  </svg>
+                )}
+                {design === 'wall' && (
+                  <svg viewBox="0 0 120 76">
+                    <rect x="40" y="5" width="40" height="5" rx="1" />
+                    <rect x="46" y="13" width="28" height="5" rx="1" class="soft" />
+                    <path d="M60 23 L46 30 M60 23 L74 30" class="line" />
+                    <rect x="42" y="30" width="36" height="40" class="frame" />
+                    <rect x="47" y="35" width="26" height="30" class="sheet" />
+                    <rect x="84" y="52" width="16" height="10" class="sheet" />
+                    <rect x="12" y="44" width="22" height="3" rx="1" class="soft" />
+                    <rect x="16" y="50" width="18" height="3" rx="1" class="soft" />
+                  </svg>
+                )}
+                {design === 'sketchbook' && (
+                  <svg viewBox="0 0 120 76">
+                    <rect x="0" y="0" width="120" height="76" class="kraft" />
+                    <rect x="10" y="10" width="100" height="56" class="sheet" />
+                    <path d="M60 12 V64" class="dots" />
+                    <rect x="17" y="24" width="30" height="5" rx="1" />
+                    <rect x="17" y="33" width="22" height="5" rx="1" class="soft" />
+                    <rect x="17" y="46" width="28" height="3" rx="1" class="soft" />
+                    <rect x="68" y="20" width="36" height="28" class="photo" transform="rotate(2 86 34)" />
+                    <rect x="66" y="44" width="13" height="15" class="sheet edge" transform="rotate(-8 72 51)" />
+                  </svg>
+                )}
+                {design === 'salon' && (
+                  <svg viewBox="0 0 120 76">
+                    <rect x="4" y="8" width="32" height="28" class="frame" />
+                    <rect x="40" y="8" width="42" height="40" class="sheet edge" />
+                    <rect x="46" y="18" width="26" height="5" rx="1" />
+                    <rect x="46" y="27" width="20" height="4" rx="1" class="soft" />
+                    <rect x="86" y="6" width="30" height="20" class="oak" />
+                    <rect x="86" y="30" width="20" height="20" class="frame" />
+                    <rect x="4" y="52" width="16" height="20" class="oak" />
+                    <rect x="24" y="52" width="26" height="20" class="frame" />
+                    <rect x="54" y="52" width="16" height="20" class="sheet edge" />
+                    <rect x="74" y="54" width="16" height="18" class="frame" />
+                    <rect x="94" y="54" width="22" height="18" class="oak" />
+                  </svg>
+                )}
+              </span>
+              <span class="design__name">{designs[design].name}</span>
+              <span class="design__text">{designs[design].text}</span>
+              <span class="design__uses">{uses[design]}</span>
+            </label>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="panel preview">
+      <div class="preview__head">
+        <h2>Vista previa</h2>
+        <div class="preview__langs" role="group" aria-label="Idioma de la vista previa">
+          <button type="button" class="btn--quiet" data-preview-lang="es" aria-pressed="true">Español</button>
+          <button type="button" class="btn--quiet" data-preview-lang="en" aria-pressed="false">Inglés</button>
+        </div>
+      </div>
+      <p class="hint">
+        Muestra el diseño elegido con lo que ya está guardado. Guarda para ver aquí tus cambios de texto e
+        imágenes.
+      </p>
+      <div class="preview__screen">
+        <iframe
+          title="Vista previa de la portada"
+          src={`/es/?portada=${content.design}`}
+          loading="lazy"
+          data-preview
+        ></iframe>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Textos</h2>
+      <div class="copy-grid">
+        <span></span>
+        <span class="copy-grid__lang">Español</span>
+        <span class="copy-grid__lang">Inglés</span>
+        {
+          fields.map((field) => (
+            <>
+              <span class="copy-grid__label">
+                {field.label}
+                {field.hint && <span class="hint">{field.hint}</span>}
+              </span>
+              {(['es', 'en'] as const).map((lang) =>
+                field.long ? (
+                  <textarea
+                    name={`${lang}.${field.key}`}
+                    rows="4"
+                    maxlength="400"
+                    placeholder={defaults[lang][field.key]}
+                    aria-label={`${field.label} (${lang === 'es' ? 'español' : 'inglés'})`}
+                  >{content.copy[lang][field.key]}</textarea>
+                ) : (
+                  <input
+                    name={`${lang}.${field.key}`}
+                    value={content.copy[lang][field.key]}
+                    maxlength={field.key === 'photoCaption' ? 60 : 80}
+                    placeholder={field.key === 'photoCaption' ? automaticCaption[lang] : defaults[lang][field.key]}
+                    aria-label={`${field.label} (${lang === 'es' ? 'español' : 'inglés'})`}
+                  />
+                ),
+              )}
+            </>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Botones</h2>
+      <div class="buttons-grid">
+        {
+          (
+            [
+              { key: 'primary', title: 'Botón principal', label: 'primaryLabel', link: content.primaryLink },
+              { key: 'secondary', title: 'Botón secundario', label: 'secondaryLabel', link: content.secondaryLink },
+            ] as const
+          ).map((button) => (
+            <fieldset>
+              <legend>{button.title}</legend>
+              <div class="pair">
+                <label>
+                  Texto
+                  <input name={`es.${button.label}`} value={content.copy.es[button.label]} maxlength="40" placeholder={defaults.es[button.label]} />
+                </label>
+                <label>
+                  Texto en inglés
+                  <input name={`en.${button.label}`} value={content.copy.en[button.label]} maxlength="40" placeholder={defaults.en[button.label]} />
+                </label>
+              </div>
+              <label>
+                Lleva a
+                <select name={`${button.key}Link`}>
+                  {HERO_LINKS.map((link) => (
+                    <option value={link} selected={button.link === link}>
+                      {linkLabels[link]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </fieldset>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Obra destacada y cartela</h2>
+      <p class="hint">
+        La cartela nombra la obra y enlaza a su ficha. Si no eliges imágenes, la portada usa el dibujo y la foto
+        de esta obra.
+      </p>
+      <label>
+        Obra destacada
+        <select name="featuredWork">
+          {featuredOptions.map((option) => <option value={option.id} selected={content.featuredWork === option.id}>{option.title}</option>)}
+        </select>
+      </label>
+      <div class="pair">
+        <label>
+          Etiqueta
+          <input name="es.plaqueLabel" value={content.copy.es.plaqueLabel} maxlength="40" placeholder={defaults.es.plaqueLabel} />
+        </label>
+        <label>
+          Etiqueta en inglés
+          <input name="en.plaqueLabel" value={content.copy.en.plaqueLabel} maxlength="40" placeholder={defaults.en.plaqueLabel} />
+        </label>
+      </div>
+      <div class="pair">
+        <label>
+          Nota
+          <input name="es.plaqueNote" value={content.copy.es.plaqueNote} maxlength="60" placeholder={defaults.es.plaqueNote} />
+        </label>
+        <label>
+          Nota en inglés
+          <input name="en.plaqueNote" value={content.copy.en.plaqueNote} maxlength="60" placeholder={defaults.en.plaqueNote} />
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Imágenes</h2>
+      <p class="hint">
+        Elige o sube las imágenes en Medios. Si dejas una vacía, se usa la de la obra destacada.
+      </p>
+
+      <div class="slots">
+        {
+          (
+            [
+              { key: 'main', title: 'Imagen principal', image: content.images.main, auto: automatic.main },
+              { key: 'photo', title: 'Foto original', image: content.images.photo, auto: automatic.photo },
+            ] as const
+          ).map((slot) => (
+            <div class="slot" data-slot={slot.key} data-auto-src={slot.auto?.src ?? ''}>
+              <h3>{slot.title}</h3>
+              <button type="button" class="slot__image" data-slot-choose title="Elegir de Medios">
+                <img src={slot.image?.src ?? slot.auto?.src} alt="" data-slot-thumb />
+                <span class="slot__badge" data-slot-badge hidden={Boolean(slot.image)}>
+                  De la obra destacada
+                </span>
+              </button>
+              <input type="hidden" data-slot-media value={slot.image?.mediaId ?? ''} />
+              <input type="hidden" data-slot-src value={slot.image?.src ?? ''} />
+              <p class="slot__name" data-slot-name>{slot.image ? nameOf(slot.image) : 'Automática'}</p>
+              <div class="pair">
+                <label>
+                  Texto alternativo
+                  <input data-slot-alt="es" value={slot.image?.altEs ?? ''} maxlength="300" />
+                </label>
+                <label>
+                  En inglés
+                  <input data-slot-alt="en" value={slot.image?.altEn ?? ''} maxlength="300" />
+                </label>
+              </div>
+              <div class="slot__actions">
+                <button type="button" class="btn--quiet" data-slot-choose>Elegir de Medios</button>
+                <button type="button" class="btn--quiet" data-slot-clear hidden={!slot.image}>
+                  Usar la de la obra destacada
+                </button>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      <h3 class="extras__title">Obras de alrededor</h3>
+      <p class="hint">
+        Las usan Estudio ({HERO_EXTRAS.collage}) y Salón ({HERO_EXTRAS.salon}). Si eliges menos, se completan con
+        tus obras.
+      </p>
+      <ol class="extras" data-extras>
+        {
+          content.images.extras.map((image) => (
+            <li class="extra" data-extra data-media={image.mediaId ?? ''} data-src={image.src}>
+              <img src={image.src} alt="" />
+              <div class="extra__fields">
+                <span class="extra__name">{nameOf(image)}</span>
+                <input data-extra-alt="es" value={image.altEs} maxlength="300" placeholder="Texto alternativo" aria-label="Texto alternativo" />
+                <input data-extra-alt="en" value={image.altEn} maxlength="300" placeholder="En inglés" aria-label="Texto alternativo en inglés" />
+              </div>
+              <div class="extra__actions">
+                <button type="button" class="btn--quiet" data-extra-up aria-label="Mover antes">↑</button>
+                <button type="button" class="btn--quiet" data-extra-down aria-label="Mover después">↓</button>
+                <button type="button" class="btn--quiet btn--danger" data-extra-remove>Quitar</button>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+      <template data-extra-template>
+        <li class="extra" data-extra data-media="" data-src="">
+          <img src="" alt="" />
+          <div class="extra__fields">
+            <span class="extra__name"></span>
+            <input data-extra-alt="es" maxlength="300" placeholder="Texto alternativo" aria-label="Texto alternativo" />
+            <input data-extra-alt="en" maxlength="300" placeholder="En inglés" aria-label="Texto alternativo en inglés" />
+          </div>
+          <div class="extra__actions">
+            <button type="button" class="btn--quiet" data-extra-up aria-label="Mover antes">↑</button>
+            <button type="button" class="btn--quiet" data-extra-down aria-label="Mover después">↓</button>
+            <button type="button" class="btn--quiet btn--danger" data-extra-remove>Quitar</button>
+          </div>
+        </li>
+      </template>
+      <button type="button" class="btn--quiet" data-extras-add>Añadir desde Medios</button>
+    </section>
+
+    <div class="savebar">
+      <button type="submit">Guardar portada</button>
+      <p class="status" data-hero-status role="status" hidden></p>
+    </div>
+  </form>
+
+  <MediaPicker items={pickerItems} defaultBucket="portfolio-public" />
+</AdminLayout>
+
+<style>
+  .hero-admin {
+    display: grid;
+    gap: 1.25rem;
+    padding-bottom: 5rem;
+  }
+
+  /* ——— Design cards ——— */
+  .designs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: 0.9rem;
+  }
+
+  .design {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 0.4rem;
+    padding: 0.8rem;
+    border: 2px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+
+  .design:hover {
+    border-color: var(--line-strong);
+  }
+
+  .design:has(input:checked) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .design:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .design input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .design__art svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 0.4rem;
+    background: #fff;
+  }
+
+  .design__art rect {
+    fill: var(--ink);
+  }
+
+  .design__art .soft {
+    fill: #9da1aa;
+  }
+
+  .design__art .sheet {
+    fill: #fff;
+    stroke: #c9c9c3;
+    stroke-width: 1;
+  }
+
+  .design__art .edge {
+    stroke: #9da1aa;
+  }
+
+  .design__art .photo {
+    fill: #c8a882;
+  }
+
+  .design__art .frame {
+    fill: var(--ink);
+  }
+
+  .design__art .oak {
+    fill: #b08a5a;
+  }
+
+  .design__art .kraft {
+    fill: #d6b98c;
+  }
+
+  .design__art .line,
+  .design__art .dots {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1;
+  }
+
+  .design__art .dots {
+    stroke-width: 3;
+    stroke-dasharray: 1 3;
+    stroke-linecap: round;
+  }
+
+  .design__name {
+    font-weight: 600;
+  }
+
+  .design__text,
+  .design__uses {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .design__uses {
+    font-size: 0.76rem;
+  }
+
+  /* ——— Preview ——— */
+  .preview__head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .preview__head h2 {
+    margin: 0;
+  }
+
+  .preview__langs {
+    display: flex;
+    gap: 0.4rem;
+  }
+
+  .preview__langs [aria-pressed='true'] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  /* the page at desktop width, scaled down to fit */
+  .preview__screen {
+    --scale: 0.5;
+    position: relative;
+    overflow: hidden;
+    height: calc(900px * var(--scale));
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+    container-type: inline-size;
+  }
+
+  .preview__screen iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1440px;
+    height: 900px;
+    border: 0;
+    transform: scale(var(--scale));
+    transform-origin: 0 0;
+  }
+
+  /* ——— Texts ——— */
+  .copy-grid {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem 1rem;
+    align-items: start;
+  }
+
+  .copy-grid__lang {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .copy-grid__label {
+    display: grid;
+    gap: 0.2rem;
+    padding-top: 0.55rem;
+    font-weight: 500;
+  }
+
+  .copy-grid__label .hint {
+    font-weight: 400;
+  }
+
+  @media (max-width: 48rem) {
+    .copy-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .copy-grid > span:empty,
+    .copy-grid__lang {
+      display: none;
+    }
+  }
+
+  .buttons-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: 1rem;
+  }
+
+  /* ——— Image slots ——— */
+  .slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .slot {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .slot h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .slot__image {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    background: var(--paper-deep);
+  }
+
+  .slot__image:hover {
+    border-color: var(--accent);
+    background: var(--paper-deep);
+  }
+
+  .slot__image img {
+    display: block;
+    width: 100%;
+    height: 12rem;
+    object-fit: contain;
+  }
+
+  .slot__badge {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.92);
+    color: var(--ink-soft);
+    font-size: 0.72rem;
+  }
+
+  .slot__badge[hidden] {
+    display: none;
+  }
+
+  .slot__name {
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .slot__actions,
+  .extra__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .slot__actions button,
+  .extra__actions button {
+    min-height: 2rem;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .slot__actions [hidden] {
+    display: none;
+  }
+
+  .extras__title {
+    margin: 0 0 0.25rem;
+    font-size: 1rem;
+  }
+
+  .extras {
+    display: grid;
+    gap: 0.6rem;
+    margin: 0.75rem 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .extra {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .extra img {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 0.4rem;
+    background: var(--paper-deep);
+    object-fit: contain;
+  }
+
+  .extra__fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem 0.6rem;
+  }
+
+  .extra__name {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .extra:first-child [data-extra-up],
+  .extra:last-child [data-extra-down] {
+    visibility: hidden;
+  }
+
+  @media (max-width: 40rem) {
+    .extra {
+      grid-template-columns: 4.5rem minmax(0, 1fr);
+    }
+
+    .extra__fields {
+      grid-template-columns: 1fr;
+    }
+
+    .extra__actions {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* ——— Save bar, always at hand ——— */
+  .savebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: rgb(255 255 255 / 0.96);
+    box-shadow: 0 -8px 24px -18px rgb(22 23 26 / 0.4);
+  }
+
+  .savebar .status {
+    margin: 0;
+  }
+</style>
+
+<script>
+  import { pickMedia, type PickedMedia } from '@/lib/admin/mediaPicker';
+
+  const MAX_EXTRAS = 7;
+  const form = document.querySelector<HTMLFormElement>('[data-hero-form]');
+
+  if (form) {
+    const status = form.querySelector<HTMLElement>('[data-hero-status]')!;
+    const say = (text: string) => {
+      status.hidden = false;
+      status.textContent = text;
+    };
+
+    // ——— Preview: design and language ———
+    const frame = form.querySelector<HTMLIFrameElement>('[data-preview]');
+    const screen = frame?.parentElement;
+    let lang = 'es';
+    const design = () => form.querySelector<HTMLInputElement>('input[name="design"]:checked')?.value ?? 'collage';
+    const refresh = () => {
+      if (frame) frame.src = `/${lang}/?portada=${design()}&t=${Date.now()}`;
+    };
+    const fit = () => {
+      if (screen) screen.style.setProperty('--scale', String(Math.min(1, screen.clientWidth / 1440)));
+    };
+    fit();
+    new ResizeObserver(fit).observe(screen ?? form);
+    form.querySelectorAll<HTMLInputElement>('input[name="design"]').forEach((input) => input.addEventListener('change', refresh));
+    form.querySelectorAll<HTMLButtonElement>('[data-preview-lang]').forEach((button) => {
+      button.addEventListener('click', () => {
+        lang = button.dataset.previewLang ?? 'es';
+        form.querySelectorAll('[data-preview-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
+        refresh();
+      });
+    });
+
+    // ——— Image slots (main, photo) ———
+    form.querySelectorAll<HTMLElement>('[data-slot]').forEach((slot) => {
+      const media = slot.querySelector<HTMLInputElement>('[data-slot-media]')!;
+      const src = slot.querySelector<HTMLInputElement>('[data-slot-src]')!;
+      const thumb = slot.querySelector<HTMLImageElement>('[data-slot-thumb]')!;
+      const badge = slot.querySelector<HTMLElement>('[data-slot-badge]')!;
+      const name = slot.querySelector<HTMLElement>('[data-slot-name]')!;
+      const clear = slot.querySelector<HTMLButtonElement>('[data-slot-clear]')!;
+      const alt = (lng: 'es' | 'en') => slot.querySelector<HTMLInputElement>(`[data-slot-alt="${lng}"]`)!;
+      const set = (item: PickedMedia | null) => {
+        media.value = item?.id ?? '';
+        src.value = item?.url ?? '';
+        thumb.src = item?.url || slot.dataset.autoSrc || '';
+        badge.hidden = Boolean(item);
+        clear.hidden = !item;
+        name.textContent = item ? item.name : 'Automática';
+        if (item) {
+          if (!alt('es').value.trim()) alt('es').value = item.altEs;
+          if (!alt('en').value.trim()) alt('en').value = item.altEn;
+        } else {
+          alt('es').value = '';
+          alt('en').value = '';
+        }
+      };
+      slot.querySelectorAll('[data-slot-choose]').forEach((button) =>
+        button.addEventListener('click', async () => {
+          const [item] = await pickMedia({ bucket: 'portfolio-public' });
+          if (item) set(item);
+        }),
+      );
+      clear.addEventListener('click', () => set(null));
+    });
+
+    // ——— Extras ———
+    const extras = form.querySelector<HTMLOListElement>('[data-extras]')!;
+    const template = form.querySelector<HTMLTemplateElement>('[data-extra-template]')!;
+    const addButton = form.querySelector<HTMLButtonElement>('[data-extras-add]')!;
+    const syncAdd = () => {
+      const count = extras.querySelectorAll('[data-extra]').length;
+      addButton.disabled = count >= MAX_EXTRAS;
+      addButton.textContent = count >= MAX_EXTRAS ? `Máximo ${MAX_EXTRAS} obras` : 'Añadir desde Medios';
+    };
+    const wire = (row: HTMLElement) => {
+      row.querySelector('[data-extra-remove]')?.addEventListener('click', () => {
+        row.remove();
+        syncAdd();
+      });
+      row.querySelector('[data-extra-up]')?.addEventListener('click', () => row.previousElementSibling?.before(row));
+      row.querySelector('[data-extra-down]')?.addEventListener('click', () => row.nextElementSibling?.after(row));
+    };
+    extras.querySelectorAll<HTMLElement>('[data-extra]').forEach(wire);
+    syncAdd();
+    addButton.addEventListener('click', async () => {
+      const taken = [...extras.querySelectorAll<HTMLElement>('[data-extra]')].map((row) => row.dataset.media ?? '');
+      const picked = await pickMedia({ multiple: true, bucket: 'portfolio-public', exclude: taken });
+      for (const item of picked.slice(0, MAX_EXTRAS - taken.length)) {
+        const row = template.content.firstElementChild?.cloneNode(true) as HTMLElement | undefined;
+        if (!row) continue;
+        row.dataset.media = item.id;
+        row.dataset.src = item.url;
+        row.querySelector('img')!.src = item.url;
+        row.querySelector('.extra__name')!.textContent = item.name;
+        row.querySelector<HTMLInputElement>('[data-extra-alt="es"]')!.value = item.altEs;
+        row.querySelector<HTMLInputElement>('[data-extra-alt="en"]')!.value = item.altEn;
+        extras.append(row);
+        wire(row);
+      }
+      syncAdd();
+    });
+
+    // ——— Save ———
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const value = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | null)?.value ?? '';
+      const copy = (lng: 'es' | 'en') =>
+        Object.fromEntries(
+          ['eyebrow', 'titleTop', 'titleBottom', 'lead', 'primaryLabel', 'secondaryLabel', 'plaqueLabel', 'plaqueNote', 'photoCaption'].map(
+            (key) => [key, value(`${lng}.${key}`)],
+          ),
+        );
+      const slot = (key: string) => {
+        const el = form.querySelector<HTMLElement>(`[data-slot="${key}"]`)!;
+        const src = el.querySelector<HTMLInputElement>('[data-slot-src]')!.value;
+        if (!src) return null;
+        return {
+          mediaId: el.querySelector<HTMLInputElement>('[data-slot-media]')!.value || null,
+          src,
+          altEs: el.querySelector<HTMLInputElement>('[data-slot-alt="es"]')!.value,
+          altEn: el.querySelector<HTMLInputElement>('[data-slot-alt="en"]')!.value,
+        };
+      };
+      const payload = {
+        design: design(),
+        copy: { es: copy('es'), en: copy('en') },
+        primaryLink: value('primaryLink'),
+        secondaryLink: value('secondaryLink'),
+        featuredWork: value('featuredWork') || null,
+        images: {
+          main: slot('main'),
+          photo: slot('photo'),
+          extras: [...extras.querySelectorAll<HTMLElement>('[data-extra]')].map((row) => ({
+            mediaId: row.dataset.media || null,
+            src: row.dataset.src ?? '',
+            altEs: row.querySelector<HTMLInputElement>('[data-extra-alt="es"]')!.value,
+            altEn: row.querySelector<HTMLInputElement>('[data-extra-alt="en"]')!.value,
+          })),
+        },
+      };
+      const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      button.disabled = true;
+      say('Guardando…');
+      const res = await fetch('/api/admin/home-hero/', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      button.disabled = false;
+      if (!res?.ok) {
+        say(data?.error?.message ?? 'No se pudo guardar. Revisa la conexión e inténtalo de nuevo.');
+        return;
+      }
+      say('Portada guardada. Ya se ve en la web.');
+      refresh();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  }
+</script>

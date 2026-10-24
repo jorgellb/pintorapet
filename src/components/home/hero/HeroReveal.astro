@@ -1,0 +1,458 @@
+---
+import type { Locale } from '@/i18n';
+import type { ResolvedHero } from '@/lib/content/homeHero';
+
+/**
+ * Design 2 · Revelado: the original photo turns into the drawing. A pencil
+ * sweeps across once on arrival, then the visitor can drag it (or use the
+ * keyboard) to compare. Without a photo the drawing simply appears.
+ */
+interface Props {
+  hero: ResolvedHero;
+  locale: Locale;
+}
+
+const { hero, locale } = Astro.props;
+const es = locale === 'es';
+const photo = hero.photo;
+const main = hero.main;
+---
+
+<section class="reveal">
+  <div class="site-shell reveal__grid">
+    <div class="reveal__text">
+      <p class="reveal__eyebrow">{hero.eyebrow}</p>
+      <h1 class="reveal__title display">
+        <span>{hero.titleTop}</span>
+        {hero.titleBottom && <em>{hero.titleBottom}</em>}
+      </h1>
+      <p class="reveal__lead">{hero.lead}</p>
+      <div class="reveal__cta">
+        <a class="btn" href={hero.primary.href}>{hero.primary.label}</a>
+        <a class="btn btn--ghost" href={hero.secondary.href}>{hero.secondary.label}</a>
+      </div>
+      {
+        hero.plaque && (
+          <p class="reveal__plaque">
+            <span>{hero.plaque.label}</span>
+            <a href={hero.plaque.href}>{hero.plaque.title}</a>
+            <span>{hero.plaque.note}</span>
+          </p>
+        )
+      }
+    </div>
+
+    {
+      main && (
+        <figure class:list={['reveal__stage', { 'reveal__stage--solo': !photo }]} data-reveal style="--cut: 54%">
+          <div class="reveal__sheet">
+            <div class="reveal__frame">
+              {photo && <img class="reveal__photo" src={photo.src} alt={photo.alt} fetchpriority="high" decoding="async" />}
+              <img
+                class="reveal__drawing"
+                src={main.src}
+                alt={main.alt}
+                fetchpriority="high"
+                decoding="async"
+                style={main.workId ? `view-transition-name: work-${main.workId}` : undefined}
+              />
+              {
+                photo && (
+                  <>
+                    <span class="reveal__tag reveal__tag--drawing" aria-hidden="true">
+                      {es ? 'Dibujo' : 'Drawing'}
+                    </span>
+                    <span class="reveal__tag reveal__tag--photo" aria-hidden="true">
+                      {es ? 'Foto' : 'Photo'}
+                    </span>
+                    <span class="reveal__line" aria-hidden="true">
+                      <span class="reveal__pencil">
+                        <svg viewBox="0 0 24 24">
+                          <path d="M4 20l1.2-4.6L15.6 5a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z" />
+                          <path d="M13.5 7.1l3.4 3.4M5.2 15.4l3.4 3.4" />
+                        </svg>
+                      </span>
+                    </span>
+                    <input
+                      class="reveal__range"
+                      type="range"
+                      min="0"
+                      max="100"
+                      value="54"
+                      aria-label={es ? 'Comparar la foto y el dibujo' : 'Compare the photo and the drawing'}
+                      data-reveal-range
+                    />
+                  </>
+                )
+              }
+            </div>
+          </div>
+          {photo && <figcaption class="reveal__caption">{photo.caption}</figcaption>}
+        </figure>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .reveal {
+    position: relative;
+    padding-block: clamp(1.5rem, 4vw, 3rem) clamp(4rem, 8vw, 6.5rem);
+    overflow: clip;
+  }
+
+  .reveal__grid {
+    display: grid;
+    gap: clamp(2rem, 4vw, 3.5rem);
+    align-items: center;
+  }
+
+  .reveal__text {
+    display: grid;
+    gap: 1.4rem;
+    max-width: 34rem;
+    animation: reveal-rise 1s var(--ease-out) 0.1s both;
+  }
+
+  .reveal__eyebrow {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .reveal__eyebrow::before {
+    content: '';
+    flex: none;
+    width: 2.25rem;
+    height: 1px;
+    background: currentColor;
+  }
+
+  .reveal__title {
+    margin: 0;
+    font-size: clamp(2.8rem, 5.4vw, 6.25rem);
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+
+  .reveal__title span,
+  .reveal__title em {
+    display: block;
+  }
+
+  .reveal__title em {
+    font-weight: 400;
+    color: var(--accent-deep);
+  }
+
+  .reveal__lead {
+    margin: 0;
+    font-size: clamp(1.05rem, 1.15vw, 1.2rem);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .reveal__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .reveal__plaque {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.2rem 0.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .reveal__plaque span:first-child {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .reveal__plaque a {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.2rem;
+    color: var(--ink);
+  }
+
+  .reveal__plaque a + span::before {
+    content: '— ';
+  }
+
+  /* ——— The stage: one sheet, two states of the same portrait ——— */
+  .reveal__stage {
+    --cut: 54%;
+    position: relative;
+    margin: 0;
+    animation: reveal-rise 1.1s var(--ease-out) 0.25s both;
+  }
+
+  .reveal__sheet {
+    position: relative;
+    padding: clamp(0.5rem, 1.1vw, 0.95rem);
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    rotate: -0.6deg;
+  }
+
+  /* washi tape at two corners */
+  .reveal__sheet::before,
+  .reveal__sheet::after {
+    content: '';
+    position: absolute;
+    z-index: 3;
+    top: -0.75rem;
+    width: 22%;
+    height: 1.4rem;
+    background: rgb(214 220 232 / 0.75);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+  }
+
+  .reveal__sheet::before {
+    left: -1.5%;
+    rotate: -8deg;
+  }
+
+  .reveal__sheet::after {
+    right: -1.5%;
+    rotate: 7deg;
+  }
+
+  .reveal__frame {
+    position: relative;
+    aspect-ratio: 4 / 3.3;
+    overflow: hidden;
+    background: var(--paper-deep);
+    touch-action: pan-y;
+  }
+
+  .reveal__frame img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 35%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* the drawing covers the photo up to the pencil */
+  .reveal__drawing {
+    clip-path: inset(0 calc(100% - var(--cut)) 0 0);
+    background: var(--sheet);
+  }
+
+  .reveal__stage--solo .reveal__drawing {
+    clip-path: none;
+    object-fit: contain;
+    -webkit-mask-image: linear-gradient(100deg, #000 42%, transparent 58%);
+    mask-image: linear-gradient(100deg, #000 42%, transparent 58%);
+    -webkit-mask-size: 280% 100%;
+    mask-size: 280% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    animation: reveal-draw 2.8s cubic-bezier(0.45, 0.05, 0.25, 1) 0.6s both;
+  }
+
+  .reveal__line {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    bottom: 0;
+    left: var(--cut);
+    width: 2px;
+    translate: -1px 0;
+    background: var(--ink);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.6);
+    pointer-events: none;
+  }
+
+  .reveal__pencil {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    translate: -50% -50%;
+    border-radius: 50%;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    transition: scale var(--dur-ui) var(--ease-out);
+  }
+
+  .reveal__pencil svg {
+    width: 1.35rem;
+    height: 1.35rem;
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .reveal__stage:hover .reveal__pencil,
+  .reveal__range:focus-visible ~ .reveal__line .reveal__pencil {
+    scale: 1.08;
+  }
+
+  .reveal__range {
+    position: absolute;
+    z-index: 4;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: ew-resize;
+  }
+
+  .reveal__frame:has(.reveal__range:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  .reveal__tag {
+    position: absolute;
+    z-index: 1;
+    bottom: 0.8rem;
+    padding: 0.25rem 0.6rem;
+    background: rgb(255 255 255 / 0.88);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .reveal__tag--drawing {
+    left: 0.8rem;
+  }
+
+  .reveal__tag--photo {
+    right: 0.8rem;
+  }
+
+  .reveal__caption {
+    margin-top: 1rem;
+    text-align: right;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--muted);
+  }
+
+  @keyframes reveal-rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.6rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes reveal-draw {
+    from {
+      -webkit-mask-position: 100% 0;
+      mask-position: 100% 0;
+    }
+    to {
+      -webkit-mask-position: 0 0;
+      mask-position: 0 0;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .reveal {
+      display: grid;
+      align-items: center;
+      min-height: calc(100svh - 12.5rem);
+      padding-top: 0;
+    }
+
+    .reveal__grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      column-gap: clamp(2.5rem, 5vw, 5rem);
+    }
+
+    .reveal__stage {
+      width: min(100%, calc(70svh * 4 / 3.3));
+      justify-self: end;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal__text,
+    .reveal__stage,
+    .reveal__stage--solo .reveal__drawing {
+      animation: none;
+    }
+
+    .reveal__stage--solo .reveal__drawing {
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+  }
+</style>
+
+<script>
+  const stage = document.querySelector<HTMLElement>('[data-reveal]');
+  const range = stage?.querySelector<HTMLInputElement>('[data-reveal-range]');
+  if (stage && range) {
+    const set = (value: number) => stage.style.setProperty('--cut', `${value}%`);
+    let touched = false;
+    range.addEventListener('input', () => {
+      touched = true;
+      set(Number(range.value));
+    });
+
+    // Once, on arrival: the pencil draws the portrait over the photo, then rests in the middle.
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!calm) {
+      const keyframes = [
+        { at: 0, value: 0 },
+        { at: 2200, value: 100 },
+        { at: 3300, value: Number(range.value) },
+      ];
+      const ease = (x: number) => 1 - Math.pow(1 - x, 3);
+      let start = 0;
+      set(0);
+      const step = (now: number) => {
+        if (touched) return;
+        start ||= now;
+        const elapsed = now - start;
+        const next = keyframes.findIndex((frame) => frame.at > elapsed);
+        if (next === -1) {
+          set(keyframes[keyframes.length - 1].value);
+          return;
+        }
+        const from = keyframes[next - 1];
+        const to = keyframes[next];
+        const progress = ease((elapsed - from.at) / (to.at - from.at));
+        set(from.value + (to.value - from.value) * progress);
+        requestAnimationFrame(step);
+      };
+      setTimeout(() => requestAnimationFrame(step), 600);
+    }
+  }
+</script>

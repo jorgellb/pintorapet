@@ -1,0 +1,360 @@
+---
+import type { Locale } from '@/i18n';
+import type { ResolvedHero } from '@/lib/content/homeHero';
+
+/**
+ * Design 4 · Cuaderno: an open spiral sketchbook on the kraft desk. The left
+ * page carries the words, the right page the drawing taped in, with the
+ * original photo tucked at its corner. The right page turns open on arrival.
+ */
+interface Props {
+  hero: ResolvedHero;
+  locale: Locale;
+}
+
+const { hero } = Astro.props;
+---
+
+<section class="book">
+  <div class="site-shell">
+    <div class="book__spread">
+      <div class="book__page book__page--left">
+        <p class="book__eyebrow">{hero.eyebrow}</p>
+        <h1 class="book__title display">
+          <span>{hero.titleTop}</span>
+          {hero.titleBottom && <em>{hero.titleBottom}</em>}
+        </h1>
+        <p class="book__lead">{hero.lead}</p>
+        <div class="book__cta">
+          <a class="btn" href={hero.primary.href}>{hero.primary.label}</a>
+          <a class="btn btn--ghost" href={hero.secondary.href}>{hero.secondary.label}</a>
+        </div>
+        {
+          hero.plaque && (
+            <p class="book__note">
+              {hero.plaque.label} · <a href={hero.plaque.href}>{hero.plaque.title}</a>, {hero.plaque.note}
+            </p>
+          )
+        }
+      </div>
+
+      <span class="book__spiral" aria-hidden="true"></span>
+
+      <div class="book__page book__page--right">
+        {
+          hero.main && (
+            <figure class="book__drawing">
+              <img
+                src={hero.main.src}
+                alt={hero.main.alt}
+                fetchpriority="high"
+                decoding="async"
+                style={hero.main.workId ? `view-transition-name: work-${hero.main.workId}` : undefined}
+              />
+            </figure>
+          )
+        }
+        {
+          hero.photo && (
+            <figure class="book__photo">
+              <img src={hero.photo.src} alt={hero.photo.alt} decoding="async" />
+              <figcaption>{hero.photo.caption}</figcaption>
+            </figure>
+          )
+        }
+      </div>
+    </div>
+  </div>
+
+  <svg class="book__pencil" viewBox="0 0 400 24" aria-hidden="true">
+    <rect x="40" y="3" width="300" height="18" rx="2" fill="#2c3854" />
+    <rect x="40" y="3" width="300" height="6" fill="#3f4f73" />
+    <rect x="300" y="2" width="40" height="20" fill="#c9c9c3" />
+    <path d="M40 3 L4 12 L40 21 Z" fill="#e8d3ad" />
+    <path d="M14 9.5 L4 12 L14 14.5 Z" fill="#16171a" />
+    <rect x="340" y="3" width="26" height="18" rx="3" fill="#d98c8c" />
+  </svg>
+</section>
+
+<style>
+  .book {
+    position: relative;
+    padding-block: clamp(2rem, 4vw, 3.5rem) clamp(4rem, 8vw, 6.5rem);
+    overflow: clip;
+    /* the kraft desk, lit from the upper left */
+    background:
+      radial-gradient(ellipse 70% 60% at 30% 20%, rgb(255 255 255 / 0.28), transparent 70%),
+      #d6b98c;
+  }
+
+  .book__spread {
+    --gutter: clamp(1.4rem, 2.4vw, 2rem);
+    position: relative;
+    display: grid;
+    max-width: 78rem;
+    margin-inline: auto;
+    perspective: 2200px;
+    filter: drop-shadow(0 30px 40px rgb(60 42 20 / 0.32)) drop-shadow(0 2px 3px rgb(60 42 20 / 0.25));
+  }
+
+  .book__page {
+    position: relative;
+    padding: clamp(1.75rem, 4vw, 3.5rem);
+    background: #fbfaf6;
+  }
+
+  .book__page--left {
+    display: grid;
+    align-content: center;
+    gap: 1.3rem;
+    /* the page curves down into the gutter */
+    background: linear-gradient(90deg, #fbfaf6 80%, #eceae2);
+    animation: book-rise 0.9s var(--ease-out) 0.1s both;
+  }
+
+  .book__page--right {
+    display: grid;
+    place-items: center;
+    background: linear-gradient(270deg, #fbfaf6 80%, #eceae2);
+    transform-origin: 0 50%;
+    animation: book-open 1.4s cubic-bezier(0.25, 0.8, 0.25, 1) 0.35s both;
+  }
+
+  /* the wire spiral down the middle */
+  .book__spiral {
+    position: absolute;
+    z-index: 2;
+    top: 1.2rem;
+    bottom: 1.2rem;
+    left: 50%;
+    width: var(--gutter);
+    translate: -50% 0;
+    background:
+      radial-gradient(circle at 50% 50%, transparent 0 32%, #5f636c 34% 46%, transparent 48%) 0 0 / 100% 1.6rem repeat-y;
+    pointer-events: none;
+  }
+
+  .book__eyebrow {
+    margin: 0;
+    font-size: 0.74rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .book__title {
+    margin: 0;
+    font-size: clamp(2.5rem, 4.4vw, 5rem);
+    line-height: 0.96;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+
+  .book__title span,
+  .book__title em {
+    display: block;
+  }
+
+  .book__title em {
+    font-weight: 400;
+    color: var(--accent-deep);
+  }
+
+  .book__lead {
+    margin: 0;
+    max-width: 30rem;
+    font-size: clamp(1.02rem, 1.1vw, 1.15rem);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .book__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .book__note {
+    margin: 0.5rem 0 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--muted);
+  }
+
+  .book__note a {
+    color: var(--ink);
+  }
+
+  /* the drawing, taped in at two corners */
+  .book__drawing {
+    position: relative;
+    margin: 0;
+    padding: clamp(0.4rem, 0.8vw, 0.65rem);
+    background: var(--sheet);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12), 0 12px 24px -12px rgb(22 23 26 / 0.3);
+    rotate: 1.2deg;
+  }
+
+  .book__drawing::before,
+  .book__drawing::after {
+    content: '';
+    position: absolute;
+    width: 26%;
+    height: 1.35rem;
+    background: rgb(214 220 232 / 0.78);
+  }
+
+  .book__drawing::before {
+    top: -0.6rem;
+    left: -0.9rem;
+    rotate: -38deg;
+  }
+
+  .book__drawing::after {
+    right: -0.9rem;
+    bottom: -0.6rem;
+    rotate: -38deg;
+  }
+
+  .book__drawing img {
+    display: block;
+    width: 100%;
+    max-height: 58svh;
+    object-fit: contain;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* the original photo, tucked in at the corner */
+  .book__photo {
+    position: absolute;
+    left: calc(var(--gutter) + clamp(0.25rem, 1vw, 0.75rem));
+    bottom: clamp(0.5rem, 2vw, 1.5rem);
+    width: clamp(6.5rem, 12vw, 9.5rem);
+    margin: 0;
+    padding: 0.4rem 0.4rem 1.9rem;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    rotate: -7deg;
+  }
+
+  .book__photo img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .book__photo figcaption {
+    position: absolute;
+    inset: auto 0 0.35rem;
+    text-align: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+
+  /* one pencil left on the desk */
+  .book__pencil {
+    position: absolute;
+    right: max(1rem, calc((100vw - 78rem) / 2 - 2rem));
+    bottom: clamp(1rem, 3vw, 2.25rem);
+    width: clamp(10rem, 22vw, 18rem);
+    rotate: -6deg;
+    filter: drop-shadow(0 6px 6px rgb(60 42 20 / 0.3));
+  }
+
+  @media (min-width: 56rem) {
+    .book__spread {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .book__page--left {
+      border-radius: 4px 0 0 4px;
+      padding-right: calc(var(--gutter) + 1.5rem);
+    }
+
+    .book__page--right {
+      border-radius: 0 4px 4px 0;
+      padding-left: calc(var(--gutter) + 1.5rem);
+    }
+  }
+
+  /* one page under the other on phones; the spiral runs along the top */
+  @media (max-width: 55.99rem) {
+    .book__page--left {
+      background: #fbfaf6;
+      padding-top: calc(var(--gutter) + 1.75rem);
+      border-radius: 4px 4px 0 0;
+    }
+
+    .book__page--right {
+      background: #fbfaf6;
+      border-top: 1px dashed var(--line-strong);
+      border-radius: 0 0 4px 4px;
+      padding-bottom: 6rem;
+      transform-origin: 50% 0;
+      animation-name: book-open-down;
+    }
+
+    .book__spiral {
+      top: 0;
+      bottom: auto;
+      left: 1.2rem;
+      right: 1.2rem;
+      width: auto;
+      height: var(--gutter);
+      translate: 0 -50%;
+      background: radial-gradient(circle at 50% 50%, transparent 0 32%, #5f636c 34% 46%, transparent 48%) 0 0 / 1.6rem 100% repeat-x;
+    }
+
+    .book__pencil {
+      display: none;
+    }
+  }
+
+  @keyframes book-open {
+    from {
+      transform: rotateY(-75deg);
+      opacity: 0.4;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes book-open-down {
+    from {
+      transform: rotateX(60deg);
+      opacity: 0.4;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes book-rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.6rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .book__page--left,
+    .book__page--right {
+      animation: none;
+    }
+  }
+</style>

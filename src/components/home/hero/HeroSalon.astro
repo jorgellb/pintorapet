@@ -1,0 +1,308 @@
+---
+import type { Locale } from '@/i18n';
+import type { HeroPicture, ResolvedHero } from '@/lib/content/homeHero';
+
+/**
+ * Design 5 · Salón: a wall hung salon-style, portraits of every size in
+ * mixed frames, with the words on a wall panel in the middle. The featured
+ * drawing gets the largest frame.
+ */
+interface Props {
+  hero: ResolvedHero;
+  locale: Locale;
+}
+
+const { hero } = Astro.props;
+const frames: HeroPicture[] = [...(hero.main ? [hero.main] : []), ...hero.extras].slice(0, 8);
+// Frame finishes, in hanging order: black, oak, white, black, oak…
+const finishes = ['ink', 'oak', 'white', 'oak', 'ink', 'white', 'ink', 'oak'];
+---
+
+<section class="salon">
+  <div class="site-shell salon__wall">
+    <div class="salon__panel">
+      <p class="salon__eyebrow">{hero.eyebrow}</p>
+      <h1 class="salon__title display">
+        <span>{hero.titleTop}</span>
+        {hero.titleBottom && <em>{hero.titleBottom}</em>}
+      </h1>
+      <p class="salon__lead">{hero.lead}</p>
+      <div class="salon__cta">
+        <a class="btn" href={hero.primary.href}>{hero.primary.label}</a>
+        <a class="btn btn--ghost" href={hero.secondary.href}>{hero.secondary.label}</a>
+      </div>
+    </div>
+
+    {
+      frames.map((frame, i) => {
+        const inner = (
+          <span class="salon__mat">
+            <img
+              src={frame.src}
+              alt={frame.alt}
+              loading={i < 4 ? 'eager' : 'lazy'}
+              fetchpriority={i === 0 ? 'high' : undefined}
+              decoding="async"
+              style={frame.workId ? `view-transition-name: work-${frame.workId}` : undefined}
+            />
+          </span>
+        );
+        const className = `salon__frame salon__frame--${i + 1} salon__frame--${finishes[i]}`;
+        return frame.href ? (
+          <a class={className} href={frame.href} style={`--i:${i}`}>
+            {inner}
+          </a>
+        ) : (
+          <div class={className} style={`--i:${i}`}>
+            {inner}
+          </div>
+        );
+      })
+    }
+  </div>
+</section>
+
+<style>
+  .salon {
+    position: relative;
+    padding-block: clamp(1.5rem, 3vw, 2.5rem) clamp(4rem, 8vw, 6.5rem);
+    overflow: clip;
+    background:
+      radial-gradient(ellipse 55% 50% at 50% 45%, rgb(255 255 255 / 0.9), transparent 75%),
+      var(--paper-deep);
+  }
+
+  .salon__wall {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(0.9rem, 1.6vw, 1.5rem);
+    align-items: center;
+  }
+
+  /* ——— The wall panel with the words ——— */
+  .salon__panel {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 1.2rem;
+    padding: clamp(1.5rem, 3vw, 2.75rem);
+    background: var(--sheet);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.1), 0 18px 36px -24px rgb(22 23 26 / 0.35);
+    animation: salon-in 0.9s var(--ease-out) 0.1s both;
+  }
+
+  .salon__eyebrow {
+    margin: 0;
+    font-size: 0.74rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .salon__title {
+    margin: 0;
+    font-size: clamp(2.4rem, 4vw, 4.4rem);
+    line-height: 0.96;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+
+  .salon__title span,
+  .salon__title em {
+    display: block;
+  }
+
+  .salon__title em {
+    font-weight: 400;
+    color: var(--accent-deep);
+  }
+
+  .salon__lead {
+    margin: 0;
+    font-size: clamp(1rem, 1.05vw, 1.12rem);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .salon__cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  /* ——— Frames ——— */
+  .salon__frame {
+    --ar: 4 / 5;
+    position: relative;
+    display: block;
+    padding: clamp(0.3rem, 0.6vw, 0.55rem);
+    box-shadow: 0 2px 2px rgb(22 23 26 / 0.12), 0 16px 28px -16px rgb(22 23 26 / 0.45);
+    transition:
+      translate 500ms var(--ease-out),
+      box-shadow 500ms var(--ease-out);
+    animation: salon-hang 0.9s cubic-bezier(0.3, 0.8, 0.3, 1.15) calc(0.35s + var(--i) * 0.11s) both;
+  }
+
+  .salon__frame--ink {
+    background: var(--ink);
+  }
+
+  .salon__frame--oak {
+    background: linear-gradient(135deg, #b99367, #9b7448);
+  }
+
+  .salon__frame--white {
+    background: var(--sheet);
+  }
+
+  .salon__mat {
+    display: block;
+    padding: clamp(0.4rem, 1vw, 0.9rem);
+    background: var(--sheet);
+    box-shadow: inset 0 0 0 1px rgb(22 23 26 / 0.06);
+  }
+
+  .salon__frame--white .salon__mat {
+    padding: 0;
+  }
+
+  .salon__mat img {
+    display: block;
+    width: 100%;
+    aspect-ratio: var(--ar);
+    object-fit: cover;
+    object-position: 50% 35%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  a.salon__frame:hover,
+  a.salon__frame:focus-visible {
+    translate: 0 -4px;
+    box-shadow: 0 2px 2px rgb(22 23 26 / 0.12), 0 26px 36px -18px rgb(22 23 26 / 0.5);
+  }
+
+  a.salon__frame:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  .salon__frame--1 {
+    --ar: 1551 / 1080;
+    grid-column: 1 / -1;
+  }
+
+  .salon__frame--3,
+  .salon__frame--6 {
+    --ar: 1;
+  }
+
+  .salon__frame--4,
+  .salon__frame--7 {
+    --ar: 3 / 4;
+  }
+
+  /* ——— A real salon hang on wide screens: 12 columns, the panel in the middle ——— */
+  @media (min-width: 64rem) {
+    .salon {
+      min-height: calc(100svh - 12.5rem);
+      display: grid;
+      align-items: center;
+    }
+
+    .salon__wall {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      grid-auto-rows: minmax(0, auto);
+      align-items: center;
+      column-gap: clamp(1rem, 1.6vw, 1.75rem);
+      row-gap: clamp(1rem, 1.6vw, 1.75rem);
+    }
+
+    .salon__panel {
+      grid-column: 5 / 10;
+      grid-row: 1 / 3;
+      align-self: stretch;
+      align-content: center;
+    }
+
+    .salon__frame--1 {
+      grid-column: 1 / 5;
+      grid-row: 1 / 3;
+    }
+
+    .salon__frame--2 {
+      grid-column: 10 / 13;
+      grid-row: 1;
+      --ar: 4 / 3;
+      align-self: end;
+    }
+
+    .salon__frame--3 {
+      grid-column: 10 / 12;
+      grid-row: 2;
+      align-self: start;
+    }
+
+    .salon__frame--4 {
+      grid-column: 1 / 3;
+      grid-row: 3;
+      align-self: start;
+    }
+
+    .salon__frame--5 {
+      grid-column: 3 / 6;
+      grid-row: 3;
+      --ar: 4 / 3;
+      align-self: start;
+    }
+
+    .salon__frame--6 {
+      grid-column: 6 / 8;
+      grid-row: 3;
+      align-self: start;
+    }
+
+    .salon__frame--7 {
+      grid-column: 8 / 10;
+      grid-row: 3;
+      align-self: start;
+    }
+
+    .salon__frame--8 {
+      grid-column: 10 / 13;
+      grid-row: 3;
+      --ar: 4 / 3;
+      align-self: start;
+    }
+  }
+
+  @keyframes salon-hang {
+    from {
+      opacity: 0;
+      transform: translateY(-14px) rotate(-2deg);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes salon-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.6rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .salon__panel,
+    .salon__frame {
+      animation: none;
+    }
+  }
+</style>

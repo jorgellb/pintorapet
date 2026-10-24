@@ -1,0 +1,387 @@
+---
+import type { Locale } from '@/i18n';
+import type { ResolvedHero } from '@/lib/content/homeHero';
+
+/**
+ * Design 3 · En la pared: one drawing, framed and hung from a nail under a
+ * gallery spotlight, with its museum label. The lights come on and the
+ * frame settles on its wire.
+ */
+interface Props {
+  hero: ResolvedHero;
+  locale: Locale;
+}
+
+const { hero } = Astro.props;
+---
+
+<section class="wall">
+  <div class="wall__beam" aria-hidden="true"></div>
+  <div class="site-shell wall__grid">
+    <header class="wall__head">
+      <p class="wall__eyebrow">{hero.eyebrow}</p>
+      <h1 class="wall__title display">
+        <span>{hero.titleTop}</span>
+        {hero.titleBottom && <em>{hero.titleBottom}</em>}
+      </h1>
+    </header>
+
+    {
+      hero.main && (
+        <figure class="wall__piece">
+          <svg class="wall__wire" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M100 2 L8 38 M100 2 L192 38" />
+          </svg>
+          <span class="wall__nail" aria-hidden="true" />
+          <div class="wall__frame">
+            <div class="wall__mat">
+              <img
+                src={hero.main.src}
+                alt={hero.main.alt}
+                fetchpriority="high"
+                decoding="async"
+                style={hero.main.workId ? `view-transition-name: work-${hero.main.workId}` : undefined}
+              />
+            </div>
+          </div>
+          {hero.plaque && (
+            <figcaption class="wall__label">
+              <span class="wall__label-kicker">{hero.plaque.label}</span>
+              <a href={hero.plaque.href}>{hero.plaque.title}</a>
+              <span>Meili Stringfellow</span>
+              <span>{hero.plaque.note}</span>
+            </figcaption>
+          )}
+        </figure>
+      )
+    }
+
+    <div class="wall__aside">
+      <p class="wall__lead">{hero.lead}</p>
+      <div class="wall__cta">
+        <a class="btn" href={hero.primary.href}>{hero.primary.label}</a>
+        <a class="btn btn--ghost" href={hero.secondary.href}>{hero.secondary.label}</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .wall {
+    position: relative;
+    padding-block: clamp(1.5rem, 4vw, 3rem) clamp(4rem, 8vw, 6.5rem);
+    overflow: clip;
+    /* the gallery wall, a shade deeper than the page so the light can fall on it */
+    background:
+      radial-gradient(ellipse 60% 70% at 50% 18%, rgb(255 255 255 / 0.95), transparent 70%),
+      linear-gradient(var(--paper-deep), var(--paper) 85%);
+  }
+
+  /* the spotlight's beam from the ceiling; the room starts dim and the light comes on */
+  .wall__beam {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.85), rgb(255 255 255 / 0) 75%) top / 100% 100% no-repeat;
+    clip-path: polygon(44% 0, 56% 0, 78% 100%, 22% 100%);
+    opacity: 0.55;
+    animation: wall-light 1.6s var(--ease-soft) 0.2s both;
+  }
+
+  .wall::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: rgb(22 23 26 / 0.2);
+    animation: wall-dim 1.2s var(--ease-soft) 0.15s both;
+  }
+
+  .wall__grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    justify-items: center;
+    gap: clamp(1.5rem, 3vw, 2.5rem);
+    text-align: center;
+  }
+
+  .wall__head {
+    display: grid;
+    justify-items: center;
+    gap: 1rem;
+    animation: wall-rise 1s var(--ease-out) 0.5s both;
+  }
+
+  .wall__eyebrow {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .wall__title {
+    margin: 0;
+    font-size: clamp(2.6rem, 5.2vw, 5.75rem);
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+
+  .wall__title span,
+  .wall__title em {
+    display: block;
+  }
+
+  .wall__title em {
+    font-weight: 400;
+    color: var(--accent-deep);
+  }
+
+  /* ——— The framed drawing on its wire ——— */
+  .wall__piece {
+    position: relative;
+    width: min(100%, 36rem);
+    margin: 0;
+    padding-top: clamp(2.25rem, 4vw, 3.25rem);
+    transform-origin: 50% 0;
+    animation: wall-swing 2.6s cubic-bezier(0.3, 0.7, 0.3, 1) 0.6s both;
+  }
+
+  .wall__nail {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 0.6rem;
+    height: 0.6rem;
+    translate: -50% -40%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #8c8f96, var(--ink) 70%);
+    box-shadow: 0 2px 3px rgb(22 23 26 / 0.35);
+  }
+
+  .wall__wire {
+    position: absolute;
+    top: 0;
+    left: 12%;
+    width: 76%;
+    height: clamp(2.25rem, 4vw, 3.25rem);
+    overflow: visible;
+    fill: none;
+    stroke: var(--ink-soft);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .wall__frame {
+    position: relative;
+    padding: clamp(0.5rem, 1vw, 0.8rem);
+    background: var(--ink);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.08),
+      0 2px 2px rgb(22 23 26 / 0.12),
+      0 26px 48px -18px rgb(22 23 26 / 0.45);
+  }
+
+  .wall__mat {
+    padding: clamp(1rem, 3.2vw, 2.4rem);
+    background: var(--sheet);
+    /* the bevel of the mat around the drawing */
+    box-shadow: inset 0 0 0 1px rgb(22 23 26 / 0.06);
+  }
+
+  .wall__mat img {
+    display: block;
+    width: 100%;
+    max-height: 52svh;
+    object-fit: contain;
+    border-radius: 0;
+    box-shadow: 0 0 0 1px rgb(22 23 26 / 0.08);
+  }
+
+  /* the museum label, at eye level beside the frame */
+  .wall__label {
+    display: grid;
+    justify-items: start;
+    gap: 0.15rem;
+    width: fit-content;
+    margin: 1.4rem auto 0;
+    padding: 0.85rem 1rem;
+    background: var(--sheet);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12);
+    text-align: left;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+
+  .wall__label-kicker {
+    font-size: 0.66rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .wall__label a {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.15rem;
+    color: var(--ink);
+  }
+
+  .wall__aside {
+    display: grid;
+    justify-items: center;
+    gap: 1.4rem;
+    max-width: 36rem;
+    animation: wall-rise 1s var(--ease-out) 1.6s both;
+  }
+
+  .wall__lead {
+    margin: 0;
+    font-size: clamp(1.05rem, 1.15vw, 1.2rem);
+    line-height: 1.6;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .wall__cta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  /* Wide screens: a gallery wall. Words on the left, the frame in the middle, its label at eye level. */
+  @media (min-width: 64rem) {
+    .wall {
+      display: grid;
+      align-items: center;
+      min-height: calc(100svh - 12.5rem);
+      padding-top: clamp(1rem, 2vw, 2rem);
+    }
+
+    .wall__grid {
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      grid-template-areas:
+        'head head head'
+        'aside piece .';
+      column-gap: clamp(2rem, 4vw, 4.5rem);
+      row-gap: clamp(1.25rem, 2.4vw, 2rem);
+      align-items: center;
+    }
+
+    .wall__head {
+      grid-area: head;
+    }
+
+    .wall__title {
+      font-size: clamp(2.6rem, 4.4vw, 5rem);
+    }
+
+    .wall__piece {
+      grid-area: piece;
+      width: min(34rem, 38vw);
+    }
+
+    .wall__mat img {
+      max-height: 38svh;
+    }
+
+    .wall__aside {
+      grid-area: aside;
+      justify-items: end;
+      max-width: 22rem;
+      justify-self: end;
+      text-align: right;
+    }
+
+    .wall__cta {
+      justify-content: flex-end;
+    }
+
+    .wall__label {
+      position: absolute;
+      left: calc(100% + clamp(1.5rem, 3vw, 2.5rem));
+      bottom: 22%;
+      width: max-content;
+      max-width: 14rem;
+      margin: 0;
+    }
+  }
+
+  @keyframes wall-dim {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes wall-light {
+    from {
+      opacity: 0;
+    }
+    30% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 0.05;
+    }
+    to {
+      opacity: 0.55;
+    }
+  }
+
+  @keyframes wall-swing {
+    0% {
+      opacity: 0;
+      rotate: -4deg;
+    }
+    15% {
+      opacity: 1;
+    }
+    35% {
+      rotate: 2.4deg;
+    }
+    55% {
+      rotate: -1.2deg;
+    }
+    75% {
+      rotate: 0.5deg;
+    }
+    100% {
+      opacity: 1;
+      rotate: 0deg;
+    }
+  }
+
+  @keyframes wall-rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.6rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wall__beam,
+    .wall::after,
+    .wall__piece,
+    .wall__head,
+    .wall__aside {
+      animation: none;
+    }
+
+    .wall::after {
+      opacity: 0;
+    }
+  }
+</style>
