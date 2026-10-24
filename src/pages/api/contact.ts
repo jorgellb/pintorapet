@@ -29,7 +29,7 @@ export const POST: APIRoute = async (context) => {
     const raw = await parseRequestBody(request);
     const body = contactSchema.parse(withoutAntibotFields(raw));
 
-    const { verdict } = await inspect({
+    const { verdict, reasons } = await inspect({
       form: 'contact',
       fields: raw,
       ip: clientIp(context),
@@ -62,7 +62,8 @@ export const POST: APIRoute = async (context) => {
       return Response.json(payload, { status: 503 });
     }
 
-    const result = await submitContact(body);
+    // Past the hourly mail cap the message is kept; the daily outbox sends it.
+    const result = await submitContact(body, { emailNow: !reasons.includes('mail_deferred') });
     if (wantsHtml(request)) return backToForm(request, body.locale, { sent: '1' });
     return Response.json({ ok: true, id: result.id });
   } catch (err) {

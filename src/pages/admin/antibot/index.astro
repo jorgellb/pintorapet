@@ -169,6 +169,7 @@ const ownSecret = Boolean(import.meta.env.ANTIBOT_SECRET);
               <li class="on">Contenido: nombres aleatorios, Gmail con puntos, emails desechables, spam</li>
               <li class="on">Límites por IP y por email, solo para quien resolvió el reto: nadie puede bloquear a otra persona</li>
               <li class="on">Con mucho tráfico, el reto se vuelve más difícil para todos en vez de cerrar la puerta</li>
+              <li class="on">Avalancha de mensajes: se guardan todos, pero el aviso por correo llega con el envío diario</li>
               <li class={turnstile ? 'on' : 'off'}>
                 Cloudflare Turnstile{' '}
                 {!turnstile && (

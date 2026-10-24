@@ -86,10 +86,26 @@ try:
 
     cur.execute("select public.antibot_pressure(%s)", (ip,))
     check('stopped attempts raise the pressure on the IP', cur.fetchone()[0], 4)
-    cur.execute("insert into public.antibot_events (form, ip_hash, verdict) select 'contact', 'm' || lpad(g::text, 39, '0'), 'allow' from generate_series(1, 300) g")
+    cur.execute("insert into public.antibot_events (form, ip_hash, verdict) select 'sign_in', 'm' || lpad(g::text, 39, '0'), 'allow' from generate_series(1, 300) g")
     cur.execute("select public.antibot_pressure(%s)", ('z' * 40,))
     check('a busy site makes everyone\'s challenge harder', cur.fetchone()[0], 3)
-    check('but nobody is turned away for it', gate('contact', 'z' * 40, None, 's' * 22 + '30')['verdict'], 'allow')
+    check('but nobody is turned away from signing in', gate('sign_in', 'z' * 40, None, 's' * 22 + '30')['verdict'], 'allow')
+
+    cur.execute("insert into public.antibot_events (form, ip_hash, verdict, reasons) select 'contact', 'q' || lpad(g::text, 39, '0'), 'block', '{token_missing}' from generate_series(1, 100) g")
+    check('stopped messages do not count towards the mail cap', gate('contact', 'y' * 40, None, 's' * 22 + '31'), {'verdict': 'allow', 'reasons': []})
+    cur.execute("insert into public.antibot_events (form, ip_hash, verdict) select 'contact', 'r' || lpad(g::text, 39, '0'), 'allow' from generate_series(1, 30) g")
+    check('past the mail cap a message is kept but its email waits', gate('contact', 'x' * 40, None, 's' * 22 + '32'), {'verdict': 'allow', 'reasons': ['mail_deferred']})
+    cur.execute("insert into public.antibot_events (form, ip_hash, verdict) select 'register', 'h' || lpad(g::text, 39, '0'), 'allow' from generate_series(1, 200) g")
+    cur.execute("insert into public.antibot_events (form, ip_hash, verdict) select 'forgot', 'h' || lpad(g::text, 39, '0'), 'allow' from generate_series(1, 200) g")
+    check('nobody is turned away from registering when the site is busy', gate('register', 'g' * 40, None, 's' * 22 + '33')['verdict'], 'allow')
+    check('nor from asking for a password link', gate('forgot', 'g' * 40, 'f' * 40, 's' * 22 + '34')['verdict'], 'allow')
+
+    many = 'w' * 40
+    for i in range(19):
+        gate('sign_in', 'o' * 38 + f'{i:02d}', many, 'u' * 22 + f'{i:02d}')
+    cur.execute("insert into public.antibot_events (form, ip_hash, email_hash, verdict, reasons) select 'sign_in', 'o' || lpad(g::text, 39, '0'), %s, 'rate', '{rate_ip}' from generate_series(1, 30) g", (many,))
+    check('rate-limited attempts do not stretch a lock-out', gate('sign_in', 'o' * 38 + '50', many, 'u' * 22 + '50')['verdict'], 'allow')
+    check('one account guessed from many IPs is capped at 20', gate('sign_in', 'o' * 38 + '99', many, 'u' * 22 + '99'), {'verdict': 'rate', 'reasons': ['rate_email_spread']})
     cur.execute("savepoint s")
     try:
         gate('nope', ip); check('unknown forms are rejected', 'accepted', 'rejected')
@@ -109,7 +125,8 @@ try:
     reasons = {r['reason']: r['count'] for r in summary['by_reason']}
     check('the admin sees replays', reasons.get('replay', 0) >= 1, True)
     check('the admin sees rate limits', reasons.get('rate_ip', 0) >= 1, True)
-    check('stopped attempts are listed', any(r['form'] == 'register' and 'honeypot' in r['reasons'] for r in summary['recent']), True)
+    check('the honeypot shows up among the reasons', reasons.get('honeypot', 0) >= 1, True)
+    check('the latest stopped attempts are listed, 60 at most', (len(summary['recent']), all(r['verdict'] != 'allow' for r in summary['recent'])), (60, True))
     check('the admin never sees the full hash', all(len(r['ip']) == 8 for r in summary['recent']), True)
 finally:
     conn.rollback()

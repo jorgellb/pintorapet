@@ -72,13 +72,19 @@ async function sendNow(opts: {
   }
 }
 
-export async function submitContact(body: {
-  locale: 'en' | 'es';
-  name: string;
-  email: string;
-  reason?: string;
-  message: string;
-}): Promise<{ id: string }> {
+/** emailNow: false leaves the email to the daily outbox cron (anti-bot mail cap). */
+type Delivery = { emailNow?: boolean };
+
+export async function submitContact(
+  body: {
+    locale: 'en' | 'es';
+    name: string;
+    email: string;
+    reason?: string;
+    message: string;
+  },
+  { emailNow = true }: Delivery = {},
+): Promise<{ id: string }> {
   const supabase = requireService();
   const message = body.reason
     ? `[${body.reason}]\n\n${body.message}`
@@ -114,37 +120,42 @@ export async function submitContact(body: {
   });
 
   // Best-effort immediate send; outbox remains for retry/cron.
-  try {
-    await sendNow({
-      to: emailAdmin(),
-      subject:
-        body.locale === 'es'
-          ? `Contacto web — ${body.name}`
-          : `Website contact — ${body.name}`,
-      text: `From: ${body.name} <${body.email}>\n\n${message}`,
-    });
-    await supabase
-      .from('notification_outbox')
-      .update({
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-      })
-      .eq('dedupe_key', `contact:${id}:admin`);
-  } catch {
-    // Leave pending for cron.
+  if (emailNow) {
+    try {
+      await sendNow({
+        to: emailAdmin(),
+        subject:
+          body.locale === 'es'
+            ? `Contacto web — ${body.name}`
+            : `Website contact — ${body.name}`,
+        text: `From: ${body.name} <${body.email}>\n\n${message}`,
+      });
+      await supabase
+        .from('notification_outbox')
+        .update({
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+        })
+        .eq('dedupe_key', `contact:${id}:admin`);
+    } catch {
+      // Leave pending for cron.
+    }
   }
 
   return { id };
 }
 
-export async function submitCommission(body: {
-  locale: 'en' | 'es';
-  name: string;
-  email: string;
-  size: string;
-  subjects: number;
-  message: string;
-}): Promise<{ id: string; reference: string }> {
+export async function submitCommission(
+  body: {
+    locale: 'en' | 'es';
+    name: string;
+    email: string;
+    size: string;
+    subjects: number;
+    message: string;
+  },
+  { emailNow = true }: Delivery = {},
+): Promise<{ id: string; reference: string }> {
   const supabase = requireService();
   const reference = `CR-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
 
@@ -182,24 +193,26 @@ export async function submitCommission(body: {
     },
   });
 
-  try {
-    await sendNow({
-      to: emailAdmin(),
-      subject:
-        body.locale === 'es'
-          ? `Encargo ${reference} — ${body.name}`
-          : `Commission ${reference} — ${body.name}`,
-      text: `Reference: ${reference}\nFrom: ${body.name} <${body.email}>\nSize: ${body.size}\nSubjects: ${body.subjects}\n\n${body.message}`,
-    });
-    await supabase
-      .from('notification_outbox')
-      .update({
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-      })
-      .eq('dedupe_key', `commission:${id}:admin`);
-  } catch {
-    // Cron will retry.
+  if (emailNow) {
+    try {
+      await sendNow({
+        to: emailAdmin(),
+        subject:
+          body.locale === 'es'
+            ? `Encargo ${reference} — ${body.name}`
+            : `Commission ${reference} — ${body.name}`,
+        text: `Reference: ${reference}\nFrom: ${body.name} <${body.email}>\nSize: ${body.size}\nSubjects: ${body.subjects}\n\n${body.message}`,
+      });
+      await supabase
+        .from('notification_outbox')
+        .update({
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+        })
+        .eq('dedupe_key', `commission:${id}:admin`);
+    } catch {
+      // Cron will retry.
+    }
   }
 
   return { id, reference };
