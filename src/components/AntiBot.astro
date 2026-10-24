@@ -1,0 +1,74 @@
+---
+import type { Locale } from '@/i18n';
+import type { AntibotForm } from '@/lib/server/antibot';
+
+/**
+ * Anti-bot fields for a public form; place it inside the <form>.
+ * See src/scripts/antibot.ts and src/lib/server/antibot.ts.
+ */
+interface Props {
+  form: AntibotForm;
+  locale: Locale;
+}
+
+const { form, locale } = Astro.props;
+const es = locale === 'es';
+const copy = es
+  ? {
+      trap: 'Deja este campo vacío',
+      error: 'No hemos podido preparar el formulario. Revisa tu conexión y vuelve a intentarlo.',
+      noscript: 'Este formulario necesita JavaScript para protegerse de los bots. Si no puedes activarlo, escríbenos a info@petsdrawings.com.',
+    }
+  : {
+      trap: 'Leave this field empty',
+      error: 'We could not get the form ready. Check your connection and try again.',
+      noscript: 'This form needs JavaScript to keep bots out. If you cannot turn it on, write to info@petsdrawings.com.',
+    };
+---
+
+<div class="antibot" data-antibot={form} data-msg-error={copy.error}>
+  <div class="antibot__trap" aria-hidden="true">
+    <label>
+      {copy.trap}
+      <input type="text" name="website" value="" tabindex="-1" autocomplete="off" />
+    </label>
+  </div>
+  <input type="hidden" name="_ab_token" value="" />
+  <input type="hidden" name="_ab_pow" value="" />
+  <input type="hidden" name="_ab_i" value="" />
+  <div class="antibot__turnstile" data-antibot-turnstile hidden></div>
+  <p class="antibot__status" data-antibot-status role="alert" hidden></p>
+  <noscript><p class="antibot__status">{copy.noscript}</p></noscript>
+</div>
+
+<style>
+  .antibot {
+    display: contents;
+  }
+
+  /* Off-screen, not display:none: many bots skip fields that are plainly hidden. */
+  .antibot__trap {
+    position: absolute;
+    left: -10000px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  .antibot__turnstile[hidden],
+  .antibot__status[hidden] {
+    display: none;
+  }
+
+  .antibot__status {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--danger, #9b2c2c);
+  }
+</style>
+
+<script>
+  import { protectForms } from '@/scripts/antibot';
+  protectForms();
+</script>

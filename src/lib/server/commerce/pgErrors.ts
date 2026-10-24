@@ -24,6 +24,7 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   ORDER_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
   NOT_SIGNED_IN: { code: 'FORBIDDEN', status: 401 },
   INVOICE_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
+  CUSTOMER_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
   INVOICE_CONFIG_INCOMPLETE: { code: 'CONFLICT', status: 409 },
   INVOICE_ORDER_NOT_PAID: { code: 'CONFLICT', status: 409 },
   INVOICE_IMMUTABLE: { code: 'CONFLICT', status: 409 },

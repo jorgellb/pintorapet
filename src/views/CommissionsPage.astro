@@ -1,6 +1,7 @@
 ---
 import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
+import AntiBot from '@/components/AntiBot.astro';
 import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
 import { t, type Locale } from '@/i18n';
 import { loadWorks } from '@/lib/content/editorial';
@@ -247,6 +248,7 @@ const sizeChoices = [
         data-msg-error={dict.forms.error}
         data-msg-invalid={dict.forms.errorInvalid}
         data-msg-not-configured={dict.forms.errorNotConfigured}
+        data-msg-rate={dict.forms.errorRate}
       >
         <input type="hidden" name="locale" value={locale} />
 
@@ -342,6 +344,8 @@ const sizeChoices = [
               maxlength="5000"
               placeholder={copy.messagePlaceholder}>{startMessage}</textarea>
           </label>
+
+          <AntiBot form="commission" locale={locale} />
 
           <div class="paper__actions">
             <button class="btn" type="submit">{copy.submit}</button>

@@ -1,9 +1,13 @@
+import { waitForAntibot } from '@/scripts/antibot';
+
 /**
- * Sends a form with fetch and shows the result in place. Without JavaScript
- * the form still posts normally and the API redirects back with ?sent=1.
+ * Sends a form with fetch and shows the result in place, once the anti-bot
+ * check is ready (see antibot.ts). Without JavaScript the form still posts and
+ * the API redirects back with ?sent=1, but the anti-bot gate drops it: the
+ * page says so in a <noscript> note.
  *
  * Markup contract:
- *   form[data-enhance] with data-msg-sending / -error / -invalid / -not-configured
+ *   form[data-enhance] with data-msg-sending / -error / -invalid / -not-configured / -rate
  *   [data-form-fields]  the part hidden once sent
  *   [data-form-done]    the thank-you panel (hidden until sent)
  *   [data-form-status]  live region for progress and errors
@@ -45,6 +49,13 @@ export function enhanceForm(form: HTMLFormElement): void {
     setStatus(message('msgSending'), 'info');
 
     try {
+      try {
+        await waitForAntibot(form);
+      } catch {
+        // The anti-bot block shows its own message.
+        setStatus('', 'info');
+        return;
+      }
       const response = await fetch(form.action, {
         method: 'POST',
         body: new FormData(form),
@@ -65,6 +76,7 @@ export function enhanceForm(form: HTMLFormElement): void {
       const code = payload.error?.code;
       if (code === 'NOT_CONFIGURED') setStatus(message('msgNotConfigured'), 'error');
       else if (code === 'VALIDATION') setStatus(message('msgInvalid'), 'error');
+      else if (code === 'RATE_LIMITED') setStatus(message('msgRate') || message('msgError'), 'error');
       else setStatus(message('msgError'), 'error');
     } catch {
       setStatus(message('msgError'), 'error');

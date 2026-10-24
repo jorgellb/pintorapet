@@ -1,0 +1,169 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ListSearch from '@/components/admin/ListSearch.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { euros, shortDate } from '@/lib/admin/labels';
+import { listCustomers, type AdminCustomerRow } from '@/lib/server/admin/customers';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+let customers: AdminCustomerRow[] = [];
+let failed = false;
+try {
+  customers = await listCustomers(admin.client);
+} catch {
+  failed = true;
+}
+
+const filters = {
+  cuentas: { label: 'Con cuenta', test: (c: AdminCustomerRow) => c.kind === 'account' && !c.is_admin },
+  invitados: { label: 'Sin cuenta', test: (c: AdminCustomerRow) => c.kind === 'guest' },
+  compradores: { label: 'Han comprado', test: (c: AdminCustomerRow) => c.order_count > 0 },
+} as const;
+type FilterKey = keyof typeof filters;
+const param = Astro.url.searchParams.get('filtro');
+const current = param && param in filters ? (param as FilterKey) : null;
+// Admin accounts only appear under "Todos", marked as such.
+const visible = current ? customers.filter(filters[current].test) : customers;
+
+const monthAgo = Date.now() - 30 * 24 * 3600 * 1000;
+const accounts = customers.filter((c) => c.kind === 'account' && !c.is_admin);
+const newThisMonth = accounts.filter((c) => new Date(c.created_at).getTime() > monthAgo).length;
+const spent = customers.reduce((sum, c) => sum + Number(c.spent_cents ?? 0), 0);
+const names = new Intl.DisplayNames(['es'], { type: 'region' });
+const flash = Astro.url.searchParams.get('borrado') ? 'Cliente borrado. Sus pedidos se conservan.' : null;
+---
+
+<AdminLayout title="Clientes" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Clientes</h1>
+      <p class="lead">
+        Las cuentas registradas y quienes compraron sin cuenta. Abre una ficha para ver sus pedidos,
+        editar sus datos o borrar la cuenta.
+      </p>
+    </div>
+    <a class="btn" href="/admin/customers/new/">Nuevo cliente</a>
+  </header>
+
+  {flash && <p class="status">{flash}</p>}
+
+  {
+    failed ? (
+      <p class="err">No se pudo cargar la lista de clientes.</p>
+    ) : customers.length === 0 ? (
+      <p class="empty">Los clientes aparecerán aquí cuando se registren o compren.</p>
+    ) : (
+      <>
+        <p class="summary">
+          <span><strong>{accounts.length}</strong> con cuenta</span>
+          <span><strong>{customers.filter((c) => c.kind === 'guest').length}</strong> sin cuenta</span>
+          <span><strong>{newThisMonth}</strong> nuevas este mes</span>
+          <span><strong>{euros(spent)}</strong> comprado en total</span>
+        </p>
+        <ul class="tabs">
+          <li>
+            <a href="/admin/customers/" aria-current={!current ? 'page' : undefined}>
+              Todos <span class="count">{customers.length}</span>
+            </a>
+          </li>
+          {(Object.keys(filters) as FilterKey[]).map((key) => (
+            <li>
+              <a href={`/admin/customers/?filtro=${key}`} aria-current={current === key ? 'page' : undefined}>
+                {filters[key].label} <span class="count">{customers.filter(filters[key].test).length}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <ListSearch
+          placeholder="Buscar por nombre, email o ciudad…"
+          label="Buscar clientes"
+          emptyText="Ningún cliente coincide con la búsqueda."
+        />
+        {visible.length === 0 ? (
+          <p class="empty">No hay clientes en esta vista.</p>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Cuenta</th>
+                  <th>Lugar</th>
+                  <th class="num">Pedidos</th>
+                  <th class="num">Comprado</th>
+                  <th>Último pedido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((c) => {
+                  const href = c.id
+                    ? `/admin/customers/${c.id}/`
+                    : `/admin/customers/new/?email=${encodeURIComponent(c.email)}&nombre=${encodeURIComponent(c.full_name ?? '')}`;
+                  const place = [c.city, c.country ? names.of(c.country) ?? c.country : null].filter(Boolean).join(', ');
+                  return (
+                    <tr data-search-text={`${c.full_name ?? ''} ${c.email} ${place}`.toLowerCase()}>
+                      <td>
+                        <a href={href}>{c.full_name || c.email}</a>
+                        {c.full_name && <span class="muted line">{c.email}</span>}
+                      </td>
+                      <td>
+                        {c.is_admin ? (
+                          <span class="chip chip--info">Administración</span>
+                        ) : c.kind === 'account' && !c.confirmed ? (
+                          <span class="chip chip--warn">Sin confirmar</span>
+                        ) : c.kind === 'account' ? (
+                          <span class="chip chip--ok">Con cuenta</span>
+                        ) : (
+                          <span class="chip">Sin cuenta</span>
+                        )}
+                        <span class="muted line">
+                          {c.kind === 'account' ? `Alta ${shortDate(c.created_at)}` : 'Crear cuenta →'}
+                        </span>
+                      </td>
+                      <td class="muted">{place || '—'}</td>
+                      <td class="num">{c.order_count}</td>
+                      <td class="num">{euros(Number(c.spent_cents ?? 0))}</td>
+                      <td class="muted">{c.last_order_at ? shortDate(c.last_order_at) : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .page-head {
+    align-items: flex-start;
+  }
+
+  .summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    margin: 0 0 1.25rem;
+    color: var(--muted);
+  }
+
+  .summary strong {
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 500;
+  }
+
+  .line {
+    display: block;
+    font-size: 0.82rem;
+  }
+</style>

@@ -1,0 +1,242 @@
+---
+import { countryOptions } from '@/lib/domain/countries';
+
+interface Props {
+  /** Absent when creating a customer. */
+  id?: string;
+  email?: string;
+  fullName?: string;
+  phone?: string;
+  address?: Record<string, string> | null;
+  billing?: Record<string, string> | null;
+}
+
+const { id, email = '', fullName = '', phone = '', address = null, billing = null } = Astro.props;
+const countries = countryOptions('es');
+const creating = !id;
+---
+
+<form class="customer-form" data-customer-form data-id={id ?? ''} novalidate>
+  <section class="panel">
+    <h2>Contacto</h2>
+    <div class="pair">
+      <label>
+        Nombre y apellidos
+        <input name="full_name" value={fullName} required minlength="2" maxlength="120" autocomplete="off" />
+      </label>
+      <label>
+        Email
+        <input name="email" type="email" value={email} required maxlength="254" autocomplete="off" />
+        {!creating && <span class="hint">Si lo cambias, la clienta entrará con el nuevo email.</span>}
+      </label>
+    </div>
+    <label>
+      Teléfono <span class="hint">opcional</span>
+      <input name="phone" type="tel" value={phone} maxlength="32" autocomplete="off" />
+    </label>
+  </section>
+
+  <section class="panel">
+    <h2>Dirección de envío <span class="hint">opcional</span></h2>
+    <label>
+      Dirección
+      <input name="line1" value={address?.line1 ?? ''} maxlength="160" autocomplete="off" />
+    </label>
+    <label>
+      Piso, puerta, escalera
+      <input name="line2" value={address?.line2 ?? ''} maxlength="160" autocomplete="off" />
+    </label>
+    <div class="pair">
+      <label>
+        Código postal
+        <input name="postal_code" value={address?.postal_code ?? ''} maxlength="12" autocomplete="off" />
+      </label>
+      <label>
+        Ciudad
+        <input name="city" value={address?.city ?? ''} maxlength="100" autocomplete="off" />
+      </label>
+    </div>
+    <div class="pair">
+      <label>
+        Provincia o región
+        <input name="state" value={address?.state ?? ''} maxlength="100" autocomplete="off" />
+      </label>
+      <label>
+        País
+        <select name="country">
+          {countries.map((c) => <option value={c.code} selected={(address?.country ?? 'ES') === c.code}>{c.name}</option>)}
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Datos de factura</h2>
+    <label class="switch">
+      <input type="checkbox" role="switch" name="wants_billing" checked={Boolean(billing)} data-billing-toggle />
+      <span>
+        <strong>Guardar datos para facturas con NIF</strong>
+        <span class="hint">Se usan para rellenar el checkout y las facturas completas.</span>
+      </span>
+    </label>
+    <div class="billing" data-billing hidden={!billing}>
+      <div class="pair">
+        <label>
+          NIF, NIE o CIF
+          <input name="tax_id" value={billing?.taxId ?? ''} maxlength="24" autocomplete="off" />
+        </label>
+        <label>
+          Nombre o razón social
+          <input name="billing_name" value={billing?.name ?? ''} maxlength="160" autocomplete="off" />
+        </label>
+      </div>
+      <label>
+        Dirección fiscal
+        <input name="billing_address" value={billing?.address ?? ''} maxlength="200" autocomplete="off" />
+      </label>
+      <div class="pair">
+        <label>
+          Código postal
+          <input name="billing_postal" value={billing?.postalCode ?? ''} maxlength="12" autocomplete="off" />
+        </label>
+        <label>
+          Ciudad
+          <input name="billing_city" value={billing?.city ?? ''} maxlength="100" autocomplete="off" />
+        </label>
+      </div>
+      <label>
+        País
+        <select name="billing_country">
+          {countries.map((c) => <option value={c.code} selected={(billing?.country ?? 'ES') === c.code}>{c.name}</option>)}
+        </select>
+      </label>
+    </div>
+  </section>
+
+  {
+    creating && (
+      <section class="panel">
+        <h2>Acceso</h2>
+        <label class="switch">
+          <input type="checkbox" role="switch" name="send_link" />
+          <span>
+            <strong>Enviarle un enlace para crear su contraseña</strong>
+            <span class="hint">
+              La cuenta se crea confirmada y sin contraseña. Puede crearla con este enlace o con
+              «¿Has olvidado tu contraseña?». Necesita el SMTP de Supabase configurado.
+            </span>
+          </span>
+        </label>
+      </section>
+    )
+  }
+
+  <div class="actions">
+    <button type="submit">{creating ? 'Crear cliente' : 'Guardar cambios'}</button>
+    <p class="status" data-customer-status role="status" hidden></p>
+  </div>
+</form>
+
+<style>
+  .customer-form {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .billing {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1rem;
+  }
+
+  .billing[hidden] {
+    display: none;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  h2 .hint {
+    font-family: var(--font-body, inherit);
+    font-size: 0.8rem;
+    font-weight: 400;
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>('[data-customer-form]');
+  if (form) {
+    const id = form.dataset.id ?? '';
+    const status = form.querySelector<HTMLElement>('[data-customer-status]')!;
+    const billing = form.querySelector<HTMLElement>('[data-billing]')!;
+    form.querySelector<HTMLInputElement>('[data-billing-toggle]')?.addEventListener('change', (event) => {
+      billing.hidden = !(event.currentTarget as HTMLInputElement).checked;
+    });
+
+    const say = (text: string) => {
+      status.hidden = false;
+      status.textContent = text;
+    };
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(form);
+      const get = (name: string) => String(fd.get(name) ?? '').trim();
+      const hasAddress = get('line1') !== '' || get('city') !== '';
+      const body = {
+        email: get('email'),
+        full_name: get('full_name'),
+        phone: get('phone'),
+        address: hasAddress
+          ? {
+              line1: get('line1'),
+              line2: get('line2'),
+              city: get('city'),
+              state: get('state'),
+              postal_code: get('postal_code'),
+              country: get('country') || 'ES',
+            }
+          : null,
+        billing:
+          fd.get('wants_billing') === 'on'
+            ? {
+                taxId: get('tax_id'),
+                name: get('billing_name'),
+                address: get('billing_address'),
+                postalCode: get('billing_postal'),
+                city: get('billing_city'),
+                country: get('billing_country') || 'ES',
+              }
+            : null,
+        ...(id ? {} : { sendPasswordLink: fd.get('send_link') === 'on' }),
+      };
+      const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+      button.disabled = true;
+      say('Guardando…');
+      const res = await fetch(id ? `/api/admin/customers/${id}/` : '/api/admin/customers/', {
+        method: id ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      button.disabled = false;
+      if (res?.ok) {
+        if (!id && data?.id) {
+          location.assign(`/admin/customers/${data.id}/?nuevo=1${data.linkSent ? '&enlace=1' : ''}`);
+          return;
+        }
+        say('Cambios guardados.');
+        return;
+      }
+      say(
+        data?.error?.message && !String(data.error.message).startsWith('Revisa')
+          ? data.error.message
+          : 'Revisa los datos: nombre, email, la dirección completa (con código postal) o el NIF.',
+      );
+    });
+  }
+</script>

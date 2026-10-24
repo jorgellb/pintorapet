@@ -4,6 +4,7 @@ import { hasSupabase } from '@/lib/server/env';
 import { getSessionUser, isActiveAdmin } from '@/lib/server/adminAuth';
 import { createUserServerClient } from '@/lib/server/supabase';
 import { loadOverview } from '@/lib/server/admin/overview';
+import { listCustomers } from '@/lib/server/admin/customers';
 import {
   chipClass,
   commissionLabel,
@@ -33,6 +34,9 @@ if (!session) return Astro.redirect('/admin/login/');
 const adminOk = await isActiveAdmin(session.client, session.user.id);
 
 const overview = adminOk ? await loadOverview(session.client) : null;
+const customerRows = adminOk ? await listCustomers(session.client).catch(() => []) : [];
+const customerAccounts = customerRows.filter((c) => c.kind === 'account' && !c.is_admin).length;
+const guestBuyers = customerRows.filter((c) => c.kind === 'guest').length;
 
 const hour = Number(
   new Intl.DateTimeFormat('es-ES', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Europe/Madrid' }).format(
@@ -186,6 +190,12 @@ const setupDone = overview?.setup.filter((s) => s.ok).length ?? 0;
             <strong>{overview.counts.products}</strong>
             <span>
               productos · {overview.counts.productsOnSale} a la venta
+            </span>
+          </a>
+          <a href="/admin/customers/">
+            <strong>{customerAccounts}</strong>
+            <span>
+              clientes con cuenta{guestBuyers > 0 && ` · ${guestBuyers} sin cuenta`}
             </span>
           </a>
           <a href="/admin/media/">
@@ -599,7 +609,7 @@ const setupDone = overview?.setup.filter((s) => s.ok).length ?? 0;
 
   .inventory {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     margin: 2.25rem 0 0;
     border-block: 1px solid var(--line);
   }

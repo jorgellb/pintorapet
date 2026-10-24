@@ -1,0 +1,243 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import CustomerForm from '@/components/admin/CustomerForm.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
+import { getCustomer } from '@/lib/server/admin/customers';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const customer = await getCustomer(admin.client, Astro.params.id ?? '');
+if (!customer) return Astro.redirect('/admin/customers/');
+
+const paidOrders = customer.orders.filter((o) => ['paid', 'review', 'partially_refunded', 'refunded'].includes(o.payment_status));
+const spent = paidOrders.reduce((sum, o) => sum + o.total_cents, 0);
+const isNew = Astro.url.searchParams.get('nuevo') === '1';
+const linkSent = Astro.url.searchParams.get('enlace') === '1';
+const self = customer.id === admin.user.id;
+// Another admin's access is managed in Ajustes, not here.
+const locked = customer.is_admin && !self;
+---
+
+<AdminLayout title={customer.full_name || customer.email} email={admin.user.email}>
+  <a class="back" href="/admin/customers/">← Clientes</a>
+  <header class="page-head">
+    <div>
+      <h1>{customer.full_name || customer.email}</h1>
+      <p class="lead">
+        {customer.email}
+        {customer.is_admin && <span class="chip chip--info">Administración</span>}
+        {!customer.confirmed && <span class="chip chip--warn">Email sin confirmar</span>}
+      </p>
+    </div>
+  </header>
+
+  {
+    isNew && (
+      <p class="status">
+        Cliente creado.{' '}
+        {linkSent
+          ? 'Le hemos enviado un enlace para crear su contraseña.'
+          : 'Puede crear su contraseña con «¿Has olvidado tu contraseña?» o con el botón «Enviar enlace».'}
+      </p>
+    )
+  }
+
+  <div class="customer">
+    <div class="customer__main">
+      {locked ? (
+        <section class="panel">
+          <h2>Cuenta de administración</h2>
+          <p class="hint">
+            Es otra cuenta del equipo. Su email, su ficha y su contraseña no se cambian desde Clientes:
+            así nadie puede quedarse con su acceso.
+          </p>
+        </section>
+      ) : (
+      <CustomerForm
+        id={customer.id}
+        email={customer.email}
+        fullName={customer.full_name}
+        phone={customer.phone}
+        address={customer.address}
+        billing={customer.billing}
+      />
+      )}
+    </div>
+
+    <aside class="customer__side">
+      <section class="panel">
+        <h2>Resumen</h2>
+        <dl class="facts">
+          <div><dt>Alta</dt><dd>{shortDate(customer.created_at)}</dd></div>
+          <div><dt>Última vez que entró</dt><dd>{customer.last_sign_in_at ? shortDate(customer.last_sign_in_at) : 'Nunca'}</dd></div>
+          <div><dt>Pedidos</dt><dd>{paidOrders.length}</dd></div>
+          <div><dt>Comprado</dt><dd>{euros(spent)}</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Pedidos</h2>
+        {
+          customer.orders.length === 0 ? (
+            <p class="muted">Aún no ha comprado.</p>
+          ) : (
+            <ul class="orders">
+              {customer.orders.map((o) => {
+                const pay = paymentLabel(o.payment_status);
+                return (
+                  <li>
+                    <a href={`/admin/orders/${o.id}/`}><code>{o.reference}</code></a>
+                    <span class="muted">{shortDate(o.created_at)}</span>
+                    <span class={chipClass(pay.tone)}>{pay.text}</span>
+                    {o.payment_status === 'paid' && <span class="muted">{fulfillmentLabel(o.fulfillment_status).text}</span>}
+                    <strong>{euros(o.total_cents)}</strong>
+                    {!o.linked && <span class="hint">Hecho sin cuenta, con su email</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        }
+      </section>
+
+      {!locked && (
+      <section class="panel">
+        <h2>Acceso</h2>
+        <p class="hint">Le llega un email para crear o cambiar su contraseña.</p>
+        <button type="button" class="btn--quiet" data-password-link={customer.id}>Enviar enlace de contraseña</button>
+        <p class="status" data-access-status hidden></p>
+      </section>
+      )}
+
+      {
+        !customer.is_admin && !self && (
+          <section class="panel danger">
+            <h2>Borrar cliente</h2>
+            <p class="hint">
+              Se borra su cuenta y su ficha. Sus pedidos y facturas se conservan, porque hay que
+              guardarlos por ley, pero dejan de estar en una cuenta.
+            </p>
+            <button type="button" class="btn--danger" data-delete-customer={customer.id} data-name={customer.full_name || customer.email}>
+              Borrar cliente
+            </button>
+            <p class="status" data-delete-status hidden></p>
+          </section>
+        )
+      }
+    </aside>
+  </div>
+</AdminLayout>
+
+<style>
+  .customer {
+    display: grid;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  @media (min-width: 70rem) {
+    .customer {
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    }
+  }
+
+  .customer__side {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .lead .chip {
+    margin-left: 0.5rem;
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .facts div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .facts dt {
+    color: var(--muted);
+  }
+
+  .facts dd {
+    margin: 0;
+  }
+
+  .orders {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .orders li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .orders li:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .orders strong {
+    margin-left: auto;
+  }
+
+  .orders .hint {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+  }
+
+  .danger {
+    border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  }
+</style>
+
+<script>
+  const link = document.querySelector<HTMLButtonElement>('[data-password-link]');
+  link?.addEventListener('click', async () => {
+    const status = document.querySelector<HTMLElement>('[data-access-status]')!;
+    link.disabled = true;
+    const res = await fetch(`/api/admin/customers/${link.dataset.passwordLink}/password-link/`, { method: 'POST' }).catch(() => null);
+    const data = await res?.json().catch(() => ({}));
+    status.hidden = false;
+    status.textContent = res?.ok ? 'Enlace enviado.' : (data?.error?.message ?? 'No se pudo enviar el enlace.');
+    link.disabled = false;
+  });
+
+  const del = document.querySelector<HTMLButtonElement>('[data-delete-customer]');
+  del?.addEventListener('click', async () => {
+    const name = del.dataset.name ?? 'este cliente';
+    if (!window.confirm(`¿Borrar a ${name}? Su cuenta y su ficha se borran para siempre. Sus pedidos se conservan.`)) return;
+    const status = document.querySelector<HTMLElement>('[data-delete-status]')!;
+    del.disabled = true;
+    const res = await fetch(`/api/admin/customers/${del.dataset.deleteCustomer}/`, { method: 'DELETE' }).catch(() => null);
+    if (res?.ok) {
+      location.assign('/admin/customers/?borrado=1');
+      return;
+    }
+    const data = await res?.json().catch(() => ({}));
+    status.hidden = false;
+    status.textContent = data?.error?.message ?? 'No se pudo borrar el cliente.';
+    del.disabled = false;
+  });
+</script>

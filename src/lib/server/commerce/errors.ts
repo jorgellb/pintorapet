@@ -5,6 +5,7 @@ export type CommerceErrorCode =
   | 'UNAVAILABLE'
   | 'CONFLICT'
   | 'FORBIDDEN'
+  | 'RATE_LIMITED'
   | 'INTERNAL';
 
 export class CommerceError extends Error {

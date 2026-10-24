@@ -1,6 +1,7 @@
 ---
 import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
+import AntiBot from '@/components/AntiBot.astro';
 import type { Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { safeNext } from '@/lib/domain/accountProfile';
@@ -17,6 +18,7 @@ const es = locale === 'es';
 const accountPath = localizedPath(locale, 'account');
 const next = safeNext(Astro.url.searchParams.get('next'), accountPath);
 const endpoint = { signIn: 'sign-in', register: 'register', forgot: 'forgot', reset: 'reset' }[mode];
+const antibot = ({ signIn: 'sign_in', register: 'register', forgot: 'forgot' } as const)[mode as Exclude<Mode, 'reset'>];
 
 const copy = es
   ? {
@@ -234,6 +236,8 @@ const nextQuery = next !== accountPath ? `?next=${encodeURIComponent(next)}` : '
                   </span>
                 </label>
               )}
+
+              {antibot && <AntiBot form={antibot} locale={locale} />}
 
               <div class="paper__actions">
                 <button class="btn" type="submit">{copy.submit[mode]}</button>

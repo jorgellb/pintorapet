@@ -215,6 +215,7 @@ export const en = {
     success: 'Thank you. Your message was received.',
     error: 'Something went wrong. Please try again or email us directly.',
     errorInvalid: 'Some details look incomplete. Check the fields and try again.',
+    errorRate: 'Too many messages from your connection. Please wait a while and try again, or email info@petsdrawings.com.',
     errorNotConfigured:
       'The form is not connected yet. Please write to info@petsdrawings.com instead.',
   },

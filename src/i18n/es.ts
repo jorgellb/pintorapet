@@ -217,6 +217,7 @@ export const es: Dictionary = {
     success: 'Gracias. Hemos recibido tu mensaje.',
     error: 'Algo falló. Inténtalo de nuevo o escríbenos por correo.',
     errorInvalid: 'Faltan algunos datos. Revisa los campos e inténtalo de nuevo.',
+    errorRate: 'Demasiados mensajes desde tu conexión. Espera un rato y vuelve a intentarlo, o escribe a info@petsdrawings.com.',
     errorNotConfigured:
       'El formulario aún no está conectado. Escribe a info@petsdrawings.com, por favor.',
   },

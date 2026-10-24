@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { localizedPath, type Locale } from '@/i18n/routes';
 import { passwordSchema, safeNext } from '@/lib/domain/accountProfile';
 import { authErrorKey } from '@/lib/server/account';
+import { clientIp, formFields, inspect, type AntibotForm } from '@/lib/server/antibot';
 import { setFlash } from '@/lib/server/flash';
 import { createUserServerClient } from '@/lib/server/supabase';
 
@@ -14,11 +15,18 @@ const PAGES = {
   reset: 'accountReset',
 } as const;
 
+const GATED: Partial<Record<keyof typeof PAGES, AntibotForm>> = {
+  'sign-in': 'sign_in',
+  register: 'register',
+  forgot: 'forgot',
+};
+
 /**
  * Sign in, register, ask for a password link and set a new password. Each form
  * posts here; the answer is a redirect, with any message in a one-time cookie.
  */
-export const POST: APIRoute = async ({ params, request, cookies, redirect, url }) => {
+export const POST: APIRoute = async (context) => {
+  const { params, request, cookies, redirect, url } = context;
   const action = params.action as keyof typeof PAGES;
   if (!(action in PAGES)) return new Response(null, { status: 404 });
 
@@ -37,6 +45,26 @@ export const POST: APIRoute = async ({ params, request, cookies, redirect, url }
   };
   const callback = (to: string) => `${url.origin}/api/auth/callback/?next=${encodeURIComponent(to)}`;
 
+  // Typos do not count towards the limits: check the fields first.
+  if (action === 'register') {
+    if (form.get('privacy') !== 'yes') return back('privacy');
+    if (fullName.length < 2 || !email.includes('@')) return back('missing');
+    if (!passwordSchema.safeParse(password).success) return back('weak');
+  }
+  if (action === 'forgot' && !email.includes('@')) return back('missing');
+
+  const gated = GATED[action];
+  if (gated) {
+    const { verdict } = await inspect({ form: gated, fields: formFields(form), ip: clientIp(context), email, name: fullName });
+    if (verdict === 'rate') return back('rate');
+    if (verdict === 'block') {
+      // Bots get the answer a person would get, so they learn nothing.
+      if (action === 'sign-in') return back('generic');
+      setFlash(cookies, { sent: action === 'register' ? 'register' : 'forgot', email });
+      return redirect(page, 303);
+    }
+  }
+
   const client = createUserServerClient(cookies, request);
   if (!client) return back('generic');
 
@@ -46,9 +74,6 @@ export const POST: APIRoute = async ({ params, request, cookies, redirect, url }
   }
 
   if (action === 'register') {
-    if (form.get('privacy') !== 'yes') return back('privacy');
-    if (fullName.length < 2 || !email.includes('@')) return back('missing');
-    if (!passwordSchema.safeParse(password).success) return back('weak');
     const { data, error } = await client.auth.signUp({
       email,
       password,
@@ -61,7 +86,6 @@ export const POST: APIRoute = async ({ params, request, cookies, redirect, url }
   }
 
   if (action === 'forgot') {
-    if (!email.includes('@')) return back('missing');
     // The same answer whether or not the account exists.
     const { error } = await client.auth.resetPasswordForEmail(email, {
       redirectTo: callback(localizedPath(locale, 'accountReset')),

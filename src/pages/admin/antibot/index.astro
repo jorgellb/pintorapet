@@ -1,0 +1,319 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { shortDate } from '@/lib/admin/labels';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+type Summary = {
+  totals: Record<string, number>;
+  last_day: Record<string, number>;
+  by_form: Array<{ form: string; allow: number; stopped: number }>;
+  by_reason: Array<{ reason: string; count: number }>;
+  recent: Array<{
+    form: string;
+    verdict: 'block' | 'rate';
+    score: number;
+    reasons: string[];
+    email_hint: string | null;
+    ip: string;
+    created_at: string;
+  }>;
+};
+
+const periods = { '1': 'Último día', '7': '7 días', '30': '30 días' } as const;
+type Period = keyof typeof periods;
+const param = Astro.url.searchParams.get('dias');
+const days: Period = param && param in periods ? (param as Period) : '7';
+
+let summary: Summary | null = null;
+const { data, error } = await admin.client.rpc('admin_antibot_summary', { p_days: Number(days) });
+if (!error) summary = data as Summary;
+
+const FORMS: Record<string, string> = {
+  register: 'Registro',
+  sign_in: 'Entrar',
+  forgot: 'Enlace de contraseña',
+  contact: 'Contacto',
+  commission: 'Encargos',
+};
+
+const REASONS: Record<string, string> = {
+  honeypot: 'Rellenó el campo trampa',
+  token_missing: 'Sin reto (bot sin navegador)',
+  token_invalid: 'Reto falsificado',
+  token_form: 'Reto de otro formulario',
+  token_expired: 'Reto caducado',
+  too_fast: 'Demasiado rápido',
+  pow_missing: 'Sin prueba de trabajo',
+  pow_invalid: 'Prueba de trabajo falsa',
+  replay: 'Reto reutilizado',
+  ip_changed: 'Cambió de IP',
+  webdriver: 'Navegador automatizado',
+  no_interaction: 'Sin teclear ni tocar',
+  no_signals: 'Sin señales del navegador',
+  name_random: 'Nombre aleatorio',
+  name_link: 'Enlace en el nombre',
+  name_long: 'Nombre de una sola palabra larguísima',
+  email_dots: 'Gmail con muchos puntos',
+  email_fragments: 'Gmail troceado',
+  email_disposable: 'Email desechable',
+  message_markup: 'Mensaje con código de enlaces',
+  message_links: 'Mensaje lleno de enlaces',
+  message_link_only: 'Mensaje que es solo un enlace',
+  message_spam_words: 'Palabras de spam',
+  turnstile: 'No pasó Turnstile',
+  turnstile_missing: 'Sin Turnstile',
+  turnstile_unreachable: 'Turnstile no respondió',
+  rate_ip: 'Demasiados intentos desde su IP',
+  rate_ip_day: 'Demasiados intentos hoy desde su IP',
+  rate_email: 'Demasiados intentos con ese email',
+  rate_global: 'Pico de envíos en la web',
+};
+
+const label = (reason: string) => REASONS[reason] ?? reason;
+const stopped = (counts: Record<string, number>) => (counts.block ?? 0) + (counts.rate ?? 0);
+const turnstile = Boolean(import.meta.env.TURNSTILE_SECRET_KEY && import.meta.env.PUBLIC_TURNSTILE_SITE_KEY);
+const ownSecret = Boolean(import.meta.env.ANTIBOT_SECRET);
+---
+
+<AdminLayout title="Protección antibots" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Protección antibots</h1>
+      <p class="lead">
+        Registro, entrar, enlaces de contraseña, contacto y encargos pasan por varios filtros. A los bots
+        se les responde como a una persona, así no saben que se les ha frenado.
+      </p>
+    </div>
+  </header>
+
+  {
+    !summary ? (
+      <p class="err">No se pudo cargar el registro de la protección.</p>
+    ) : (
+      <>
+        <p class="summary">
+          <span><strong>{stopped(summary.last_day)}</strong> frenados en 24 h</span>
+          <span><strong>{summary.last_day.allow ?? 0}</strong> envíos legítimos en 24 h</span>
+          <span><strong>{stopped(summary.totals)}</strong> frenados ({periods[days].toLowerCase()})</span>
+        </p>
+
+        <ul class="tabs">
+          {(Object.keys(periods) as Period[]).map((key) => (
+            <li>
+              <a href={`/admin/antibot/?dias=${key}`} aria-current={days === key ? 'page' : undefined}>
+                {periods[key]}
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <div class="antibot">
+          <section class="panel">
+            <h2>Por formulario</h2>
+            {summary.by_form.length === 0 ? (
+              <p class="empty">Aún no hay envíos en este periodo.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Formulario</th>
+                    <th class="num">Pasaron</th>
+                    <th class="num">Frenados</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.by_form.map((row) => (
+                    <tr>
+                      <td>{FORMS[row.form] ?? row.form}</td>
+                      <td class="num">{row.allow}</td>
+                      <td class="num">{row.stopped}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+
+          <section class="panel">
+            <h2>Por qué se frenaron</h2>
+            {summary.by_reason.length === 0 ? (
+              <p class="empty">Nada frenado en este periodo.</p>
+            ) : (
+              <ul class="reasons">
+                {summary.by_reason.map((row) => (
+                  <li>
+                    <span>{label(row.reason)}</span>
+                    <strong>{row.count}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section class="panel">
+            <h2>Capas activas</h2>
+            <ul class="layers">
+              <li class="on">Reto firmado de un solo uso, pedido al abrir la página</li>
+              <li class="on">Prueba de trabajo en el navegador, más dura para IPs sospechosas</li>
+              <li class="on">Campo trampa invisible y tiempo mínimo de relleno</li>
+              <li class="on">Señales de persona: teclear, tocar, navegador no automatizado</li>
+              <li class="on">Contenido: nombres aleatorios, Gmail con puntos, emails desechables, spam</li>
+              <li class="on">Límites por IP, por email y picos en toda la web</li>
+              <li class={turnstile ? 'on' : 'off'}>
+                Cloudflare Turnstile{' '}
+                {!turnstile && (
+                  <span class="hint">
+                    — opcional. Para activarlo, añade <code>PUBLIC_TURNSTILE_SITE_KEY</code> y
+                    <code>TURNSTILE_SECRET_KEY</code> en Vercel.
+                  </span>
+                )}
+              </li>
+              <li class={ownSecret ? 'on' : 'off'}>
+                Clave propia <code>ANTIBOT_SECRET</code>{' '}
+                {!ownSecret && <span class="hint">— opcional; mientras tanto se deriva de la clave de servicio.</span>}
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <h2 class="section-title">Últimos intentos frenados</h2>
+        {summary.recent.length === 0 ? (
+          <p class="empty">Nada frenado en este periodo.</p>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cuándo</th>
+                  <th>Formulario</th>
+                  <th>Email</th>
+                  <th>Motivos</th>
+                  <th class="num">Puntos</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.recent.map((row) => (
+                  <tr>
+                    <td>{shortDate(row.created_at)}</td>
+                    <td>{FORMS[row.form] ?? row.form}</td>
+                    <td>{row.email_hint ?? '—'}</td>
+                    <td>
+                      {row.reasons.map((reason) => (
+                        <span class={`chip ${reason.startsWith('rate') ? 'chip--warn' : ''}`}>{label(reason)}</span>
+                      ))}
+                    </td>
+                    <td class="num">{row.score}</td>
+                    <td>
+                      <code title="Huella de la IP: no se guarda la IP real">{row.ip}</code>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p class="hint foot">
+          Se guarda 30 días. Las IPs y los emails se guardan como huellas cifradas; del email solo se ve el
+          principio.
+        </p>
+      </>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 2rem;
+    margin: 0 0 1.25rem;
+    color: var(--muted);
+  }
+
+  .summary strong {
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 500;
+  }
+
+  .antibot {
+    display: grid;
+    gap: 1.25rem;
+    margin: 1.25rem 0 2rem;
+  }
+
+  @media (min-width: 64rem) {
+    .antibot {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: start;
+    }
+  }
+
+  .reasons,
+  .layers {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .reasons li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .layers li {
+    position: relative;
+    padding-left: 1.4rem;
+    font-size: 0.92rem;
+  }
+
+  .layers li::before {
+    position: absolute;
+    left: 0;
+    content: '✓';
+    color: var(--ok, #2f6b3b);
+  }
+
+  .layers li.off::before {
+    content: '○';
+    color: var(--muted);
+  }
+
+  .panel table {
+    width: 100%;
+  }
+
+  .panel :is(th, td) {
+    padding-inline: 0.4rem;
+  }
+
+  td .chip {
+    margin: 0 0.25rem 0.25rem 0;
+  }
+
+  .num {
+    text-align: right;
+  }
+
+  .section-title {
+    margin: 0 0 0.75rem;
+  }
+
+  .foot {
+    margin-top: 1rem;
+  }
+</style>

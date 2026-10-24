@@ -1,0 +1,30 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import CustomerForm from '@/components/admin/CustomerForm.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+// "Crear cuenta" from a guest buyer arrives with their email and name.
+const email = (Astro.url.searchParams.get('email') ?? '').slice(0, 254);
+const fullName = (Astro.url.searchParams.get('nombre') ?? '').slice(0, 120);
+---
+
+<AdminLayout title="Nuevo cliente" email={admin.user.email}>
+  <a class="back" href="/admin/customers/">← Clientes</a>
+  <header class="page-head">
+    <div>
+      <h1>Nuevo cliente</h1>
+      <p class="lead">
+        Crea la cuenta a mano, por ejemplo para alguien que compra en un mercado. Verá en su cuenta
+        todos los pedidos hechos con este email.
+      </p>
+    </div>
+  </header>
+  <CustomerForm email={email} fullName={fullName} />
+</AdminLayout>

@@ -1,6 +1,7 @@
 ---
 import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
+import AntiBot from '@/components/AntiBot.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { getFeedbackImages } from '@/lib/content/siteExtras';
@@ -64,6 +65,7 @@ const channels = [
         data-msg-error={dict.forms.error}
         data-msg-invalid={dict.forms.errorInvalid}
         data-msg-not-configured={dict.forms.errorNotConfigured}
+        data-msg-rate={dict.forms.errorRate}
       >
         <input type="hidden" name="locale" value={locale} />
 
@@ -106,6 +108,8 @@ const channels = [
               maxlength="5000"
               placeholder={dict.contact.messagePlaceholder}></textarea>
           </label>
+
+          <AntiBot form="contact" locale={locale} />
 
           <div class="paper__actions">
             <button class="btn" type="submit">{dict.contact.submit}</button>
