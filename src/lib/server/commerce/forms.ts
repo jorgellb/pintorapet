@@ -94,7 +94,8 @@ async function notifyStudio(
       .from('notification_outbox')
       .select('id', { count: 'exact', head: true })
       .in('template_key', ['contact_admin', 'commission_admin'])
-      .eq('status', 'pending');
+      // Everything not sent yet: failed rows are retried, leased ones in flight.
+      .in('status', ['pending', 'failed', 'leased']);
     if (error || (count ?? 0) >= MAX_DEFERRED) {
       const day = new Date().toISOString().slice(0, 10);
       console.warn('anti-bot mail cap: message saved, studio gets one digest', form, day);
