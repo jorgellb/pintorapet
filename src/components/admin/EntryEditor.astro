@@ -1,13 +1,18 @@
 ---
+import MediaPicker from '@/components/admin/MediaPicker.astro';
 import SeoFields from '@/components/admin/SeoFields.astro';
 import { galleryGroupLabel, workCategoryLabel } from '@/lib/admin/labels';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
 import { siteUrl } from '@/lib/server/env';
 import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 interface MediaOption {
   id: string;
   publicUrl: string;
-  label: string;
+  object_path: string;
+  bucket: string;
+  altEs: string;
+  altEn: string;
 }
 
 interface AssetValue {
@@ -66,7 +71,17 @@ const endpoint = mode === 'create' ? base : `${base}${id}/`;
 const back = work ? '/admin/work/' : '/admin/gallery/';
 const publicUrl = work && mode === 'edit' && values.slugEs ? `/es/obra/${values.slugEs}/` : null;
 const blankAsset: AssetValue = { role: 'drawing', src: '' };
-const mediaName = (label: string) => label.split('/').pop() ?? label;
+const mediaById = new Map(media.map((item) => [item.id, item]));
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
+// New rows: the first image is the cover, the rest default to process / other.
+const nextRole = work ? 'process_photo' : 'other';
 const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
 ---
 
@@ -157,17 +172,27 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
     <fieldset>
       <legend>Imágenes</legend>
       <p class="hint">
-        Elige un archivo de <a href="/admin/media/">Medios</a> o pega una ruta de la web,
-        como <code>/media/portfolio/…</code>. La primera imagen con papel «Dibujo» es la portada.
+        Elige las imágenes de <a href="/admin/media/" target="_blank" rel="noreferrer">Medios</a> o súbelas
+        aquí: se guardan en Medios. La primera con papel «Dibujo» es la portada; pulsa una imagen para
+        cambiarla.
       </p>
-      <div class="assets" data-assets>
+      <div class="assets" data-assets data-next-role={nextRole}>
         {
           [...values.assets, null].map((asset) => {
             const value = asset ?? blankAsset;
+            const linked = value.mediaId ? mediaById.get(value.mediaId) : undefined;
+            const thumb = linked?.publicUrl ?? (resolveMediaUrl(value.src) || undefined);
             const row = (
               <div class="asset" data-asset-row>
-                <img class="asset-thumb" src={resolveMediaUrl(value.src) || undefined} alt="" data-thumb />
+                <button type="button" class="asset-image" data-choose title="Cambiar imagen desde Medios">
+                  <img src={thumb} alt="" data-thumb />
+                  <span class="asset-image__hint">Cambiar</span>
+                </button>
                 <div class="asset-fields">
+                  <input type="hidden" name="mediaId" value={value.mediaId ?? ''} />
+                  <p class="asset-file" data-file-name>
+                    {linked ? mediaDisplayName(linked.object_path) : value.src ? 'Imagen con ruta manual' : 'Sin imagen'}
+                  </p>
                   <div class="pair">
                     <label>
                       Papel
@@ -179,22 +204,13 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
                         ))}
                       </select>
                     </label>
-                    <label>
-                      Archivo de Medios
-                      <select name="mediaId" data-media>
-                        <option value="">Ruta manual</option>
-                        {media.map((item) => (
-                          <option value={item.id} data-url={item.publicUrl} selected={value.mediaId === item.id}>
-                            {mediaName(item.label)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {work && (
+                      <label>
+                        Etiqueta
+                        <input name="label" value={value.label ?? ''} placeholder="Ej.: Antes, Después" />
+                      </label>
+                    )}
                   </div>
-                  <label>
-                    Ruta o URL
-                    <input name="src" value={value.src} required data-src />
-                  </label>
                   <div class="pair">
                     <label>
                       Texto alternativo
@@ -205,12 +221,14 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
                       <input name="altEn" value={value.altEn ?? ''} />
                     </label>
                   </div>
-                  {work && (
+                  <details class="manual" open={!value.mediaId && Boolean(value.src)}>
+                    <summary>Ruta manual</summary>
                     <label>
-                      Etiqueta
-                      <input name="label" value={value.label ?? ''} placeholder="Ej.: Antes, Después" />
+                      Ruta o URL
+                      <input name="src" value={value.src} data-src placeholder="/media/portfolio/…" />
+                      <span class="hint">Solo para imágenes que no están en Medios.</span>
                     </label>
-                  )}
+                  </details>
                   <div class="asset-actions">
                     <button type="button" class="btn--quiet" data-up aria-label="Subir imagen">↑</button>
                     <button type="button" class="btn--quiet" data-down aria-label="Bajar imagen">↓</button>
@@ -223,7 +241,17 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
           })
         }
       </div>
-      <button type="button" class="btn--quiet" data-add>Añadir imagen</button>
+      <div class="drop" data-drop>
+        <p>Arrastra imágenes aquí o</p>
+        <div class="drop-actions">
+          <button type="button" data-add>Añadir desde Medios</button>
+          <label class="btn btn--quiet">
+            Subir del ordenador
+            <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden data-upload />
+          </label>
+        </div>
+        <p class="status" data-upload-status role="status" hidden></p>
+      </div>
     </fieldset>
   </div>
 
@@ -277,6 +305,8 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
   </aside>
 </form>
 
+<MediaPicker items={pickerItems} defaultBucket="portfolio-public" />
+
 <style>
   .assets {
     display: grid;
@@ -293,12 +323,104 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
     background: var(--paper);
   }
 
-  .asset-thumb {
+  .asset-image {
+    position: relative;
+    display: block;
     width: 6.5rem;
     height: 6.5rem;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
     border-radius: 0.5rem;
     background: var(--paper-deep);
+  }
+
+  .asset-image:hover,
+  .asset-image:focus-visible {
+    border-color: var(--accent);
+    background: var(--paper-deep);
+  }
+
+  .asset-image img {
+    display: block;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
+  }
+
+  .asset-image img:not([src]) {
+    visibility: hidden;
+  }
+
+  .asset-image__hint {
+    position: absolute;
+    inset: auto 0 0;
+    padding: 0.2rem;
+    background: rgb(22 23 26 / 0.6);
+    color: #fff;
+    font-size: 0.72rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .asset-image:hover .asset-image__hint,
+  .asset-image:focus-visible .asset-image__hint,
+  .asset-image:has(img:not([src])) .asset-image__hint {
+    opacity: 1;
+  }
+
+  .asset-file {
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .manual summary {
+    width: fit-content;
+    color: var(--muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .manual label {
+    margin-top: 0.5rem;
+  }
+
+  .drop {
+    display: grid;
+    justify-items: center;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+    padding: 1.25rem;
+    border: 2px dashed var(--line-strong, var(--line));
+    border-radius: var(--a-radius);
+    text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .drop p {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .drop.is-over {
+    border-color: var(--accent);
+    background: var(--accent-soft, var(--paper));
+  }
+
+  .drop-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .drop-actions .btn {
+    cursor: pointer;
   }
 
   .asset-fields {
@@ -335,6 +457,8 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
 </style>
 
 <script>
+  import { pickMedia, uploadToMedia, type PickedMedia } from '@/lib/admin/mediaPicker';
+
   const form = document.querySelector('[data-entry-form]');
   if (form instanceof HTMLFormElement) {
     const assets = form.querySelector<HTMLElement>('[data-assets]');
@@ -346,23 +470,47 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
       status.textContent = text;
     };
 
-    const wire = (row: HTMLElement) => {
-      const select = row.querySelector<HTMLSelectElement>('[data-media]');
-      const src = row.querySelector<HTMLInputElement>('[data-src]');
+    const field = (row: Element, name: string) => row.querySelector<HTMLInputElement>(`[name="${name}"]`);
+
+    /** Put a Medios image in a row; texts left empty take the ones from Medios. */
+    const fill = (row: HTMLElement, item: PickedMedia) => {
+      const mediaId = field(row, 'mediaId');
+      const src = field(row, 'src');
+      if (mediaId) mediaId.value = item.id;
+      if (src) src.value = item.url;
       const thumb = row.querySelector<HTMLImageElement>('[data-thumb]');
-      const show = () => {
-        if (!thumb || !src) return;
+      if (thumb) thumb.src = item.url;
+      const name = row.querySelector('[data-file-name]');
+      if (name) name.textContent = item.name;
+      const altEs = field(row, 'altEs');
+      const altEn = field(row, 'altEn');
+      if (altEs && !altEs.value.trim()) altEs.value = item.altEs;
+      if (altEn && !altEn.value.trim()) altEn.value = item.altEn;
+      row.querySelector('details.manual')?.removeAttribute('open');
+    };
+
+    const ids = () =>
+      [...(assets?.querySelectorAll<HTMLInputElement>('[data-asset-row] [name="mediaId"]') ?? [])]
+        .map((input) => input.value)
+        .filter(Boolean);
+
+    const wire = (row: HTMLElement) => {
+      const src = field(row, 'src');
+      const thumb = row.querySelector<HTMLImageElement>('[data-thumb]');
+      row.querySelector('[data-choose]')?.addEventListener('click', async () => {
+        const [item] = await pickMedia({ bucket: 'portfolio-public' });
+        if (item) fill(row, item);
+      });
+      // A typed path replaces the Medios link.
+      src?.addEventListener('change', () => {
+        const mediaId = field(row, 'mediaId');
+        if (mediaId) mediaId.value = '';
+        const name = row.querySelector('[data-file-name]');
+        if (name) name.textContent = src.value ? 'Imagen con ruta manual' : 'Sin imagen';
+        if (!thumb) return;
         if (src.value) thumb.src = src.value;
         else thumb.removeAttribute('src');
-      };
-      select?.addEventListener('change', () => {
-        const url = select.selectedOptions[0]?.dataset.url;
-        if (url && src) {
-          src.value = url;
-          show();
-        }
       });
-      src?.addEventListener('change', show);
       row.querySelector('[data-remove]')?.addEventListener('click', () => row.remove());
       row.querySelector('[data-up]')?.addEventListener('click', () => {
         const prev = row.previousElementSibling;
@@ -374,14 +522,62 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
       });
     };
 
-    assets?.querySelectorAll<HTMLElement>('[data-asset-row]').forEach(wire);
-    form.querySelector('[data-add]')?.addEventListener('click', () => {
+    /** A new row for an image; the first drawing is the cover, the rest get the usual role. */
+    const addRow = (item: PickedMedia) => {
       if (!(template instanceof HTMLTemplateElement) || !assets) return;
       const row = template.content.firstElementChild?.cloneNode(true);
       if (!(row instanceof HTMLElement)) return;
+      const hasDrawing = [...assets.querySelectorAll<HTMLSelectElement>('[data-asset-row] [name="role"]')].some(
+        (select) => select.value === 'drawing',
+      );
+      const role = row.querySelector<HTMLSelectElement>('[name="role"]');
+      if (role) role.value = hasDrawing ? (assets.dataset.nextRole ?? 'other') : 'drawing';
       template.before(row);
       wire(row);
-      row.querySelector<HTMLSelectElement>('[data-media]')?.focus();
+      fill(row, item);
+    };
+
+    assets?.querySelectorAll<HTMLElement>('[data-asset-row]').forEach(wire);
+
+    form.querySelector('[data-add]')?.addEventListener('click', async () => {
+      const picked = await pickMedia({ multiple: true, bucket: 'portfolio-public', exclude: ids() });
+      picked.forEach(addRow);
+    });
+
+    // Upload from the computer (button or drop): each file goes to Medios, then into a row.
+    const drop = form.querySelector<HTMLElement>('[data-drop]');
+    const uploadStatus = form.querySelector<HTMLElement>('[data-upload-status]');
+    const upload = async (files: File[]) => {
+      const images = files.filter((file) => /^image\/(jpeg|png|webp|gif)$/.test(file.type));
+      if (images.length === 0) return;
+      if (uploadStatus) uploadStatus.hidden = false;
+      for (const [index, file] of images.entries()) {
+        if (uploadStatus) uploadStatus.textContent = `Subiendo ${index + 1} de ${images.length}…`;
+        try {
+          addRow(await uploadToMedia(file, 'portfolio-public'));
+        } catch (err) {
+          if (uploadStatus) uploadStatus.textContent = err instanceof Error ? err.message : 'No se pudo subir.';
+          return;
+        }
+      }
+      if (uploadStatus) {
+        uploadStatus.textContent =
+          images.length === 1 ? 'Imagen subida a Medios.' : `${images.length} imágenes subidas a Medios.`;
+      }
+    };
+    form.querySelector<HTMLInputElement>('[data-upload]')?.addEventListener('change', (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      upload([...(input.files ?? [])]).finally(() => (input.value = ''));
+    });
+    drop?.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      drop.classList.add('is-over');
+    });
+    drop?.addEventListener('dragleave', () => drop.classList.remove('is-over'));
+    drop?.addEventListener('drop', (event) => {
+      event.preventDefault();
+      drop.classList.remove('is-over');
+      upload([...(event.dataTransfer?.files ?? [])]);
     });
 
     document.addEventListener('keydown', (event) => {
@@ -434,6 +630,10 @@ const host = siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
         payload.seoDescriptionEs = read('seoDescriptionEs');
       } else {
         payload.group = read('group');
+      }
+      if ((payload.assets as Array<{ src: string }>).some((asset) => !asset.src.trim())) {
+        say('Cada imagen necesita un archivo de Medios o una ruta. Elige una o quita la fila.');
+        return;
       }
       say('Guardando…');
       const response = await fetch(form.dataset.endpoint ?? '', {

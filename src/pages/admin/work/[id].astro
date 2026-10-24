@@ -37,7 +37,7 @@ const assets = [...(row.artwork_assets ?? [])].sort(
     kind="work"
     mode="edit"
     id={row.id}
-    media={media.map((item) => ({ id: item.id, publicUrl: item.publicUrl, label: item.object_path }))}
+    media={media}
     values={{
       category: row.category,
       slugEn: row.slug_en,

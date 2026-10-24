@@ -5,6 +5,7 @@ export interface PickerItem {
   name: string;
   bucket: string;
   altEs: string;
+  altEn?: string;
 }
 
 interface Props {
@@ -49,7 +50,7 @@ const buckets = [
     <ul class="picker__grid" data-picker-grid>
       {
         items.map((item) => (
-          <li data-picker-item data-id={item.id} data-url={item.url} data-name={item.name} data-bucket={item.bucket} data-alt={item.altEs} data-search-text={`${item.name} ${item.altEs}`.toLowerCase()}>
+          <li data-picker-item data-id={item.id} data-url={item.url} data-name={item.name} data-bucket={item.bucket} data-alt={item.altEs} data-alt-en={item.altEn ?? ''} data-search-text={`${item.name} ${item.altEs}`.toLowerCase()}>
             <button type="button" aria-pressed="false" title={item.name}>
               <img src={item.url} alt="" loading="lazy" decoding="async" />
               <span class="picker__check" aria-hidden="true">✓</span>

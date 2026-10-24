@@ -4,6 +4,7 @@ import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { listMedia } from '@/lib/server/admin/editorial';
 import { hasSupabase } from '@/lib/server/env';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
 
 export const prerender = false;
 
@@ -31,9 +32,7 @@ const param = Astro.url.searchParams.get('filtro');
 const current = param && param in filters ? (param as FilterKey) : null;
 const visible = current ? items.filter(filters[current].test) : items;
 
-function fileName(path: string): string {
-  return path.split('/').pop() ?? path;
-}
+const fileName = mediaDisplayName;
 
 function size(bytes: number | null): string {
   if (!bytes) return '';

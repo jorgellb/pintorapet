@@ -1,4 +1,10 @@
-export type PickedMedia = { id: string; url: string; name: string; altEs: string };
+/** File name to show: uploads are stored as "<uuid>-name.jpg"; the uuid means nothing to people. */
+export function mediaDisplayName(path: string): string {
+  const file = path.split('/').pop() ?? path;
+  return file.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, '') || file;
+}
+
+export type PickedMedia = { id: string; url: string; name: string; altEs: string; altEn: string };
 
 type PickOptions = {
   multiple?: boolean;
@@ -6,8 +12,17 @@ type PickOptions = {
   bucket?: string;
 };
 
+export type UploadedMedia = {
+  id: string;
+  publicUrl: string;
+  object_path: string;
+  bucket: string;
+  altEs: string;
+  altEn?: string;
+};
+
 type UploadResponse = {
-  media?: { id: string; publicUrl: string; object_path: string; bucket: string; altEs: string };
+  media?: UploadedMedia;
   error?: { message?: string };
 };
 
@@ -26,6 +41,7 @@ function fromTile(tile: HTMLElement): PickedMedia {
     url: tile.dataset.url ?? '',
     name: tile.dataset.name ?? '',
     altEs: tile.dataset.alt ?? '',
+    altEn: tile.dataset.altEn ?? '',
   };
 }
 
@@ -75,11 +91,11 @@ function toggle(tile: HTMLElement) {
   refresh();
 }
 
-function addTile(media: NonNullable<UploadResponse['media']>) {
+function addTile(media: UploadedMedia) {
   const grid = document.querySelector('[data-picker-grid]');
   const template = tiles()[0];
   if (!grid) return null;
-  const name = media.object_path.split('/').pop() ?? media.object_path;
+  const name = mediaDisplayName(media.object_path);
   const tile = document.createElement('li');
   if (template) {
     for (const attr of template.getAttributeNames()) {
@@ -92,6 +108,7 @@ function addTile(media: NonNullable<UploadResponse['media']>) {
   tile.dataset.name = name;
   tile.dataset.bucket = media.bucket;
   tile.dataset.alt = media.altEs ?? '';
+  tile.dataset.altEn = media.altEn ?? '';
   tile.dataset.searchText = name.toLowerCase();
   tile.innerHTML = template?.innerHTML ?? '<button type="button"><img alt="" /></button>';
   const img = tile.querySelector('img');
@@ -158,6 +175,24 @@ function wire() {
     resolvePick?.([]);
     resolvePick = null;
   });
+}
+
+/** Upload one image to Medios (outside the dialog) and show it in the dialog too. */
+export async function uploadToMedia(file: File, target: string): Promise<PickedMedia> {
+  const body = new FormData();
+  body.set('file', file);
+  body.set('bucket', target);
+  const response = await fetch('/api/admin/media/', { method: 'POST', body }).catch(() => null);
+  const data = (await response?.json().catch(() => null)) as UploadResponse | null;
+  if (!response?.ok || !data?.media) throw new Error(data?.error?.message || `No se pudo subir ${file.name}.`);
+  addTile(data.media);
+  return {
+    id: data.media.id,
+    url: data.media.publicUrl,
+    name: mediaDisplayName(data.media.object_path),
+    altEs: data.media.altEs ?? '',
+    altEn: data.media.altEn ?? '',
+  };
 }
 
 /** Opens the Medios dialog rendered by MediaPicker.astro and resolves with the chosen images. */

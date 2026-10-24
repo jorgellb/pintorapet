@@ -1,6 +1,7 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import MediaPicker from '@/components/admin/MediaPicker.astro';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
 import SeoFields from '@/components/admin/SeoFields.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { getAdminProduct, listProductImages, listVariants } from '@/lib/server/admin/products';
@@ -42,7 +43,7 @@ const photos = images.map((image) => ({
 const pickerItems = media.map((item) => ({
   id: item.id,
   url: item.publicUrl,
-  name: item.object_path.split('/').pop() ?? item.object_path,
+  name: mediaDisplayName(item.object_path),
   bucket: item.bucket,
   altEs: item.altEs,
 }));
