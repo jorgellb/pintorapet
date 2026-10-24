@@ -22,7 +22,9 @@ import { createServiceClient } from '@/lib/server/supabase';
  *   3. a honeypot field and a minimum time to fill the form;
  *   4. what the page saw: real key presses and taps, automated browsers;
  *   5. the content: random names, Gmail dot tricks, disposable inboxes, spam;
- *   6. rate limits per IP and per inbox, kept in the database;
+ *   6. rate limits per IP and per inbox, kept in the database (only solved
+ *      attempts count, so nobody can lock someone else out; a busy site
+ *      raises the difficulty instead of turning people away);
  *   7. Cloudflare Turnstile on top, when its keys are set.
  * Bots that fail get the same answer as a person, so they learn nothing.
  */
@@ -149,7 +151,7 @@ function turnstileConfigured(): boolean {
   return Boolean(import.meta.env.TURNSTILE_SECRET_KEY && import.meta.env.PUBLIC_TURNSTILE_SITE_KEY);
 }
 
-async function turnstileSignal(response: unknown, ip: string): Promise<Signal> {
+async function turnstileSignal(response: unknown, ip: string, form: AntibotForm): Promise<Signal> {
   if (!turnstileConfigured()) return { points: 0, reasons: [] };
   if (typeof response !== 'string' || !response) return { points: HARD, reasons: ['turnstile_missing'] };
   try {
@@ -159,8 +161,11 @@ async function turnstileSignal(response: unknown, ip: string): Promise<Signal> {
       body: new URLSearchParams({ secret: String(import.meta.env.TURNSTILE_SECRET_KEY), response, remoteip: ip }),
       signal: AbortSignal.timeout(4000),
     });
-    const data = (await res.json()) as { success?: boolean };
-    return data.success ? { points: 0, reasons: [] } : { points: HARD, reasons: ['turnstile'] };
+    const data = (await res.json()) as { success?: boolean; action?: string };
+    if (!data.success) return { points: HARD, reasons: ['turnstile'] };
+    // A token solved on another form does not count here.
+    if (data.action && data.action !== form) return { points: HARD, reasons: ['turnstile_action'] };
+    return { points: 0, reasons: [] };
   } catch (err) {
     // Cloudflare unreachable: the other layers still stand.
     console.error('turnstile verify failed', err);
@@ -216,7 +221,7 @@ export async function inspect(submission: Submission): Promise<Verdict> {
     form === 'sign_in' ? { points: 0, reasons: [] } : nameSignal(submission.name ?? ''),
     form === 'sign_in' ? { points: 0, reasons: [] } : emailSignal(email),
     messageSignal(submission.message ?? ''),
-    challenge.points >= HARD ? { points: 0, reasons: [] } : await turnstileSignal(fields['cf-turnstile-response'], ip),
+    challenge.points >= HARD ? { points: 0, reasons: [] } : await turnstileSignal(fields['cf-turnstile-response'], ip, form),
   );
   const score = Math.min(1000, signals.points);
   const local: Verdict = { verdict: score >= BLOCK_SCORE ? 'block' : 'allow', score, reasons: signals.reasons };

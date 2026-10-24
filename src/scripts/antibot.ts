@@ -131,7 +131,7 @@ function protect(root: HTMLElement): void {
   form.addEventListener('touchstart', count('p'), { passive: true });
 
   let prepared: Promise<{ challenge: Challenge; fetchedAt: number; counter: string }> | null = null;
-  let turnstile: { token: Promise<string>; renew: () => void } | null = null;
+  let turnstile: Promise<{ token: () => Promise<string>; renew: () => void }> | null = null;
 
   const fetchChallenge = async (): Promise<Challenge> => {
     for (let attempt = 0; ; attempt += 1) {
@@ -153,31 +153,49 @@ function protect(root: HTMLElement): void {
     const api = await loadTurnstile();
     const box = root.querySelector<HTMLElement>('[data-antibot-turnstile]')!;
     box.hidden = false;
-    let settle: (token: string) => void = () => {};
-    const fresh = () => new Promise<string>((resolve) => (settle = resolve));
-    let id = '';
-    const state = {
-      token: fresh(),
+    const pending = () => {
+      let resolve: (token: string) => void = () => {};
+      let reject: (err: Error) => void = () => {};
+      const promise = new Promise<string>((res, rej) => ((resolve = res), (reject = rej)));
+      promise.catch(() => {});
+      return { promise, resolve, reject };
+    };
+    let current = pending();
+    const id = api.render(box, {
+      sitekey: siteKey,
+      // Ties the token to this form; the server checks it.
+      action: kind,
+      // Only shows up when Cloudflare is unsure about the visitor.
+      appearance: 'interaction-only',
+      size: 'flexible',
+      theme: 'light',
+      language: document.documentElement.lang || 'auto',
+      callback: (token: string) => current.resolve(token),
+      // The widget fetches a fresh token by itself; wait for that one.
+      'expired-callback': () => (current = pending()),
+      'error-callback': () => {
+        current.reject(new Error('turnstile'));
+        current = pending();
+      },
+    });
+    return {
+      token: () => current.promise,
       // Turnstile tokens are single-use too.
       renew: () => {
-        state.token = fresh();
+        current = pending();
         api.reset(id);
       },
     };
-    id = api.render(box, {
-      sitekey: siteKey,
-      language: document.documentElement.lang || 'auto',
-      callback: (token: string) => settle(token),
-      'expired-callback': () => (state.token = fresh()),
-    });
-    turnstile = state;
   };
 
   const prepare = () => {
     prepared = (async () => {
       const challenge = await fetchChallenge();
       const fetchedAt = Date.now();
-      if (challenge.turnstileSiteKey && !turnstile) void setupTurnstile(challenge.turnstileSiteKey);
+      if (challenge.turnstileSiteKey && !turnstile) {
+        turnstile = setupTurnstile(challenge.turnstileSiteKey);
+        turnstile.catch(() => {});
+      }
       const counter = await solve(challenge.nonce, challenge.difficulty);
       return { challenge, fetchedAt, counter };
     })();
@@ -195,7 +213,8 @@ function protect(root: HTMLElement): void {
     // A person can be quicker than the server expects (autofill): wait the rest.
     const wait = current.challenge.minMs + 250 - (Date.now() - current.fetchedAt);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    if (turnstile) await turnstile.token;
+    // Turnstile, when on: wait for its token; if its script is blocked, say so.
+    if (turnstile) await (await turnstile).token();
 
     field('_ab_token').value = current.challenge.token;
     field('_ab_pow').value = current.counter;
@@ -204,10 +223,8 @@ function protect(root: HTMLElement): void {
 
     // Each challenge is good for one submission: start the next one now.
     prepare();
-    if (turnstile) {
-      const state = turnstile;
-      setTimeout(() => state.renew(), 0);
-    }
+    // After the form data is read (same tick), not before.
+    void turnstile?.then((state) => setTimeout(() => state.renew(), 0));
   };
 
   form[READY] = () =>

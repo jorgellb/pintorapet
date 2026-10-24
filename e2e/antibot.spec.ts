@@ -13,7 +13,7 @@ test.describe('anti-bot gate', () => {
     await page.locator('input[name="password"]').fill('una-contraseña-mala');
     await page.getByRole('button', { name: 'Entrar' }).click();
     // Supabase answered, so the gate let the request through.
-    await expect(page.getByRole('alert')).toContainText('no coinciden');
+    await expect(page.getByRole('alert')).toContainText('no coinciden', { timeout: 20_000 });
   });
 
   test('a person writing to Meili sends a solved challenge', async ({ page }) => {
@@ -21,7 +21,8 @@ test.describe('anti-bot gate', () => {
     let sent: URLSearchParams | null = null;
     let challengeAt = 0;
     page.on('response', (res) => {
-      if (res.url().includes('/api/antibot/challenge/')) challengeAt = Date.now();
+      // The first one: after sending, the page already fetches the next.
+      if (res.url().includes('/api/antibot/challenge/') && !challengeAt) challengeAt = Date.now();
     });
     await page.route('**/api/contact/', async (route) => {
       const body = route.request().postDataBuffer()?.toString('latin1') ?? '';
@@ -94,7 +95,7 @@ test.describe('anti-bot gate', () => {
     expect(register.headers().location).toBe('/es/cuenta/registro/');
   });
 
-  test('a challenge is good for one submission only', async ({ request }) => {
+  test('a challenge is good for one submission only (and needs Turnstile when on)', async ({ request }) => {
     const challenge = await (await request.get('/api/antibot/challenge/?form=sign_in')).json();
     expect(challenge.difficulty).toBeGreaterThanOrEqual(18);
     // Solve it here, as a determined bot would.
@@ -118,6 +119,11 @@ test.describe('anti-bot gate', () => {
       const cookie = res.headers()['set-cookie'] ?? '';
       return decodeURIComponent(cookie);
     };
+    if (challenge.turnstileSiteKey) {
+      // With Turnstile on, solving the proof of work alone is not enough.
+      expect(await flash()).toContain('generic');
+      return;
+    }
     expect(await flash()).toContain('credentials');
     expect(await flash()).toContain('generic');
   });

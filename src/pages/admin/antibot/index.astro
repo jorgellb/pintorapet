@@ -69,10 +69,12 @@ const REASONS: Record<string, string> = {
   message_spam_words: 'Palabras de spam',
   turnstile: 'No pasó Turnstile',
   turnstile_missing: 'Sin Turnstile',
+  turnstile_action: 'Turnstile de otro formulario',
   turnstile_unreachable: 'Turnstile no respondió',
   rate_ip: 'Demasiados intentos desde su IP',
   rate_ip_day: 'Demasiados intentos hoy desde su IP',
   rate_email: 'Demasiados intentos con ese email',
+  rate_email_spread: 'Ese email, probado desde muchas IPs',
   rate_global: 'Pico de envíos en la web',
 };
 
@@ -165,7 +167,8 @@ const ownSecret = Boolean(import.meta.env.ANTIBOT_SECRET);
               <li class="on">Campo trampa invisible y tiempo mínimo de relleno</li>
               <li class="on">Señales de persona: teclear, tocar, navegador no automatizado</li>
               <li class="on">Contenido: nombres aleatorios, Gmail con puntos, emails desechables, spam</li>
-              <li class="on">Límites por IP, por email y picos en toda la web</li>
+              <li class="on">Límites por IP y por email, solo para quien resolvió el reto: nadie puede bloquear a otra persona</li>
+              <li class="on">Con mucho tráfico, el reto se vuelve más difícil para todos en vez de cerrar la puerta</li>
               <li class={turnstile ? 'on' : 'off'}>
                 Cloudflare Turnstile{' '}
                 {!turnstile && (

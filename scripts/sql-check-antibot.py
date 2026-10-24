@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Anti-bot gate: rate limits, single-use challenges and who may call what.
 # Runs inside one transaction that is always rolled back.
-# Usage: python3 scripts/sql-check-antibot.py [migration.sql]
+# Usage: python3 scripts/sql-check-antibot.py [migration.sql ...]
 import json, sys, psycopg
 
 e = {}
@@ -43,8 +43,8 @@ def gate(form, ip, email=None, nonce=None, verdict='allow', score=0, reasons=())
     return cur.fetchone()[0]
 
 try:
-    if len(sys.argv) > 1:
-        cur.execute(open(sys.argv[1]).read())
+    for migration in sys.argv[1:]:
+        cur.execute(open(migration).read())
     ip = 'i' * 40; ip2 = 'j' * 40; em = 'e' * 40
     adm = '55555555-5555-4555-8555-555555555555'
     cur.execute("insert into auth.users (id, email, email_confirmed_at, aud, role) values (%s,'boss.ab@example.com',now(),'authenticated','authenticated')", (adm,))
@@ -62,13 +62,34 @@ try:
     check('first registration passes', gate('register', ip, em, 'n' * 22 + '01')['verdict'], 'allow')
     check('the same challenge twice is a replay', gate('register', ip, em, 'n' * 22 + '01'), {'verdict': 'block', 'reasons': ['replay']})
     check('a server block stays a block', gate('register', ip, em, 'n' * 22 + '02', 'block', 100, ['honeypot'])['verdict'], 'block')
-    check('third attempt from the IP is the limit', gate('register', ip, None, 'n' * 22 + '03'), {'verdict': 'rate', 'reasons': ['rate_ip']})
+    check('blocked attempts do not use up the limit', gate('register', ip, None, 'n' * 22 + '03')['verdict'], 'allow')
+    gate('register', ip, None, 'n' * 22 + '0a')
+    check('the fourth solved attempt from the IP is the limit', gate('register', ip, None, 'n' * 22 + '0b'), {'verdict': 'rate', 'reasons': ['rate_ip']})
     check('another IP is not limited', gate('register', ip2, None, 'n' * 22 + '04')['verdict'], 'allow')
     check('limits are per form', gate('contact', ip, None, 'n' * 22 + '05')['verdict'], 'allow')
     gate('forgot', ip2, em, 'n' * 22 + '06'); gate('forgot', ip2, em, 'n' * 22 + '07'); gate('forgot', ip2, em, 'n' * 22 + '08')
     check('the inbox limit for password links', gate('forgot', ip, em, 'n' * 22 + '09'), {'verdict': 'rate', 'reasons': ['rate_email']})
+
+    victim = 'v' * 40; ip3 = 'k' * 40; ip4 = 'l' * 40
+    for i in range(20):
+        gate('sign_in', ip3, victim, None, 'block', 130, ['token_missing'])
+        gate('forgot', ip3, victim, None, 'block', 130, ['pow_invalid'])
+    # More than the per-email cap across IPs (50): only solved attempts count.
+    for i in range(60):
+        gate('sign_in', 'p' * 38 + f'{i:02d}', victim, 't' * 22 + f'{i:02d}', 'block', 100, ['turnstile_missing'])
+    check('unsolved requests cannot lock someone out of signing in', gate('sign_in', ip4, victim, 's' * 22 + '01')['verdict'], 'allow')
+    check('nor out of password links', gate('forgot', ip4, victim, 's' * 22 + '02')['verdict'], 'allow')
+    for i in range(8):
+        gate('sign_in', ip3, victim, 's' * 22 + f'1{i}')
+    check('guessing one password from one IP hits the limit', gate('sign_in', ip3, victim, 's' * 22 + '20'), {'verdict': 'rate', 'reasons': ['rate_email']})
+    check('the owner signing in from elsewhere still gets in', gate('sign_in', ip4, victim, 's' * 22 + '21')['verdict'], 'allow')
+
     cur.execute("select public.antibot_pressure(%s)", (ip,))
     check('stopped attempts raise the pressure on the IP', cur.fetchone()[0], 4)
+    cur.execute("insert into public.antibot_events (form, ip_hash, verdict) select 'contact', 'm' || lpad(g::text, 39, '0'), 'allow' from generate_series(1, 300) g")
+    cur.execute("select public.antibot_pressure(%s)", ('z' * 40,))
+    check('a busy site makes everyone\'s challenge harder', cur.fetchone()[0], 3)
+    check('but nobody is turned away for it', gate('contact', 'z' * 40, None, 's' * 22 + '30')['verdict'], 'allow')
     cur.execute("savepoint s")
     try:
         gate('nope', ip); check('unknown forms are rejected', 'accepted', 'rejected')
