@@ -8,8 +8,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Locally the tests run against `astro dev`, which compiles each page on its
+  // first request: more browsers than this only queue up behind it and time out.
+  workers: process.env.CI ? 1 : 4,
   reporter: [['list']],
+  expect: { timeout: 10_000 },
   use: {
     baseURL,
     trace: 'on-first-retry',

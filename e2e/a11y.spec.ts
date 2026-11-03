@@ -26,6 +26,10 @@ const pages = [
 
 for (const path of pages) {
   test(`axe critical/serious: ${path}`, async ({ page }) => {
+    // Scan the settled page: mid-way through an entrance animation a button is
+    // half transparent and reads as low contrast. This is also how visitors who
+    // ask for less motion see it.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(path);
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

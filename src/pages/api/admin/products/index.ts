@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { createAdminProduct } from '@/lib/server/admin/products';
+import { createAdminProduct, setProductCollection } from '@/lib/server/admin/products';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
@@ -18,6 +18,7 @@ const createSchema = z
   .object({
     parentId: z.string().uuid().nullable().optional(),
     categoryCode: z.string().trim().min(1).max(60).optional(),
+    collectionId: z.uuid().nullable().optional(),
     motif: z.string().trim().min(1).max(120).optional(),
     sku: z.string().trim().min(1).max(60),
     priceCents: z.number().int().positive(),
@@ -37,7 +38,15 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const body = createSchema.parse(await request.json());
-    const id = await createAdminProduct(admin.client, body);
+    const { collectionId, ...product } = body;
+    const id = await createAdminProduct(admin.client, product);
+    // Variations follow their product's shop category.
+    if (body.parentId) {
+      const { data: parent } = await admin.client.from('products').select('collection_id').eq('id', body.parentId).maybeSingle();
+      if (parent?.collection_id) await setProductCollection(admin.client, id, parent.collection_id);
+    } else if (collectionId) {
+      await setProductCollection(admin.client, id, collectionId);
+    }
     await admin.client.from('admin_audit_log').insert({
       actor_user_id: admin.user.id,
       operation: body.parentId ? 'create_variant' : 'create_product',

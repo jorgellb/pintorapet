@@ -1,0 +1,254 @@
+---
+import type { ShopCategoryRow } from '@/lib/server/admin/shopCategories';
+
+/** Create or edit a shop category. Needs a <MediaPicker> on the page for the portrait. */
+interface Props {
+  category?: ShopCategoryRow;
+}
+
+const { category } = Astro.props;
+const creating = !category;
+---
+
+<form class="category-form" data-category-form data-id={category?.id ?? ''} novalidate>
+  <section class="panel">
+    <h2>Nombre</h2>
+    <div class="pair">
+      <label>
+        Nombre
+        <input name="nameEs" value={category?.nameEs ?? ''} required maxlength="80" placeholder="Ej.: Bulldog francés" data-name />
+      </label>
+      <label>
+        Nombre en inglés
+        <input name="nameEn" value={category?.nameEn ?? ''} required maxlength="80" placeholder="Ej.: French Bulldog" />
+      </label>
+    </div>
+    <label>
+      Dirección
+      <input
+        name="code"
+        value={category?.code ?? ''}
+        required
+        maxlength="60"
+        pattern="[a-z0-9]+(-[a-z0-9]+)*"
+        placeholder="bulldog-frances"
+        data-code
+        data-touched={creating ? undefined : '1'}
+      />
+      <span class="hint" data-code-hint>
+        Enlace directo a la categoría: <code>/es/tienda/?breed=<span data-code-preview>{category?.code || 'bulldog-frances'}</span></code>.
+        Solo minúsculas, números y guiones.
+      </span>
+    </label>
+    <div class="pair">
+      <label>
+        Descripción <span class="hint">opcional</span>
+        <textarea name="descriptionEs" rows="3" maxlength="400" placeholder="Un retrato de Meili, en tarjeta, posavasos y taza">{category?.descriptionEs ?? ''}</textarea>
+      </label>
+      <label>
+        Descripción en inglés <span class="hint">opcional</span>
+        <textarea name="descriptionEn" rows="3" maxlength="400" placeholder="One portrait by Meili, as card, coaster and mug">{category?.descriptionEn ?? ''}</textarea>
+      </label>
+    </div>
+    <p class="hint">Sale debajo del nombre en la tienda. Vacía, la tienda enumera lo que hay: tarjeta, posavasos, taza…</p>
+  </section>
+
+  <section class="panel">
+    <h2>Retrato</h2>
+    <p class="hint">El círculo de «Elige un retrato» y el que acompaña al nombre. Sin elegir, se usa la foto del posavasos.</p>
+    <div class="portrait">
+      <button type="button" class="portrait__image" data-portrait-choose title="Elegir de Medios">
+        <img src={category?.portraitUrl ?? undefined} alt="" data-portrait-thumb />
+        <span class="portrait__empty" data-portrait-empty hidden={Boolean(category?.portraitUrl)}>Automático</span>
+      </button>
+      <input type="hidden" name="portraitMediaId" value={category?.portraitMediaId ?? ''} />
+      <div class="portrait__actions">
+        <button type="button" class="btn--quiet" data-portrait-choose>Elegir de Medios</button>
+        <button type="button" class="btn--quiet" data-portrait-clear hidden={!category?.portraitUrl}>Usar la foto del posavasos</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <label class="switch">
+      <input type="checkbox" role="switch" name="published" checked={category ? category.published : true} />
+      <span>
+        <strong>Visible en la tienda</strong>
+        <span class="hint">Oculta, la categoría y sus productos salen de la tienda; sus fichas siguen existiendo.</span>
+      </span>
+    </label>
+  </section>
+
+  <div class="actions">
+    <button type="submit">{creating ? 'Crear categoría' : 'Guardar cambios'}</button>
+    <p class="status" data-category-status role="status" hidden></p>
+  </div>
+</form>
+
+<style>
+  .category-form {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .portrait {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .portrait__image {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 7.5rem;
+    height: 7.5rem;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--paper-deep);
+  }
+
+  .portrait__image:hover {
+    border-color: var(--accent);
+    background: var(--paper-deep);
+  }
+
+  .portrait__image img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .portrait__image img:not([src]) {
+    display: none;
+  }
+
+  .portrait__empty {
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .portrait__empty[hidden] {
+    display: none;
+  }
+
+  .portrait__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .portrait__actions [hidden] {
+    display: none;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+</style>
+
+<script>
+  import { pickMedia } from '@/lib/admin/mediaPicker';
+
+  const form = document.querySelector<HTMLFormElement>('[data-category-form]');
+  if (form) {
+    const id = form.dataset.id ?? '';
+    const status = form.querySelector<HTMLElement>('[data-category-status]')!;
+    const say = (text: string) => {
+      status.hidden = false;
+      status.textContent = text;
+    };
+    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
+
+    // The address follows the name until it is typed by hand.
+    const code = form.querySelector<HTMLInputElement>('[data-code]')!;
+    const preview = form.querySelector<HTMLElement>('[data-code-preview]')!;
+    const slug = (value: string) =>
+      value
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 60);
+    const showCode = () => (preview.textContent = code.value || 'bulldog-frances');
+    form.querySelector<HTMLInputElement>('[data-name]')?.addEventListener('input', (event) => {
+      if (code.dataset.touched) return;
+      code.value = slug((event.currentTarget as HTMLInputElement).value);
+      showCode();
+    });
+    code.addEventListener('input', () => {
+      code.dataset.touched = '1';
+      showCode();
+    });
+
+    // Portrait from Medios.
+    const thumb = form.querySelector<HTMLImageElement>('[data-portrait-thumb]')!;
+    const empty = form.querySelector<HTMLElement>('[data-portrait-empty]')!;
+    const clear = form.querySelector<HTMLButtonElement>('[data-portrait-clear]')!;
+    const setPortrait = (mediaId: string, url: string) => {
+      field('portraitMediaId').value = mediaId;
+      if (url) thumb.src = url;
+      else thumb.removeAttribute('src');
+      empty.hidden = Boolean(url);
+      clear.hidden = !url;
+    };
+    form.querySelectorAll('[data-portrait-choose]').forEach((button) =>
+      button.addEventListener('click', async () => {
+        const [item] = await pickMedia({ bucket: 'catalog-public' });
+        if (item) setPortrait(item.id, item.url);
+      }),
+    );
+    clear.addEventListener('click', () => setPortrait('', ''));
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement).value.trim();
+      const body = {
+        code: text('code'),
+        nameEs: text('nameEs'),
+        nameEn: text('nameEn'),
+        descriptionEs: text('descriptionEs'),
+        descriptionEn: text('descriptionEn'),
+        portraitMediaId: text('portraitMediaId') || null,
+        published: field('published').checked,
+      };
+      if (!body.nameEs || !body.nameEn) return say('Escribe el nombre en los dos idiomas.');
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(body.code)) {
+        return say('La dirección solo puede llevar minúsculas, números y guiones (sin tildes ni espacios).');
+      }
+      const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      button.disabled = true;
+      say('Guardando…');
+      const res = await fetch(id ? `/api/admin/shop-categories/${id}/` : '/api/admin/shop-categories/', {
+        method: id ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+      button.disabled = false;
+      if (!res?.ok) return say(data?.error?.message ?? 'No se pudo guardar. Inténtalo de nuevo.');
+      if (!id && data?.id) {
+        window.location.assign(`/admin/shop-categories/${data.id}/?nueva=1`);
+        return;
+      }
+      say('Cambios guardados.');
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  }
+</script>

@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// A new address each run: sign-in limits count per email, and runs follow each other quickly.
+const SIGN_IN_EMAIL = `nadie.antibot+${Date.now().toString(36)}@example.com`;
+
 /**
  * The anti-bot gate in a real browser. Nothing here creates accounts or sends
  * mail: people are shown to pass by the answer that comes after the gate
@@ -7,9 +10,13 @@ import { expect, test } from '@playwright/test';
  */
 
 test.describe('anti-bot gate', () => {
+  // These tests send bot requests on purpose, so the gate makes this IP's
+  // proof of work harder (as it should): solving it can take a while.
+  test.describe.configure({ timeout: 90_000 });
+
   test('a person signing in passes the gate', async ({ page }) => {
     await page.goto('/es/cuenta/entrar/');
-    await page.getByLabel('Email').fill('nadie.antibot@example.com');
+    await page.getByLabel('Email').fill(SIGN_IN_EMAIL);
     await page.locator('input[name="password"]').fill('una-contraseña-mala');
     await page.getByRole('button', { name: 'Entrar' }).click();
     // Supabase answered, so the gate let the request through.
@@ -108,7 +115,7 @@ test.describe('anti-bot gate', () => {
     }
     const form = {
       locale: 'es',
-      email: 'nadie.antibot@example.com',
+      email: SIGN_IN_EMAIL,
       password: 'una-contraseña-mala',
       _ab_token: challenge.token,
       _ab_pow: String(counter),

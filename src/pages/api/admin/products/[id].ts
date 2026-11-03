@@ -26,6 +26,7 @@ const patchSchema = z
     saleEnabled: z.boolean().optional(),
     weightGrams: z.number().int().min(1).max(30000).optional(),
     motif: z.string().trim().min(1).max(120).optional(),
+    collectionId: z.uuid().nullable().optional(),
     sku: z.string().trim().min(1).max(60).optional(),
     variantLabelEn: z.string().trim().max(80).optional(),
     variantLabelEs: z.string().trim().max(80).optional(),

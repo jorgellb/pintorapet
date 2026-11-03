@@ -11,7 +11,29 @@ const order = (paymentStatus: string) => ({
   items: [{ title: 'Jack Russell Terrier Mug', quantity: 1, lineTotalCents: 999 }],
 });
 
+const CART_PRODUCT = '00000000-0000-4000-8000-000000000000';
+
 async function seed(page: Page) {
+  // The cart drawer quietly drops products the catalogue no longer has; this
+  // made-up one must exist, or the cart empties whenever the drawer checks it.
+  await page.route('**/api/cart/lines/', (route) =>
+    route.fulfill({
+      json: {
+        lines: [
+          {
+            productId: CART_PRODUCT,
+            title: 'Jack Russell Terrier Mug',
+            variantLabel: null,
+            href: '/en/shop/jack-russell-terrier-mug/',
+            imageUrl: null,
+            unitAmountCents: 999,
+            purchasable: true,
+            availability: 'available',
+          },
+        ],
+      },
+    }),
+  );
   await page.addInitScript(() => {
     if (sessionStorage.getItem('confirm-seeded')) return;
     sessionStorage.setItem('confirm-seeded', '1');

@@ -34,4 +34,6 @@ export interface ProductPublic {
   variantOrder?: number | null;
   seoTitle?: string | null;
   seoDescription?: string | null;
+  /** Shop category (Admin › Tienda › Categorías); null when it has none. */
+  collectionId?: string | null;
 }

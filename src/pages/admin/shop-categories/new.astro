@@ -1,0 +1,37 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import ShopCategoryForm from '@/components/admin/ShopCategoryForm.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const media = await listMedia(admin.client).catch(() => []);
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
+---
+
+<AdminLayout title="Nueva categoría" email={admin.user.email}>
+  <a class="back" href="/admin/shop-categories/">← Categorías</a>
+  <header class="page-head">
+    <div>
+      <h1>Nueva categoría</h1>
+      <p class="lead">Un retrato nuevo para la tienda. Después podrás asignarle productos desde cada ficha.</p>
+    </div>
+  </header>
+  <ShopCategoryForm />
+  <MediaPicker items={pickerItems} defaultBucket="catalog-public" />
+</AdminLayout>

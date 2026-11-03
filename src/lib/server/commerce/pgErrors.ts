@@ -59,6 +59,7 @@ const UNIQUE: Array<[string, string]> = [
   ['product_translations_locale_slug_unique', 'Esa dirección ya la usa otro producto.'],
   ['artworks_slug_en_unique', 'Esa dirección en inglés ya la usa otra ficha.'],
   ['artworks_slug_es_unique', 'Esa dirección ya la usa otra ficha.'],
+  ['shop_collections_code_unique', 'Esa dirección ya la usa otra categoría.'],
 ];
 
 export function mapPgError(err: unknown): CommerceError {

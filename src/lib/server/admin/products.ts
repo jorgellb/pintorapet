@@ -38,6 +38,7 @@ export type AdminProductRow = {
   id: string;
   sku: string;
   motif: string;
+  collection_id: string | null;
   status: 'draft' | 'published' | 'archived';
   price_cents: number;
   sale_enabled: boolean;
@@ -54,7 +55,7 @@ export type AdminProductRow = {
 };
 
 const productColumns = `
-  id, sku, motif, status, price_cents, sale_enabled, price_version, weight_grams, updated_at,
+  id, sku, motif, collection_id, status, price_cents, sale_enabled, price_version, weight_grams, updated_at,
   parent_id, variant_label_en, variant_label_es, variant_order, categories ( code ),
   product_translations ( locale, slug, title, summary, description, seo_title, seo_description ),
   inventory ( stock_on_hand, stock_reserved, inventory_mode, verified_at, version )
@@ -169,6 +170,12 @@ export type CreateProductInput = {
   es: { title: string; slug: string; summary?: string; description?: string };
 };
 
+/** Put a product in a shop category (Admin › Tienda › Categorías), or take it out with null. */
+export async function setProductCollection(client: SupabaseClient, id: string, collectionId: string | null): Promise<void> {
+  const { error } = await client.from('products').update({ collection_id: collectionId }).eq('id', id);
+  if (error) throw mapPgError(error);
+}
+
 export async function createAdminProduct(
   client: SupabaseClient,
   input: CreateProductInput,
@@ -231,6 +238,7 @@ export async function updateAdminProduct(
     saleEnabled?: boolean;
     weightGrams?: number;
     motif?: string;
+    collectionId?: string | null;
     sku?: string;
     variantLabelEn?: string;
     variantLabelEs?: string;
@@ -284,6 +292,15 @@ export async function updateAdminProduct(
     if (variantsErr) throw mapPgError(variantsErr);
   }
   if (patch.motif) productPatch.motif = patch.motif;
+  if (patch.collectionId !== undefined) {
+    productPatch.collection_id = patch.collectionId;
+    // Variations belong to their product's shop category.
+    const { error: variantsErr } = await client
+      .from('products')
+      .update({ collection_id: patch.collectionId })
+      .eq('parent_id', id);
+    if (variantsErr) throw mapPgError(variantsErr);
+  }
   if (patch.sku) productPatch.sku = patch.sku;
   if (patch.variantLabelEn !== undefined) productPatch.variant_label_en = patch.variantLabelEn;
   if (patch.variantLabelEs !== undefined) productPatch.variant_label_es = patch.variantLabelEs;

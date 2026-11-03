@@ -187,6 +187,7 @@ async function loadFromSupabase(locale: Locale): Promise<ProductPublic[] | null>
         variantOrder: row.variant_order == null ? null : Number(row.variant_order),
         seoTitle: text(tr?.seo_title) || null,
         seoDescription: text(tr?.seo_description) || null,
+        collectionId: row.collection_id ? String(row.collection_id) : null,
       } satisfies ProductPublic;
     });
   } catch {

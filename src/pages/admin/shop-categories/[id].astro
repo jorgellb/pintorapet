@@ -1,0 +1,194 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import ShopCategoryForm from '@/components/admin/ShopCategoryForm.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
+import { getShopCategory } from '@/lib/server/admin/shopCategories';
+import { euros, productCategoryLabel } from '@/lib/admin/labels';
+import { storagePublicUrl } from '@/lib/server/storageUrl';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const id = Astro.params.id ?? '';
+if (!/^[0-9a-f-]{36}$/i.test(id)) return Astro.redirect('/admin/shop-categories/');
+const category = await getShopCategory(admin.client, id).catch(() => null);
+if (!category) return Astro.redirect('/admin/shop-categories/');
+
+type ProductRow = {
+  id: string;
+  sku: string;
+  status: string;
+  price_cents: number;
+  categories: { code: string } | null;
+  product_translations: Array<{ locale: string; title: string }>;
+  product_images: Array<{ is_cover: boolean; position: number; media_assets: { bucket: string; object_path: string } | null }>;
+};
+const [{ data: productData }, media] = await Promise.all([
+  admin.client
+    .from('products')
+    .select('id, sku, status, price_cents, categories(code), product_translations(locale, title), product_images(is_cover, position, media_assets(bucket, object_path))')
+    .eq('collection_id', id)
+    .is('parent_id', null)
+    .order('editorial_order'),
+  listMedia(admin.client).catch(() => []),
+]);
+const products = ((productData ?? []) as unknown as ProductRow[]).map((row) => {
+  const cover = [...row.product_images].sort((a, b) => Number(b.is_cover) - Number(a.is_cover) || a.position - b.position)[0]
+    ?.media_assets;
+  return {
+    ...row,
+    title: row.product_translations.find((t) => t.locale === 'es')?.title ?? row.sku,
+    cover: cover ? storagePublicUrl(cover.bucket, cover.object_path) : null,
+  };
+});
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
+const isNew = Astro.url.searchParams.has('nueva');
+---
+
+<AdminLayout title={category.nameEs} email={admin.user.email}>
+  <a class="back" href="/admin/shop-categories/">← Categorías</a>
+  <header class="page-head">
+    <div>
+      <h1>{category.nameEs}</h1>
+      <p class="lead">
+        {category.published ? <span class="chip chip--ok">Visible</span> : <span class="chip">Oculta</span>}
+        <a class="hint" href={`/es/tienda/?breed=${category.code}#stall`} target="_blank" rel="noreferrer">Ver en la tienda ↗</a>
+      </p>
+    </div>
+  </header>
+
+  {isNew && <p class="status">Categoría creada. Asígnale productos desde su ficha, en «Categoría de la tienda».</p>}
+
+  <div class="layout">
+    <ShopCategoryForm category={category} />
+
+    <aside class="side">
+      <section class="panel">
+        <h2>Productos ({products.length})</h2>
+        {products.length === 0 ? (
+          <p class="hint">Aún no tiene productos. Elige esta categoría en la ficha de un producto o crea uno nuevo.</p>
+        ) : (
+          <ul class="products">
+            {products.map((product) => (
+              <li>
+                <a href={`/admin/products/${product.id}/`}>
+                  {product.cover ? <img src={product.cover} alt="" width="44" height="44" loading="lazy" /> : <span class="ph" />}
+                  <span>
+                    {product.title}
+                    <span class="muted line">
+                      {productCategoryLabel(product.categories?.code)} · {euros(product.price_cents)}
+                      {product.status !== 'published' && ' · no publicado'}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        <a class="btn btn--quiet" href={`/admin/products/new/?categoria=${category.id}`}>Nuevo producto en esta categoría</a>
+      </section>
+
+      <section class="panel danger">
+        <h2>Borrar categoría</h2>
+        <p class="hint">
+          Sus productos no se borran: siguen en la tienda, agrupados por su motivo, hasta que les elijas otra
+          categoría.
+        </p>
+        <button type="button" class="btn--danger" data-delete-category={category.id} data-name={category.nameEs}>Borrar categoría</button>
+        <p class="status" data-delete-status hidden></p>
+      </section>
+    </aside>
+  </div>
+  <MediaPicker items={pickerItems} defaultBucket="catalog-public" />
+</AdminLayout>
+
+<style>
+  .layout {
+    display: grid;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  @media (min-width: 64rem) {
+    .layout {
+      grid-template-columns: minmax(0, 1fr) 22rem;
+    }
+  }
+
+  .side {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .products {
+    display: grid;
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  .products a {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .products a:hover {
+    color: var(--accent);
+  }
+
+  .products img,
+  .ph {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 0.4rem;
+    object-fit: cover;
+    background: var(--paper-deep);
+  }
+
+  .line {
+    display: block;
+    font-size: 0.8rem;
+  }
+
+  .danger {
+    border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  }
+</style>
+
+<script>
+  const button = document.querySelector<HTMLButtonElement>('[data-delete-category]');
+  const status = document.querySelector<HTMLElement>('[data-delete-status]');
+  button?.addEventListener('click', async () => {
+    if (!confirm(`¿Borrar la categoría «${button.dataset.name}»? Sus productos se quedan en la tienda.`)) return;
+    button.disabled = true;
+    const res = await fetch(`/api/admin/shop-categories/${button.dataset.deleteCategory}/`, { method: 'DELETE' }).catch(() => null);
+    if (res?.ok) {
+      window.location.assign('/admin/shop-categories/?borrada=1');
+      return;
+    }
+    button.disabled = false;
+    if (status) {
+      status.hidden = false;
+      status.textContent = 'No se pudo borrar la categoría. Inténtalo de nuevo.';
+    }
+  });
+</script>

@@ -22,9 +22,16 @@ def check(name, got, want):
     else:
         bad += 1; print('FAIL', name, 'got', got, 'want', want)
 
+# Only these roles, as fixed statements.
+SET_ROLE = {
+    'anon': 'set local role anon',
+    'authenticated': 'set local role authenticated',
+    'service_role': 'set local role service_role',
+}
+
 def as_role(role, uid=None):
     cur.execute("reset role")
-    cur.execute(f"set local role {role}")
+    cur.execute(SET_ROLE[role])
     if uid:
         cur.execute("select set_config('request.jwt.claims', %s, true)", (json.dumps({'sub': uid, 'role': role}),))
 

@@ -9,10 +9,13 @@ if (!hasSupabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const [{ data: categories }, { data: skus }] = await Promise.all([
+const [{ data: categories }, { data: skus }, { data: shopCategories }] = await Promise.all([
   admin.client.from('categories').select('code, name_es').order('sort_order'),
   admin.client.from('products').select('sku'),
+  admin.client.from('shop_collections').select('id, name_es, name_en').order('sort_order'),
 ]);
+// Coming from a category's page ("Nuevo producto en esta categoría").
+const preselected = Astro.url.searchParams.get('categoria') ?? '';
 
 const nextNumber =
   Math.max(0, ...(skus ?? []).map((row) => Number(/^PD-(\d+)$/.exec(String(row.sku))?.[1] ?? 0))) + 1;
@@ -34,16 +37,30 @@ const suggestedSku = `PD-${nextNumber}`;
   <form class="panel create" data-create-form>
     <div class="pair">
       <label>
-        Categoría
+        Tipo
         <select name="categoryCode" required>
           {(categories ?? []).map((c) => <option value={c.code}>{c.name_es}</option>)}
         </select>
+        <span class="hint">Decide el IVA y el peso de envío.</span>
       </label>
       <label>
-        Motivo
-        <input name="motif" required maxlength="120" placeholder="Ej.: Galgo" />
+        Categoría de la tienda
+        <select name="collectionId" data-collection>
+          <option value="">Sin categoría</option>
+          {(shopCategories ?? []).map((c) => (
+            <option value={c.id} data-motif={c.name_en} selected={preselected === c.id}>
+              {c.name_es}
+            </option>
+          ))}
+        </select>
+        <span class="hint">La fila de la tienda donde saldrá.</span>
       </label>
     </div>
+    <label>
+      Motivo
+      <input name="motif" required maxlength="120" placeholder="Ej.: Galgo" data-motif />
+      <span class="hint">El animal o tema del dibujo. Se rellena con la categoría si está vacío.</span>
+    </label>
     <div class="pair">
       <label>
         Título
@@ -104,6 +121,15 @@ const suggestedSku = `PD-${nextNumber}`;
   const form = document.querySelector<HTMLFormElement>('[data-create-form]');
   if (form) {
     const status = form.querySelector<HTMLElement>('[data-create-status]');
+    // The motif starts as the category's name ("French Bulldog") if it is still empty.
+    const collection = form.querySelector<HTMLSelectElement>('[data-collection]');
+    const motif = form.querySelector<HTMLInputElement>('[data-motif]');
+    const fillMotif = () => {
+      const name = collection?.selectedOptions[0]?.dataset.motif;
+      if (motif && name && !motif.value.trim()) motif.value = name;
+    };
+    collection?.addEventListener('change', fillMotif);
+    fillMotif();
     form.querySelectorAll<HTMLInputElement>('[data-slug-source]').forEach((source) => {
       const target = form.querySelector<HTMLInputElement>(`[name="${source.dataset.slugSource}"]`);
       let touched = false;
@@ -126,6 +152,7 @@ const suggestedSku = `PD-${nextNumber}`;
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           categoryCode: text('categoryCode'),
+          collectionId: text('collectionId') || null,
           motif: text('motif'),
           sku: text('sku'),
           priceCents: Math.round(Number(fd.get('price')) * 100),

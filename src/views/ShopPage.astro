@@ -4,6 +4,7 @@ import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
 import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
+import { buildShopSets, loadShopCollections } from '@/lib/catalog/shopSets';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
@@ -13,27 +14,9 @@ interface Props {
 const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const catalog = await loadPublicCatalog(locale);
+const [catalog, collections] = await Promise.all([loadPublicCatalog(locale), loadShopCollections(locale)]);
 const { source } = catalog;
 const products = topLevelProducts(catalog.products);
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
-// Breed names as people say them; unknown motifs fall back to the stored motif.
-const breedNames: Record<string, { en: string; es: string }> = {
-  'springer-spaniel': { en: 'Springer Spaniel', es: 'Springer Spaniel' },
-  'labrador-retriever-black': { en: 'Black Labrador', es: 'Labrador negro' },
-  'golden-retriever': { en: 'Golden Retriever', es: 'Golden Retriever' },
-  dachshund: { en: 'Dachshund', es: 'Teckel' },
-  'border-collie': { en: 'Border Collie', es: 'Border Collie' },
-  'jack-russell-terrier': { en: 'Jack Russell', es: 'Jack Russell' },
-};
 
 const categoryOrder = ['greeting-cards', 'coasters', 'mugs'] as const;
 const categoryNames: Record<string, { en: string; es: string }> = {
@@ -59,36 +42,8 @@ const statusOf = (p: ProductPublic) =>
       ? dict.shop.unavailable
       : dict.shop.unverified;
 
-type StallSet = {
-  id: string;
-  name: string;
-  portrait: string | null;
-  items: ProductPublic[];
-};
-
-// One set per drawing: the same portrait on a card, a coaster and a mug.
-const allSets: StallSet[] = [];
-for (const product of products) {
-  const id = slugify(product.motif || product.title);
-  let set = allSets.find((s) => s.id === id);
-  if (!set) {
-    set = { id, name: breedNames[id]?.[locale] ?? product.motif, portrait: null, items: [] };
-    allSets.push(set);
-  }
-  set.items.push(product);
-}
-for (const set of allSets) {
-  set.items.sort(
-    (a, b) =>
-      categoryOrder.indexOf(a.category as (typeof categoryOrder)[number]) -
-      categoryOrder.indexOf(b.category as (typeof categoryOrder)[number]),
-  );
-  // The coaster photo shows the drawing flat and centred: the best portrait.
-  set.portrait =
-    set.items.find((p) => p.category === 'coasters')?.coverImageUrl ??
-    set.items.find((p) => p.coverImageUrl)?.coverImageUrl ??
-    null;
-}
+// One set per shop category (Admin › Tienda › Categorías): the same portrait on a card, a coaster, a mug…
+const allSets = buildShopSets(products, collections);
 
 const sets = allSets
   .filter((s) => breed === 'all' || s.id === breed)
@@ -226,23 +181,49 @@ const swing = [-6, 4, -3, 7, -5, 3];
                   style={set.portrait ? `background-image:url('${set.portrait}')` : undefined}
                   aria-hidden="true"
                 />
-                <div>
-                  <h2 id={`set-${set.id}`} class="display set__name">
-                    {set.name}
-                  </h2>
+                <div class="set__titles">
+                  <div class="set__line">
+                    <h2 id={`set-${set.id}`} class="display set__name">
+                      {set.name}
+                    </h2>
+                    <div class="set__nav" data-row-nav hidden>
+                      <button
+                        type="button"
+                        class="set__arrow"
+                        data-row-prev
+                        aria-controls={`row-${set.id}`}
+                        aria-label={es ? `Anteriores de ${set.name}` : `Previous ${set.name} pieces`}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="set__arrow"
+                        data-row-next
+                        aria-controls={`row-${set.id}`}
+                        aria-label={es ? `Más de ${set.name}` : `More ${set.name} pieces`}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+                      </button>
+                    </div>
+                  </div>
                   <p class="set__meta">
-                    {es ? 'Un retrato de Meili, en ' : 'One portrait by Meili, as '}
-                    {set.items.map((p, i) => (
+                    {set.description || (
                       <>
-                        {i > 0 && (i === set.items.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
-                        {(categoryNames[p.category]?.[locale] ?? p.category).toLowerCase()}
+                        {es ? 'Un retrato de Meili, en ' : 'One portrait by Meili, as '}
+                        {[...new Set(set.items.map((p) => p.category))].map((kind, i, kinds) => (
+                          <>
+                            {i > 0 && (i === kinds.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
+                            {(categoryNames[kind]?.[locale] ?? kind).toLowerCase()}
+                          </>
+                        ))}
                       </>
-                    ))}
+                    )}
                   </p>
                 </div>
               </header>
 
-              <ul class="set__table">
+              <ul class="set__table" id={`row-${set.id}`} data-row>
                 {set.items.map((product, i) => {
                   const href = localizedPath(locale, 'shop', product.slug);
                   const alt = product.imageUrls[1];
@@ -664,18 +645,101 @@ const swing = [-6, 4, -3, 7, -5, 3];
     font-size: 0.95rem;
   }
 
-  /* the pieces of one drawing, side by side; a swipeable row on phones */
+  /* the pieces of one portrait in a single row that runs to the right */
+  .set__titles {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .set__line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .set__nav {
+    display: flex;
+    flex: none;
+    gap: 0.6rem;
+  }
+
+  .set__nav[hidden] {
+    display: none;
+  }
+
+  .set__arrow {
+    display: grid;
+    place-items: center;
+    width: 3.1rem;
+    height: 3.1rem;
+    min-height: 0;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: var(--sheet);
+    color: var(--ink);
+    box-shadow: 0 8px 18px -12px rgb(22 23 26 / 0.45);
+    transition:
+      transform var(--dur-ui) var(--ease-out),
+      background-color var(--dur-ui) var(--ease-soft),
+      color var(--dur-ui) var(--ease-soft),
+      opacity var(--dur-ui) var(--ease-soft);
+  }
+
+  .set__arrow svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .set__arrow:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--sheet);
+    transform: translateY(-2px);
+  }
+
+  .set__arrow:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .set__arrow:disabled {
+    opacity: 0.35;
+    cursor: default;
+    box-shadow: none;
+  }
+
+  @media (max-width: 40rem) {
+    .set__nav {
+      gap: 0.4rem;
+    }
+
+    .set__arrow {
+      width: 2.6rem;
+      height: 2.6rem;
+    }
+  }
+
   .set__table {
     position: relative;
     list-style: none;
-    margin: 0;
-    padding: 2.25rem 0 0;
+    margin: 0 -0.75rem;
+    /* room for the hanging tags above and the lifted frames' shadows below */
+    padding: 2.25rem 0.75rem 2.5rem;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(15rem, 78%);
+    grid-auto-columns: max(14rem, 74%);
     gap: clamp(1.25rem, 3vw, 2.5rem);
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     scroll-snap-type: x mandatory;
+    scroll-padding-inline: 0.75rem;
+    scroll-behavior: smooth;
     scrollbar-width: none;
   }
 
@@ -683,11 +747,38 @@ const swing = [-6, 4, -3, 7, -5, 3];
     display: none;
   }
 
+  /* a soft fade on the side where more pieces wait */
+  .set__table.has-more-end {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 5rem), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 5rem), transparent);
+  }
+
+  .set__table.has-more-start.has-more-end {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 4rem, #000 calc(100% - 5rem), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 4rem, #000 calc(100% - 5rem), transparent);
+  }
+
+  .set__table.has-more-start:not(.has-more-end) {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 4rem);
+    mask-image: linear-gradient(90deg, transparent, #000 4rem);
+  }
+
+  /* the next piece always peeks in from the right, inviting a slide */
   @media (min-width: 48rem) {
     .set__table {
-      grid-auto-flow: row;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      overflow: visible;
+      grid-auto-columns: max(16rem, calc((100% - clamp(1.25rem, 3vw, 2.5rem)) / 1.7));
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .set__table {
+      grid-auto-columns: max(16rem, calc((100% - 2 * clamp(1.25rem, 3vw, 2.5rem)) / 2.6));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .set__table {
+      scroll-behavior: auto;
     }
   }
 
@@ -927,6 +1018,37 @@ const swing = [-6, 4, -3, 7, -5, 3];
 
 <script>
   import { addItem, openCart } from '@/stores/cart';
+
+  // ——— Each portrait's row slides right; the arrows show only when it overflows ———
+  document.querySelectorAll<HTMLElement>('[data-row]').forEach((row) => {
+    const set = row.closest('.set');
+    const nav = set?.querySelector<HTMLElement>('[data-row-nav]');
+    const prev = set?.querySelector<HTMLButtonElement>('[data-row-prev]');
+    const next = set?.querySelector<HTMLButtonElement>('[data-row-next]');
+    if (!nav || !prev || !next) return;
+    const update = () => {
+      const max = row.scrollWidth - row.clientWidth;
+      const overflow = max > 4;
+      nav.hidden = !overflow;
+      prev.disabled = row.scrollLeft <= 4;
+      next.disabled = row.scrollLeft >= max - 4;
+      row.classList.toggle('has-more-start', overflow && !prev.disabled);
+      row.classList.toggle('has-more-end', overflow && !next.disabled);
+    };
+    // One step is the width of the pieces in view, so nothing is skipped.
+    const step = (direction: 1 | -1) => {
+      const item = row.querySelector<HTMLElement>('.item');
+      const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+      const width = item ? item.offsetWidth + gap : row.clientWidth;
+      const visible = Math.max(1, Math.floor((row.clientWidth + gap) / width));
+      row.scrollBy({ left: direction * visible * width });
+    };
+    prev.addEventListener('click', () => step(-1));
+    next.addEventListener('click', () => step(1));
+    row.addEventListener('scroll', update, { passive: true });
+    new ResizeObserver(update).observe(row);
+    update();
+  });
 
   const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

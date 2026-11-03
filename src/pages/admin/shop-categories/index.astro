@@ -1,0 +1,153 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { listShopCategories, type ShopCategoryRow } from '@/lib/server/admin/shopCategories';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+let categories: ShopCategoryRow[] = [];
+let failed = false;
+try {
+  categories = await listShopCategories(admin.client);
+} catch {
+  failed = true;
+}
+const notice = Astro.url.searchParams.has('borrada') ? 'Categoría borrada. Sus productos siguen en la tienda, sin categoría.' : null;
+---
+
+<AdminLayout title="Categorías" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Categorías</h1>
+      <p class="lead">
+        Los retratos que ordenan la tienda: cada categoría muestra sus productos en una fila. Ordénalas con las
+        flechas; la tienda las enseña en este orden.
+      </p>
+    </div>
+    <a class="btn" href="/admin/shop-categories/new/">Nueva categoría</a>
+  </header>
+
+  {notice && <p class="status">{notice}</p>}
+
+  {
+    failed ? (
+      <p class="err">No se pudieron cargar las categorías.</p>
+    ) : categories.length === 0 ? (
+      <p class="empty">Todavía no hay categorías. Crea la primera para ordenar la tienda.</p>
+    ) : (
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Orden</th>
+              <th>Categoría</th>
+              <th>Dirección</th>
+              <th class="num">Productos</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody data-category-rows>
+            {categories.map((category) => (
+              <tr data-category-id={category.id}>
+                <td class="order">
+                  <button type="button" class="btn--quiet" data-move="up" aria-label={`Subir ${category.nameEs}`}>↑</button>
+                  <button type="button" class="btn--quiet" data-move="down" aria-label={`Bajar ${category.nameEs}`}>↓</button>
+                </td>
+                <td>
+                  <a class="title-cell" href={`/admin/shop-categories/${category.id}/`}>
+                    {category.portraitUrl ? (
+                      <img class="thumb" src={category.portraitUrl} alt="" width="44" height="44" loading="lazy" />
+                    ) : (
+                      <span class="thumb thumb--auto" title="Retrato automático">✦</span>
+                    )}
+                    <span>
+                      {category.nameEs}
+                      {category.nameEn !== category.nameEs && <span class="muted line">{category.nameEn}</span>}
+                    </span>
+                  </a>
+                </td>
+                <td>
+                  <code>{category.code}</code>
+                </td>
+                <td class="num">{category.productCount}</td>
+                <td>
+                  {category.published ? <span class="chip chip--ok">Visible</span> : <span class="chip">Oculta</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+  <p class="status" data-order-status role="status" hidden></p>
+</AdminLayout>
+
+<style>
+  .order {
+    white-space: nowrap;
+  }
+
+  .order button {
+    min-height: 2rem;
+    padding: 0.2rem 0.65rem;
+  }
+
+  tbody tr:first-child [data-move='up'],
+  tbody tr:last-child [data-move='down'] {
+    visibility: hidden;
+  }
+
+  .thumb {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--paper-deep);
+  }
+
+  .thumb--auto {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+  }
+
+  .line {
+    display: block;
+    font-size: 0.82rem;
+  }
+</style>
+
+<script>
+  const rows = document.querySelector<HTMLElement>('[data-category-rows]');
+  const status = document.querySelector<HTMLElement>('[data-order-status]');
+  const say = (text: string) => {
+    if (!status) return;
+    status.hidden = false;
+    status.textContent = text;
+  };
+  rows?.addEventListener('click', async (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-move]');
+    const row = button?.closest('tr');
+    if (!button || !row) return;
+    const sibling = button.dataset.move === 'up' ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    if (button.dataset.move === 'up') sibling.before(row);
+    else sibling.after(row);
+    button.focus();
+    const ids = [...rows.querySelectorAll<HTMLElement>('[data-category-id]')].map((tr) => tr.dataset.categoryId!);
+    say('Guardando el orden…');
+    const res = await fetch('/api/admin/shop-categories/order/', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    }).catch(() => null);
+    say(res?.ok ? 'Orden guardado. Así se ve en la tienda.' : 'No se pudo guardar el orden. Recarga e inténtalo de nuevo.');
+  });
+</script>

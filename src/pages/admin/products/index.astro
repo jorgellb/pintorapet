@@ -27,6 +27,7 @@ type Row = {
   sale_enabled: boolean;
   parent_id: string | null;
   categories: { code: string } | null;
+  shop_collections: { name_es: string } | null;
   product_translations: Array<{ locale: string; title: string }>;
   inventory: { inventory_mode: string; stock_on_hand: number; stock_reserved: number } | null;
   product_images: Array<{
@@ -39,7 +40,7 @@ type Row = {
 const { data, error } = await admin.client
   .from('products')
   .select(
-    'id, sku, motif, status, price_cents, sale_enabled, parent_id, categories(code), product_translations(locale, title), inventory(inventory_mode, stock_on_hand, stock_reserved), product_images(position, is_cover, media_assets(bucket, object_path))',
+    'id, sku, motif, status, price_cents, sale_enabled, parent_id, categories(code), shop_collections(name_es), product_translations(locale, title), inventory(inventory_mode, stock_on_hand, stock_reserved), product_images(position, is_cover, media_assets(bucket, object_path))',
   )
   .order('editorial_order');
 
@@ -138,7 +139,7 @@ const tabs = [
           ))}
         </ul>
         <ListSearch
-          placeholder="Buscar por título, motivo o SKU…"
+          placeholder="Buscar por título, motivo, categoría o SKU…"
           label="Buscar productos"
           emptyText="Ningún producto coincide con la búsqueda."
         />
@@ -150,6 +151,7 @@ const tabs = [
               <thead>
                 <tr>
                   <th>Producto</th>
+                  <th>Tipo</th>
                   <th>Categoría</th>
                   <th class="num">Precio</th>
                   <th>Venta</th>
@@ -162,7 +164,7 @@ const tabs = [
                   const inv = inventoryLabel(row.mode);
                   const status = productStatusLabel(row.status);
                   return (
-                    <tr data-search-text={`${row.title} ${row.motif} ${row.sku}`.toLowerCase()}>
+                    <tr data-search-text={`${row.title} ${row.motif} ${row.shop_collections?.name_es ?? ''} ${row.sku}`.toLowerCase()}>
                       <td>
                         <a class="title-cell" href={`/admin/products/${row.id}/`}>
                           {row.cover ? (
@@ -180,6 +182,7 @@ const tabs = [
                         </a>
                       </td>
                       <td>{productCategoryLabel(row.category)}</td>
+                      <td>{row.shop_collections?.name_es ?? <span class="muted">Sin categoría</span>}</td>
                       <td class="num">{euros(row.price_cents)}</td>
                       <td>
                         {row.status !== 'published' ? (
