@@ -1,4 +1,4 @@
-export type ProductCategoryCode = 'greeting-cards' | 'coasters' | 'mugs';
+export type ProductCategoryCode = 'greeting-cards' | 'coasters' | 'mugs' | 'ornaments';
 
 export type ProductStatus = 'draft' | 'published' | 'archived';
 

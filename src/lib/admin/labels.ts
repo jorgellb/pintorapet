@@ -61,6 +61,7 @@ const productCategory: Record<string, string> = {
   'greeting-cards': 'Tarjetas',
   coasters: 'Posavasos',
   mugs: 'Tazas',
+  ornaments: 'Bolas de Navidad',
 };
 
 function pick(map: Record<string, Label>, key: string | null | undefined): Label {

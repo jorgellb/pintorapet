@@ -18,16 +18,18 @@ const [catalog, collections] = await Promise.all([loadPublicCatalog(locale), loa
 const { source } = catalog;
 const products = topLevelProducts(catalog.products);
 
-const categoryOrder = ['greeting-cards', 'coasters', 'mugs'] as const;
+const categoryOrder = ['greeting-cards', 'coasters', 'mugs', 'ornaments'] as const;
 const categoryNames: Record<string, { en: string; es: string }> = {
   'greeting-cards': { en: 'Card', es: 'Tarjeta' },
   coasters: { en: 'Coaster', es: 'Posavasos' },
   mugs: { en: 'Mug', es: 'Taza' },
+  ornaments: { en: 'Christmas ornament', es: 'Bola de Navidad' },
 };
 const categoryPlural: Record<string, { en: string; es: string }> = {
   'greeting-cards': { en: 'Cards', es: 'Tarjetas' },
   coasters: { en: 'Coasters', es: 'Posavasos' },
   mugs: { en: 'Mugs', es: 'Tazas' },
+  ornaments: { en: 'Christmas ornaments', es: 'Bolas de Navidad' },
 };
 
 const category = Astro.url.searchParams.get('category') ?? 'all';
@@ -66,7 +68,10 @@ const filterHref = (next: { category?: string; breed?: string }) => {
 
 const categories = [
   { id: 'all', label: dict.shop.all },
-  ...categoryOrder.map((id) => ({ id, label: categoryPlural[id][locale] })),
+  // Only the types the shop has right now: no filter that leads to an empty stall.
+  ...categoryOrder
+    .filter((id) => products.some((p) => p.category === id))
+    .map((id) => ({ id, label: categoryPlural[id][locale] })),
 ];
 
 const swing = [-6, 4, -3, 7, -5, 3];
@@ -148,6 +153,13 @@ const swing = [-6, 4, -3, 7, -5, 3];
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="4" y="4" width="16" height="14" rx="3" />
                   <path d="M6 20.5h12" />
+                </svg>
+              )}
+              {c.id === 'ornaments' && (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="14.5" r="6.5" />
+                  <path d="M12 8V3.5" />
+                  <path d="M12 8c-1.6-1.6-4-1.4-4 .1 0 1.4 2.4 1.1 4-.1zm0 0c1.6-1.6 4-1.4 4 .1 0 1.4-2.4 1.1-4-.1z" />
                 </svg>
               )}
               {c.id === 'mugs' && (

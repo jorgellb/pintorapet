@@ -87,7 +87,7 @@ const visible = rows.filter((row) => {
 
 const tabs = [
   { href: '/admin/products/', label: 'Todos', count: rows.length, current: !category && !inventory && !onSale },
-  ...['greeting-cards', 'coasters', 'mugs'].map((key) => ({
+  ...['greeting-cards', 'coasters', 'mugs', 'ornaments'].map((key) => ({
     href: `/admin/products/?categoria=${key}`,
     label: productCategoryLabel(key),
     count: rows.filter((row) => row.category === key).length,
@@ -113,7 +113,7 @@ const tabs = [
     <div>
       <h1>Productos</h1>
       <p class="lead">
-        Tarjetas, posavasos y tazas. Cada producto se vende en cuanto tiene la
+        Tarjetas, posavasos, tazas y bolas de Navidad. Cada producto se vende en cuanto tiene la
         venta activada y el inventario verificado.
       </p>
     </div>

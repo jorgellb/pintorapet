@@ -10,12 +10,14 @@ const googleCategory: Record<ProductCategoryCode, string> = {
     'Arts & Entertainment > Party & Celebration > Gift Giving > Greeting Cards',
   coasters: 'Home & Garden > Kitchen & Dining > Tableware > Drinkware > Coasters',
   mugs: 'Home & Garden > Kitchen & Dining > Tableware > Drinkware > Mugs',
+  ornaments: 'Home & Garden > Decor > Seasonal & Holiday Decorations > Holiday Ornaments',
 };
 
 const typeLabel: Record<ProductCategoryCode, Record<Locale, string>> = {
   'greeting-cards': { es: 'Tarjetas de felicitación', en: 'Greeting cards' },
   coasters: { es: 'Posavasos', en: 'Coasters' },
   mugs: { es: 'Tazas', en: 'Mugs' },
+  ornaments: { es: 'Bolas de Navidad', en: 'Christmas ornaments' },
 };
 
 function escapeXml(value: string): string {

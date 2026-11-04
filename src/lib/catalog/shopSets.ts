@@ -27,13 +27,13 @@ export type ShopSet = {
   items: ProductPublic[];
 };
 
-const TYPE_ORDER = ['greeting-cards', 'coasters', 'mugs'];
+const TYPE_ORDER = ['greeting-cards', 'coasters', 'mugs', 'ornaments'];
 
 export const slugify = (value: string) =>
   value
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
