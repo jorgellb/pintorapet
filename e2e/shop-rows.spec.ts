@@ -9,7 +9,9 @@ test('every category has its row, with the new portraits', async ({ page }) => {
   await page.goto('/es/tienda/');
   const names = await page.locator('.set__name').allInnerTexts();
   for (const name of ['Cockapoo', 'Bulldog francés', 'Pug']) expect(names).toContain(name);
-  await expect(setNamed(page, 'Bulldog francés').locator('.item')).toHaveCount(3);
+  // Card, coaster, mug and Christmas ornament, in that order (more may follow).
+  const kinds = await setNamed(page, 'Bulldog francés').locator('.item__title').allInnerTexts();
+  expect(kinds.slice(0, 4)).toEqual(['Tarjeta', 'Posavasos', 'Taza', 'Bola de Navidad']);
   await expect(page.locator('.medallion__name', { hasText: 'Pug' })).toBeVisible();
 
   await page.goto('/en/shop/');
