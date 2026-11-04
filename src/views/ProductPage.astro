@@ -101,7 +101,13 @@ const choices = options.map((option) => ({
             </fieldset>
           )
         }
-        {product.description && <p>{product.description}</p>}
+        {
+          product.description
+            .split(/\n\s*\n/)
+            .map((paragraph) => paragraph.trim())
+            .filter(Boolean)
+            .map((paragraph) => <p>{paragraph}</p>)
+        }
         <button
           class="btn"
           type="button"

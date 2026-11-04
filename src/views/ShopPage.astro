@@ -25,6 +25,13 @@ const categoryNames: Record<string, { en: string; es: string }> = {
   mugs: { en: 'Mug', es: 'Taza' },
   ornaments: { en: 'Christmas ornament', es: 'Bola de Navidad' },
 };
+// As written mid-sentence ("en tarjeta, posavasos y bola de Navidad"): Navidad keeps its capital.
+const categoryInline: Record<string, { en: string; es: string }> = {
+  'greeting-cards': { en: 'card', es: 'tarjeta' },
+  coasters: { en: 'coaster', es: 'posavasos' },
+  mugs: { en: 'mug', es: 'taza' },
+  ornaments: { en: 'Christmas ornament', es: 'bola de Navidad' },
+};
 const categoryPlural: Record<string, { en: string; es: string }> = {
   'greeting-cards': { en: 'Cards', es: 'Tarjetas' },
   coasters: { en: 'Coasters', es: 'Posavasos' },
@@ -226,7 +233,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
                         {[...new Set(set.items.map((p) => p.category))].map((kind, i, kinds) => (
                           <>
                             {i > 0 && (i === kinds.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
-                            {(categoryNames[kind]?.[locale] ?? kind).toLowerCase()}
+                            {categoryInline[kind]?.[locale] ?? kind}
                           </>
                         ))}
                       </>
