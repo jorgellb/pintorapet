@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Home hero (Admin › Portada): who can read and write it.
+# Home page (Admin › Portada): who can read and write the hero and the blocks.
 # Runs inside one transaction that is always rolled back.
 # Usage: python3 scripts/sql-check-home-hero.py [migration.sql ...]
 import json, sys, psycopg
@@ -53,22 +53,31 @@ try:
     cur.execute("insert into admin_users (user_id, email) values (%s,'boss.hero@example.com')", (adm,))
     cur.execute("delete from site_home_hero")
     cur.execute("insert into site_home_hero (id, content) values (1, %s)", (json.dumps({'design': 'wall'}),))
+    cur.execute("delete from site_home_sections")
+    cur.execute("insert into site_home_sections (id, content) values (1, %s)", (json.dumps({'latest': {'visible': False}}),))
 
     as_role('anon')
     cur.execute("select content->>'design' from site_home_hero where id = 1")
     check('visitors can read the hero', cur.fetchone()[0], 'wall')
     denied('visitors cannot change it', "update site_home_hero set content = '{\"design\":\"salon\"}' where id = 1")
     denied('visitors cannot add a row', "insert into site_home_hero (id, content) values (1, '{}')")
+    cur.execute("select content->'latest'->>'visible' from site_home_sections where id = 1")
+    check('visitors can read the blocks', cur.fetchone()[0], 'false')
+    denied('visitors cannot change the blocks', "update site_home_sections set content = '{}' where id = 1")
 
     as_role('authenticated', ana)
     denied('customers cannot change it', "update site_home_hero set content = '{\"design\":\"salon\"}' where id = 1")
     denied('customers cannot delete it', "delete from site_home_hero where id = 1")
+    denied('customers cannot change the blocks', "update site_home_sections set content = '{}' where id = 1")
 
     as_role('authenticated', adm)
     cur.execute("update site_home_hero set content = '{\"design\":\"salon\"}' where id = 1")
     check('the admin can change it', cur.rowcount, 1)
     denied('there is only one hero', "insert into site_home_hero (id, content) values (2, '{}')")
     denied('the content must be an object', "update site_home_hero set content = '[]' where id = 1")
+    cur.execute("update site_home_sections set content = '{\"invite\":{}}' where id = 1")
+    check('the admin can change the blocks', cur.rowcount, 1)
+    denied('there is only one set of blocks', "insert into site_home_sections (id, content) values (2, '{}')")
 finally:
     conn.rollback()
     conn.close()

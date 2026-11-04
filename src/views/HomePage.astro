@@ -3,11 +3,12 @@ import { loadWorks } from '@/lib/content/editorial';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
 import { t, type Locale } from '@/i18n';
-import { localizedPath, workPath } from '@/i18n/routes';
+import { localizedPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
 import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
 import { getAboutImages } from '@/lib/content/siteExtras';
 import { isHeroDesign, loadHeroContent, resolveHero } from '@/lib/content/homeHero';
+import { loadHomeSections, resolveHomeSections, sectionLinks } from '@/lib/content/homeSections';
 import HeroCollage from '@/components/home/hero/HeroCollage.astro';
 import HeroReveal from '@/components/home/hero/HeroReveal.astro';
 import HeroWall from '@/components/home/hero/HeroWall.astro';
@@ -21,17 +22,14 @@ interface Props {
 const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const products = topLevelProducts((await loadPublicCatalog(locale)).products);
-const aboutImages = await getAboutImages();
-const aboutById = new Map(aboutImages.map((image) => [image.id, image.publicUrl]));
-const aboutPortrait = aboutById.get('about-1') ?? aboutImages[0]?.publicUrl ?? null;
-const aboutDesk = aboutById.get('about-3') ?? aboutImages[2]?.publicUrl ?? null;
+const [catalog, aboutImages, sectionsContent] = await Promise.all([
+  loadPublicCatalog(locale),
+  getAboutImages(),
+  loadHomeSections(),
+]);
+const products = topLevelProducts(catalog.products);
 
 const works = await loadWorks();
-type Work = (typeof works)[number];
-
-const srcOf = (w: Work, role: 'drawing' | 'reference_photo') =>
-  w.data.assets.find((a) => a.role === role && a.src)?.src ?? null;
 
 // Admin › Portada: the saved design, or another one to preview it (?portada=wall).
 const heroContent = await loadHeroContent();
@@ -47,13 +45,9 @@ const Hero = {
 }[hero.design];
 const featuredId = hero.main?.workId ?? null;
 
-const pair =
-  works.find((w) => w.id === 'sox-kira' && srcOf(w, 'drawing') && srcOf(w, 'reference_photo')) ??
-  works.find((w) => w.id !== featuredId && srcOf(w, 'drawing') && srcOf(w, 'reference_photo'));
-
-const salon = works
-  .filter((w) => w.id !== featuredId && w.id !== pair?.id && srcOf(w, 'drawing'))
-  .slice(0, 9);
+// Admin › Portada › Bloques: texts and pictures of every block below the hero.
+const sections = resolveHomeSections(sectionsContent, { works, products, aboutImages, featuredId }, locale);
+const links = sectionLinks(locale);
 
 // Names of companions Meili has already drawn, written and erased on the blank sheet.
 const genericTitles = new Set(['dog', 'dogs', 'doggy', 'cat', 'perro', 'perros', 'perrito', 'gato']);
@@ -65,28 +59,20 @@ const drawnNames = [
   ),
 ].slice(0, 8);
 
-const shop = [
-  products.find((p) => p.category === 'mugs'),
-  products.find((p) => p.category === 'greeting-cards'),
-  products.find((p) => p.category === 'coasters'),
-].filter((p) => p !== undefined);
 ---
 
 <PublicLayout locale={locale} title={dict.nav.home} description={hero.lead} noindex={Boolean(preview)}>
   <Hero hero={hero} locale={locale} />
 
+  {sections.latest && (
   <section class="corridor" aria-labelledby="corridor-title" data-corridor>
     <div class="corridor__sticky">
       <ul class="corridor__track" data-corridor-track>
         <li class="corridor__intro">
-          <h2 id="corridor-title" class="display corridor__title">{dict.home.latest}</h2>
-          <p class="muted">
-            {es
-              ? 'Cada retrato empieza con una fotografía y termina, semanas después, en papel.'
-              : 'Every portrait begins with a photograph and ends, weeks later, on paper.'}
-          </p>
-          <a class="link" href={localizedPath(locale, 'work')}>
-            {es ? 'Ver toda la obra' : 'See all the work'}
+          <h2 id="corridor-title" class="display corridor__title">{sections.latest.title}</h2>
+          <p class="muted">{sections.latest.lead}</p>
+          <a class="link" href={links.work}>
+            {sections.latest.linkLabel}
           </a>
           <p class="corridor__hint">
             <span>{es ? 'Desliza a la derecha' : 'Swipe right'}</span>
@@ -97,17 +83,17 @@ const shop = [
           </p>
         </li>
         {
-          salon.map((w) => (
+          sections.latest.items.map((w) => (
             <li class="corridor__item">
-              <a href={workPath(locale, w.data.pathSlugs[locale])}>
+              <a href={w.href}>
                 <img
-                  src={srcOf(w, 'drawing')!}
-                  alt={w.data.title[locale]}
+                  src={w.src}
+                  alt={w.title}
                   loading="eager"
                   decoding="async"
-                  style={`view-transition-name: work-${w.data.id}`}
+                  style={`view-transition-name: work-${w.workId}`}
                 />
-                <span class="corridor__label">{w.data.title[locale]}</span>
+                <span class="corridor__label">{w.title}</span>
               </a>
             </li>
           ))
@@ -120,31 +106,30 @@ const shop = [
       </ul>
     </div>
   </section>
+  )}
 
   {
-    pair && (
+    sections.process && (
       <section class="section process" aria-labelledby="process-title">
         <div class="site-shell process__grid">
           <div class="process__copy">
-            <h2 id="process-title" class="display h2-display">{dict.home.fromPhoto}</h2>
-            <p>
-              {es
-                ? 'Envías tus fotografías favoritas. Meili estudia la luz, el pelaje y, sobre todo, la mirada, y lo dibuja a mano, trazo a trazo, en grafito.'
-                : 'You send your favourite photographs. Meili studies the light, the coat and above all the gaze, then draws it by hand, stroke by stroke, in graphite.'}
-            </p>
-            <ul class="process__prices">
-              <li>{dict.commissions.priceA4}</li>
-              <li>{dict.commissions.priceA3}</li>
-              <li>{dict.commissions.priceExtra}</li>
-            </ul>
-            <a class="btn" href={localizedPath(locale, 'commissions')}>{dict.home.ctaCommission}</a>
+            <h2 id="process-title" class="display h2-display">{sections.process.title}</h2>
+            <p>{sections.process.text}</p>
+            {sections.process.showPrices && (
+              <ul class="process__prices">
+                <li>{dict.commissions.priceA4}</li>
+                <li>{dict.commissions.priceA3}</li>
+                <li>{dict.commissions.priceExtra}</li>
+              </ul>
+            )}
+            <a class="btn" href={links.commissions}>{sections.process.ctaLabel}</a>
           </div>
           <div class="process__compare">
             <PhotoDrawingCompare
-              photoSrc={srcOf(pair, 'reference_photo')!}
-              drawingSrc={srcOf(pair, 'drawing')!}
-              photoAlt={`${pair.data.title[locale]}: ${dict.art.photo}`}
-              drawingAlt={`${pair.data.title[locale]}: ${dict.art.drawing}`}
+              photoSrc={sections.process.photo.src}
+              drawingSrc={sections.process.drawing.src}
+              photoAlt={sections.process.photo.alt}
+              drawingAlt={sections.process.drawing.alt}
               photoLabel={dict.art.photo}
               drawingLabel={dict.art.drawing}
               hint={dict.art.compareHint}
@@ -156,17 +141,17 @@ const shop = [
   }
 
   {
-    shop.length > 0 && (
+    sections.shop && (
       <section class="section boutique" aria-labelledby="boutique-title">
         <div class="site-shell">
           <header class="boutique__head">
             <h2 id="boutique-title" class="display h2-display">
-              {es ? 'Su arte, para tu casa' : 'Her art, for your home'}
+              {sections.shop.title}
             </h2>
-            <p class="muted">{dict.shop.lead}</p>
+            <p class="muted">{sections.shop.lead}</p>
           </header>
           <ul class="boutique__grid">
-            {shop.map((p, i) => (
+            {sections.shop.products.map((p, i) => (
               <li class={i === 0 ? 'boutique__item boutique__item--feature' : 'boutique__item'}>
                 <a href={localizedPath(locale, 'shop', p.slug)}>
                   {p.coverImageUrl ? (
@@ -182,43 +167,44 @@ const shop = [
               </li>
             ))}
           </ul>
-          <a class="link" href={localizedPath(locale, 'shop')}>
-            {es ? 'Ver la tienda' : 'Visit the shop'}
+          <a class="link" href={links.shop}>
+            {sections.shop.linkLabel}
           </a>
         </div>
       </section>
     )
   }
 
+  {sections.artist && (
   <section class="section artist" aria-labelledby="artist-title" data-artist>
     <div class="site-shell artist__grid">
       <div class="artist__photos">
         {
-          aboutDesk && (
+          sections.artist.desk && (
             <figure class="snap snap--back">
-              <img src={aboutDesk} alt={es ? 'Meili en su mesa de dibujo' : 'Meili at her drawing desk'} loading="lazy" decoding="async" />
+              <img src={sections.artist.desk.src} alt={sections.artist.desk.alt} loading="lazy" decoding="async" />
             </figure>
           )
         }
         {
-          aboutPortrait && (
+          sections.artist.portrait && (
             <figure class="snap snap--front">
               <span class="snap__film">
                 <img
-                  src={aboutPortrait}
-                  alt={es ? 'Meili en su puesto de un mercado' : 'Meili at her market stall'}
+                  src={sections.artist.portrait.src}
+                  alt={sections.artist.portrait.alt}
                   loading="lazy"
                   decoding="async"
                 />
               </span>
-              <figcaption>{es ? 'Meili, en el mercado' : 'Meili, at the market'}</figcaption>
+              <figcaption>{sections.artist.caption}</figcaption>
             </figure>
           )
         }
       </div>
 
       <div class="artist__copy">
-        <p class="artist__eyebrow">{es ? 'La artista' : 'The artist'}</p>
+        <p class="artist__eyebrow">{sections.artist.eyebrow}</p>
         <h2 id="artist-title" class="artist__name">
           <span class="visually-hidden">Meili Stringfellow</span>
           <svg class="signature" viewBox="0 0 1000 300" aria-hidden="true" focusable="false">
@@ -226,33 +212,31 @@ const shop = [
             <text x="120" y="262">Stringfellow</text>
           </svg>
         </h2>
-        <p>
-          {es
-            ? 'Desde su estudio en España, Meili dibuja retratos de mascotas a partir de fotografías, y también personas e ilustraciones para negocios y publicaciones.'
-            : 'From her studio in Spain, Meili draws pet portraits from photographs, as well as people and illustrations for businesses and publications.'}
-        </p>
-        <a class="link" href={localizedPath(locale, 'about')}>
-          {es ? 'Conoce a Meili' : 'Meet Meili'}
+        <p>{sections.artist.text}</p>
+        <a class="link" href={links.about}>
+          {sections.artist.linkLabel}
         </a>
       </div>
     </div>
   </section>
+  )}
 
+  {sections.invite && (
   <section class="section invite" aria-labelledby="invite-title" data-invite>
     <div class="site-shell invite__grid">
       <h2 id="invite-title" class="display invite__title">
-        {es ? '¿Dibujamos a tu compañero?' : 'Shall we draw your companion?'}
+        {sections.invite.title}
       </h2>
       <form
           class="invite__form"
           method="get"
           action={`${localizedPath(locale, 'commissions')}#form`}
           data-invite-form
-          data-cta-empty={dict.home.ctaCommission}
+          data-cta-empty={sections.invite.ctaLabel}
           data-cta-named={es ? 'Encargar el retrato de {name}' : 'Commission {name}’s portrait'}
         >
           <label class="invite__label" for="pet-name">
-            {es ? '¿Cómo se llama?' : 'What is their name?'}
+            {sections.invite.label}
           </label>
           <input
             id="pet-name"
@@ -261,12 +245,12 @@ const shop = [
             maxlength="24"
             autocomplete="off"
             spellcheck="false"
-            placeholder={es ? 'Escribe su nombre' : 'Type their name'}
+            placeholder={sections.invite.placeholder}
             data-invite-input
           />
           <div class="invite__cta">
-            <button class="btn" type="submit" data-invite-cta>{dict.home.ctaCommission}</button>
-            <a class="link" href={localizedPath(locale, 'contact')}>{dict.nav.contact}</a>
+            <button class="btn" type="submit" data-invite-cta>{sections.invite.ctaLabel}</button>
+            <a class="link" href={links.contact}>{dict.nav.contact}</a>
           </div>
         </form>
 
@@ -298,6 +282,7 @@ const shop = [
       </figure>
     </div>
   </section>
+  )}
 </PublicLayout>
 
 <style>

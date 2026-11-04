@@ -1,0 +1,782 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import HomeTabs from '@/components/admin/HomeTabs.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { loadWorks } from '@/lib/content/editorial';
+import { getAboutImages } from '@/lib/content/siteExtras';
+import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
+import { productCategoryLabel } from '@/lib/admin/labels';
+import { loadHeroContent, resolveHero, type HeroImage } from '@/lib/content/homeHero';
+import {
+  defaultHomeSections,
+  defaultSectionCopy,
+  loadHomeSections,
+  resolveHomeSections,
+} from '@/lib/content/homeSections';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const [content, works, catalog, aboutImages, heroContent, media] = await Promise.all([
+  loadHomeSections(),
+  loadWorks(),
+  loadPublicCatalog('es'),
+  getAboutImages(),
+  loadHeroContent(),
+  listMedia(admin.client).catch(() => []),
+]);
+const products = topLevelProducts(catalog.products);
+const featuredId = resolveHero(heroContent, works, 'es').main?.workId ?? null;
+// What each block shows when nothing is chosen.
+const automatic = resolveHomeSections(
+  defaultHomeSections(),
+  { works, products, aboutImages, featuredId },
+  'es',
+);
+const defaults = { es: defaultSectionCopy('es'), en: defaultSectionCopy('en') };
+
+const drawingOf = (id: string) => works.find((w) => w.id === id)?.data.assets.find((a) => a.role === 'drawing' && a.src)?.src ?? '';
+const workOptions = works
+  .filter((w) => w.data.assets.some((a) => a.role === 'drawing' && a.src))
+  .map((w) => ({
+    id: w.id,
+    title: w.data.title.es,
+    src: drawingOf(w.id),
+    pair: w.data.assets.some((a) => a.role === 'reference_photo' && a.src),
+  }))
+  .sort((a, b) => a.title.localeCompare(b.title, 'es'));
+const productOptions = products.map((p) => ({
+  id: p.id,
+  title: p.title,
+  kind: productCategoryLabel(p.category),
+  src: p.coverImageUrl ?? '',
+}));
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
+const mediaById = new Map(media.map((item) => [item.id, item]));
+const nameOf = (image: HeroImage | null) =>
+  !image ? 'Automática' : mediaDisplayName(mediaById.get(image.mediaId ?? '')?.object_path ?? image.src);
+
+type Field = { key: string; label: string; long?: boolean; max: number; hint?: string };
+const blocks: Array<{ id: keyof typeof content; title: string; lead: string; fields: Field[] }> = [
+  {
+    id: 'latest',
+    title: 'Últimos dibujos',
+    lead: 'El pasillo de dibujos que se desliza al bajar, justo después del hero.',
+    fields: [
+      { key: 'title', label: 'Título', max: 80 },
+      { key: 'lead', label: 'Entradilla', long: true, max: 300 },
+      { key: 'linkLabel', label: 'Enlace a la obra', max: 60 },
+    ],
+  },
+  {
+    id: 'process',
+    title: 'De la fotografía al retrato',
+    lead: 'La comparación foto y dibujo que se desliza, con el texto sobre los encargos.',
+    fields: [
+      { key: 'title', label: 'Título', max: 80 },
+      { key: 'text', label: 'Texto', long: true, max: 600 },
+      { key: 'ctaLabel', label: 'Botón', max: 40, hint: 'Lleva a Encargos.' },
+    ],
+  },
+  {
+    id: 'shop',
+    title: 'Tienda',
+    lead: 'Tres productos destacados con un enlace a la tienda.',
+    fields: [
+      { key: 'title', label: 'Título', max: 80 },
+      { key: 'lead', label: 'Entradilla', long: true, max: 300 },
+      { key: 'linkLabel', label: 'Enlace a la tienda', max: 60 },
+    ],
+  },
+  {
+    id: 'artist',
+    title: 'La artista',
+    lead: 'Las dos fotos de Meili, su firma y unas líneas sobre ella.',
+    fields: [
+      { key: 'eyebrow', label: 'Antetítulo', max: 40 },
+      { key: 'text', label: 'Texto', long: true, max: 600 },
+      { key: 'linkLabel', label: 'Enlace a «Sobre mí»', max: 40 },
+      { key: 'caption', label: 'Pie de la foto', max: 60 },
+    ],
+  },
+  {
+    id: 'invite',
+    title: 'Invitación',
+    lead: 'El cierre: escribe el nombre de tu compañero y Meili lo dibuja.',
+    fields: [
+      { key: 'title', label: 'Título', max: 80 },
+      { key: 'label', label: 'Pregunta', max: 60 },
+      { key: 'placeholder', label: 'Ayuda dentro del campo', max: 40 },
+      { key: 'ctaLabel', label: 'Botón', max: 40, hint: 'Con un nombre escrito cambia a «Encargar el retrato de…».' },
+    ],
+  },
+];
+const copyOf = (block: string, key: string) =>
+  (content as unknown as Record<string, Record<string, { es: string; en: string }>>)[block][key];
+const defaultOf = (block: string, key: string, lang: 'es' | 'en') =>
+  (defaults[lang] as unknown as Record<string, Record<string, string>>)[block][key];
+
+const slots: Record<string, Array<{ key: string; title: string; image: HeroImage | null; auto: string }>> = {
+  process: [
+    { key: 'photo', title: 'Fotografía', image: content.process.photo, auto: automatic.process?.photo.src ?? '' },
+    { key: 'drawing', title: 'Dibujo', image: content.process.drawing, auto: automatic.process?.drawing.src ?? '' },
+  ],
+  artist: [
+    { key: 'portrait', title: 'Foto delante (polaroid)', image: content.artist.portrait, auto: automatic.artist?.portrait?.src ?? '' },
+    { key: 'desk', title: 'Foto detrás', image: content.artist.desk, auto: automatic.artist?.desk?.src ?? '' },
+  ],
+};
+---
+
+<AdminLayout title="Bloques de la portada" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Portada</h1>
+      <p class="lead">
+        Los bloques de debajo del hero: sus textos en los dos idiomas, sus fotos y si se muestran. Lo que dejes vacío
+        conserva lo de ahora.
+      </p>
+    </div>
+    <a class="btn btn--quiet" href="/es/" target="_blank" rel="noreferrer">Ver la portada ↗</a>
+  </header>
+  <HomeTabs current="blocks" />
+
+  <nav class="jump" aria-label="Bloques">
+    {blocks.map((block) => <a href={`#${block.id}`}>{block.title}</a>)}
+  </nav>
+
+  <form class="blocks" data-blocks-form novalidate>
+    {
+      blocks.map((block) => (
+        <section class="panel block" id={block.id} data-block={block.id}>
+          <header class="block__head">
+            <div>
+              <h2>{block.title}</h2>
+              <p class="hint">{block.lead}</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" role="switch" name={`${block.id}.visible`} checked={content[block.id].visible} />
+              <span>
+                <strong>Mostrar en la portada</strong>
+              </span>
+            </label>
+          </header>
+
+          <div class="copy-grid">
+            <span />
+            <span class="copy-grid__lang">Español</span>
+            <span class="copy-grid__lang">Inglés</span>
+            {block.fields.map((field) => (
+              <>
+                <span class="copy-grid__label">
+                  {field.label}
+                  {field.hint && <span class="hint">{field.hint}</span>}
+                </span>
+                {(['es', 'en'] as const).map((lang) =>
+                  field.long ? (
+                    <textarea
+                      name={`${block.id}.${field.key}.${lang}`}
+                      rows="3"
+                      maxlength={field.max}
+                      placeholder={defaultOf(block.id, field.key, lang)}
+                      aria-label={`${field.label} (${lang === 'es' ? 'español' : 'inglés'})`}
+                    >{copyOf(block.id, field.key)[lang]}</textarea>
+                  ) : (
+                    <input
+                      name={`${block.id}.${field.key}.${lang}`}
+                      value={copyOf(block.id, field.key)[lang]}
+                      maxlength={field.max}
+                      placeholder={defaultOf(block.id, field.key, lang)}
+                      aria-label={`${field.label} (${lang === 'es' ? 'español' : 'inglés'})`}
+                    />
+                  ),
+                )}
+              </>
+            ))}
+          </div>
+
+          {block.id === 'latest' && (
+            <div class="pictures">
+              <h3>Dibujos del pasillo</h3>
+              <p class="hint">
+                Elige cuáles salen y en qué orden (hasta 12). Sin elegir ninguno, salen los últimos de la obra.
+              </p>
+              <ol class="picked" data-picked="works" data-max="12">
+                {content.latest.works.map((id) => {
+                  const work = workOptions.find((w) => w.id === id);
+                  return work ? (
+                    <li class="picked__item" data-value={work.id}>
+                      <img src={work.src} alt="" loading="lazy" />
+                      <span class="picked__name">{work.title}</span>
+                      <span class="picked__actions">
+                        <button type="button" class="btn--quiet" data-up aria-label="Antes">↑</button>
+                        <button type="button" class="btn--quiet" data-down aria-label="Después">↓</button>
+                        <button type="button" class="btn--quiet btn--danger" data-remove>Quitar</button>
+                      </span>
+                    </li>
+                  ) : null;
+                })}
+              </ol>
+              <p class="auto" data-auto-note hidden={content.latest.works.length > 0}>
+                Automático: {automatic.latest?.items.map((w) => w.title).join(', ')}.
+              </p>
+              <div class="add">
+                <select data-add-select aria-label="Añadir un dibujo">
+                  <option value="">Añadir un dibujo…</option>
+                  {workOptions.map((w) => (
+                    <option value={w.id} data-src={w.src}>
+                      {w.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {block.id === 'process' && (
+            <div class="pictures">
+              <h3>Foto y dibujo que se comparan</h3>
+              <label>
+                Obra
+                <select name="process.work">
+                  <option value="">Automática (Sox y Kira)</option>
+                  {workOptions
+                    .filter((w) => w.pair)
+                    .map((w) => (
+                      <option value={w.id} selected={content.process.work === w.id}>
+                        {w.title}
+                      </option>
+                    ))}
+                </select>
+                <span class="hint">Usa su fotografía y su dibujo. Debajo puedes cambiar cualquiera de las dos por otra de Medios.</span>
+              </label>
+            </div>
+          )}
+
+          {block.id === 'shop' && (
+            <div class="pictures">
+              <h3>Productos destacados</h3>
+              <p class="hint">Hasta 3, en este orden. Sin elegir ninguno, salen una taza, una tarjeta y un posavasos.</p>
+              <ol class="picked" data-picked="products" data-max="3">
+                {content.shop.products.map((id) => {
+                  const product = productOptions.find((p) => p.id === id);
+                  return product ? (
+                    <li class="picked__item" data-value={product.id}>
+                      <img src={product.src} alt="" loading="lazy" />
+                      <span class="picked__name">
+                        {product.title}
+                        <span class="hint">{product.kind}</span>
+                      </span>
+                      <span class="picked__actions">
+                        <button type="button" class="btn--quiet" data-up aria-label="Antes">↑</button>
+                        <button type="button" class="btn--quiet" data-down aria-label="Después">↓</button>
+                        <button type="button" class="btn--quiet btn--danger" data-remove>Quitar</button>
+                      </span>
+                    </li>
+                  ) : null;
+                })}
+              </ol>
+              <p class="auto" data-auto-note hidden={content.shop.products.length > 0}>
+                Automático: {automatic.shop?.products.map((p) => p.title).join(', ')}.
+              </p>
+              <div class="add">
+                <select data-add-select aria-label="Añadir un producto">
+                  <option value="">Añadir un producto…</option>
+                  {productOptions.map((p) => (
+                    <option value={p.id} data-src={p.src}>
+                      {p.title} · {p.kind}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {slots[block.id] && (
+            <div class="slots">
+              {slots[block.id].map((slot) => (
+                <div class="slot" data-slot={`${block.id}.${slot.key}`} data-auto-src={slot.auto}>
+                  <h3>{slot.title}</h3>
+                  <button type="button" class="slot__image" data-slot-choose title="Elegir de Medios">
+                    <img src={slot.image?.src ?? (slot.auto || undefined)} alt="" data-slot-thumb />
+                    <span class="slot__badge" data-slot-badge hidden={Boolean(slot.image)}>
+                      Automática
+                    </span>
+                  </button>
+                  <input type="hidden" data-slot-media value={slot.image?.mediaId ?? ''} />
+                  <input type="hidden" data-slot-src value={slot.image?.src ?? ''} />
+                  <p class="slot__name" data-slot-name>{nameOf(slot.image)}</p>
+                  <div class="pair">
+                    <label>
+                      Texto alternativo
+                      <input data-slot-alt="es" value={slot.image?.altEs ?? ''} maxlength="300" />
+                    </label>
+                    <label>
+                      En inglés
+                      <input data-slot-alt="en" value={slot.image?.altEn ?? ''} maxlength="300" />
+                    </label>
+                  </div>
+                  <div class="slot__actions">
+                    <button type="button" class="btn--quiet" data-slot-choose>Elegir de Medios</button>
+                    <button type="button" class="btn--quiet" data-slot-clear hidden={!slot.image}>Volver a la automática</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {block.id === 'process' && (
+            <label class="switch">
+              <input type="checkbox" role="switch" name="process.showPrices" checked={content.process.showPrices} />
+              <span>
+                <strong>Mostrar los precios de los encargos</strong>
+                <span class="hint">A4, A3 y sujeto adicional, como en la página de Encargos.</span>
+              </span>
+            </label>
+          )}
+        </section>
+      ))
+    }
+
+    <div class="savebar">
+      <button type="submit">Guardar bloques</button>
+      <p class="status" data-blocks-status role="status" hidden></p>
+    </div>
+  </form>
+
+  <MediaPicker items={pickerItems} defaultBucket="portfolio-public" />
+</AdminLayout>
+
+<style>
+  .jump {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.1rem;
+    margin-bottom: 1.25rem;
+    padding: 0.7rem 0;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    font-size: 0.9rem;
+  }
+
+  .blocks {
+    display: grid;
+    gap: 1.25rem;
+    padding-bottom: 5rem;
+  }
+
+  .block {
+    display: grid;
+    gap: 1.1rem;
+    scroll-margin-top: 4rem;
+  }
+
+  .block__head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: start;
+    gap: 0.75rem 1.5rem;
+  }
+
+  .block__head h2 {
+    margin: 0;
+  }
+
+  .block:has(input[name$='.visible']:not(:checked)) > :not(.block__head) {
+    opacity: 0.5;
+  }
+
+  .copy-grid {
+    display: grid;
+    grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.65rem 1rem;
+    align-items: start;
+  }
+
+  .copy-grid__lang {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .copy-grid__label {
+    display: grid;
+    gap: 0.2rem;
+    padding-top: 0.55rem;
+    font-weight: 500;
+  }
+
+  .copy-grid__label .hint {
+    font-weight: 400;
+  }
+
+  @media (max-width: 48rem) {
+    .copy-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .copy-grid > span:empty,
+    .copy-grid__lang {
+      display: none;
+    }
+  }
+
+  .pictures {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .pictures h3,
+  .slot h3 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .picked {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .picked__item {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .picked__item img {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 0.35rem;
+    object-fit: cover;
+    background: var(--paper-deep);
+  }
+
+  .picked__name {
+    display: grid;
+    font-weight: 600;
+  }
+
+  .picked__actions {
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .picked__actions button {
+    min-height: 2rem;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.85rem;
+  }
+
+  .picked__item:first-child [data-up],
+  .picked__item:last-child [data-down] {
+    visibility: hidden;
+  }
+
+  .auto {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  .auto[hidden] {
+    display: none;
+  }
+
+  .add select {
+    max-width: 26rem;
+  }
+
+  .slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1rem;
+  }
+
+  .slot {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--paper);
+  }
+
+  .slot__image {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    background: var(--paper-deep);
+  }
+
+  .slot__image:hover {
+    border-color: var(--accent);
+    background: var(--paper-deep);
+  }
+
+  .slot__image img {
+    display: block;
+    width: 100%;
+    height: 11rem;
+    object-fit: contain;
+  }
+
+  .slot__badge {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.92);
+    color: var(--ink-soft);
+    font-size: 0.72rem;
+  }
+
+  .slot__badge[hidden],
+  .slot__actions [hidden] {
+    display: none;
+  }
+
+  .slot__name {
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .slot__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .slot__actions button {
+    min-height: 2rem;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .savebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: rgb(255 255 255 / 0.96);
+    box-shadow: 0 -8px 24px -18px rgb(22 23 26 / 0.4);
+  }
+
+  .savebar .status {
+    margin: 0;
+  }
+</style>
+
+<script>
+  import { pickMedia, type PickedMedia } from '@/lib/admin/mediaPicker';
+
+  const form = document.querySelector<HTMLFormElement>('[data-blocks-form]');
+  if (form) {
+    const status = form.querySelector<HTMLElement>('[data-blocks-status]')!;
+    const say = (text: string) => {
+      status.hidden = false;
+      status.textContent = text;
+    };
+
+    // ——— Ordered picks (works of the corridor, products of the shop) ———
+    form.querySelectorAll<HTMLElement>('[data-picked]').forEach((list) => {
+      const box = list.parentElement!;
+      const select = box.querySelector<HTMLSelectElement>('[data-add-select]')!;
+      const note = box.querySelector<HTMLElement>('[data-auto-note]');
+      const max = Number(list.dataset.max ?? 3);
+      const values = () => [...list.querySelectorAll<HTMLElement>('[data-value]')].map((li) => li.dataset.value!);
+      const sync = () => {
+        const taken = new Set(values());
+        [...select.options].forEach((option) => {
+          if (option.value) option.disabled = taken.has(option.value);
+        });
+        select.disabled = taken.size >= max;
+        select.options[0].textContent = taken.size >= max ? `Máximo ${max}` : select.getAttribute('aria-label') + '…';
+        if (note) note.hidden = taken.size > 0;
+      };
+      const wire = (li: HTMLElement) => {
+        li.querySelector('[data-up]')?.addEventListener('click', () => li.previousElementSibling?.before(li));
+        li.querySelector('[data-down]')?.addEventListener('click', () => li.nextElementSibling?.after(li));
+        li.querySelector('[data-remove]')?.addEventListener('click', () => {
+          li.remove();
+          sync();
+        });
+      };
+      list.querySelectorAll<HTMLElement>('[data-value]').forEach(wire);
+      select.addEventListener('change', () => {
+        const option = select.selectedOptions[0];
+        if (!option?.value) return;
+        const li = document.createElement('li');
+        li.className = 'picked__item';
+        for (const attr of list.getAttributeNames()) if (attr.startsWith('data-astro-cid')) li.setAttribute(attr, '');
+        li.dataset.value = option.value;
+        const cid = [...list.attributes].find((a) => a.name.startsWith('data-astro-cid'))?.name ?? '';
+        const scoped = cid ? ` ${cid}` : '';
+        li.innerHTML = `<img${scoped} src="" alt="" /><span class="picked__name"${scoped}></span><span class="picked__actions"${scoped}><button type="button" class="btn--quiet"${scoped} data-up aria-label="Antes">↑</button><button type="button" class="btn--quiet"${scoped} data-down aria-label="Después">↓</button><button type="button" class="btn--quiet btn--danger"${scoped} data-remove>Quitar</button></span>`;
+        li.querySelector('img')!.src = option.dataset.src ?? '';
+        li.querySelector('.picked__name')!.textContent = option.textContent?.trim() ?? option.value;
+        list.append(li);
+        wire(li);
+        select.value = '';
+        sync();
+      });
+      sync();
+    });
+
+    // ——— Photos from Medios ———
+    form.querySelectorAll<HTMLElement>('[data-slot]').forEach((slot) => {
+      const media = slot.querySelector<HTMLInputElement>('[data-slot-media]')!;
+      const src = slot.querySelector<HTMLInputElement>('[data-slot-src]')!;
+      const thumb = slot.querySelector<HTMLImageElement>('[data-slot-thumb]')!;
+      const badge = slot.querySelector<HTMLElement>('[data-slot-badge]')!;
+      const name = slot.querySelector<HTMLElement>('[data-slot-name]')!;
+      const clear = slot.querySelector<HTMLButtonElement>('[data-slot-clear]')!;
+      const alt = (lang: 'es' | 'en') => slot.querySelector<HTMLInputElement>(`[data-slot-alt="${lang}"]`)!;
+      const set = (item: PickedMedia | null) => {
+        media.value = item?.id ?? '';
+        src.value = item?.url ?? '';
+        if (item?.url || slot.dataset.autoSrc) thumb.src = item?.url || slot.dataset.autoSrc || '';
+        else thumb.removeAttribute('src');
+        badge.hidden = Boolean(item);
+        clear.hidden = !item;
+        name.textContent = item ? item.name : 'Automática';
+        alt('es').value = item ? alt('es').value.trim() || item.altEs : '';
+        alt('en').value = item ? alt('en').value.trim() || item.altEn : '';
+      };
+      slot.querySelectorAll('[data-slot-choose]').forEach((button) =>
+        button.addEventListener('click', async () => {
+          const [item] = await pickMedia({ bucket: slot.dataset.slot?.startsWith('artist') ? '' : 'portfolio-public' });
+          if (item) set(item);
+        }),
+      );
+      clear.addEventListener('click', () => set(null));
+    });
+
+    // ——— Save ———
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement | null;
+      const checked = (name: string) => Boolean(field(name)?.checked);
+      const localized = (block: string, key: string) => ({
+        es: field(`${block}.${key}.es`)?.value ?? '',
+        en: field(`${block}.${key}.en`)?.value ?? '',
+      });
+      const picks = (kind: string) =>
+        [...form.querySelectorAll<HTMLElement>(`[data-picked="${kind}"] [data-value]`)].map((li) => li.dataset.value!);
+      const image = (key: string) => {
+        const slot = form.querySelector<HTMLElement>(`[data-slot="${key}"]`)!;
+        const src = slot.querySelector<HTMLInputElement>('[data-slot-src]')!.value;
+        if (!src) return null;
+        return {
+          mediaId: slot.querySelector<HTMLInputElement>('[data-slot-media]')!.value || null,
+          src,
+          altEs: slot.querySelector<HTMLInputElement>('[data-slot-alt="es"]')!.value,
+          altEn: slot.querySelector<HTMLInputElement>('[data-slot-alt="en"]')!.value,
+        };
+      };
+      const payload = {
+        latest: {
+          visible: checked('latest.visible'),
+          title: localized('latest', 'title'),
+          lead: localized('latest', 'lead'),
+          linkLabel: localized('latest', 'linkLabel'),
+          works: picks('works'),
+        },
+        process: {
+          visible: checked('process.visible'),
+          title: localized('process', 'title'),
+          text: localized('process', 'text'),
+          ctaLabel: localized('process', 'ctaLabel'),
+          showPrices: checked('process.showPrices'),
+          work: (form.elements.namedItem('process.work') as HTMLSelectElement).value || null,
+          photo: image('process.photo'),
+          drawing: image('process.drawing'),
+        },
+        shop: {
+          visible: checked('shop.visible'),
+          title: localized('shop', 'title'),
+          lead: localized('shop', 'lead'),
+          linkLabel: localized('shop', 'linkLabel'),
+          products: picks('products'),
+        },
+        artist: {
+          visible: checked('artist.visible'),
+          eyebrow: localized('artist', 'eyebrow'),
+          text: localized('artist', 'text'),
+          linkLabel: localized('artist', 'linkLabel'),
+          caption: localized('artist', 'caption'),
+          portrait: image('artist.portrait'),
+          desk: image('artist.desk'),
+        },
+        invite: {
+          visible: checked('invite.visible'),
+          title: localized('invite', 'title'),
+          label: localized('invite', 'label'),
+          placeholder: localized('invite', 'placeholder'),
+          ctaLabel: localized('invite', 'ctaLabel'),
+        },
+      };
+      const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+      button.disabled = true;
+      say('Guardando…');
+      const res = await fetch('/api/admin/home-sections/', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      button.disabled = false;
+      say(res?.ok ? 'Bloques guardados. Ya se ven en la portada.' : (data?.error?.message ?? 'No se pudo guardar. Inténtalo de nuevo.'));
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+  }
+</script>

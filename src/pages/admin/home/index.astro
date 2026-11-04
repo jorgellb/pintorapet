@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
+import HomeTabs from '@/components/admin/HomeTabs.astro';
 import MediaPicker from '@/components/admin/MediaPicker.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasSupabase } from '@/lib/server/env';
@@ -77,6 +78,14 @@ const designs: Record<HeroDesign, { name: string; text: string }> = {
   },
 };
 
+// Which designs show each picture (see the components in src/components/home/hero/).
+const slotDesigns: Record<'main' | 'photo' | 'extras', HeroDesign[]> = {
+  main: ['collage', 'reveal', 'wall', 'sketchbook', 'salon'],
+  photo: ['collage', 'reveal', 'sketchbook'],
+  extras: ['collage', 'salon'],
+};
+const designNames = (list: HeroDesign[]) => list.map((d) => designs[d].name).join(', ');
+
 const uses: Record<HeroDesign, string> = {
   collage: 'Usa: imagen principal, foto original y 4 obras más.',
   reveal: 'Usa: imagen principal y foto original.',
@@ -114,12 +123,15 @@ const featuredOptions = works
     <div>
       <h1>Portada</h1>
       <p class="lead">
-        Lo primero que se ve al entrar en la web: el diseño, sus textos en los dos idiomas y sus imágenes.
-        Lo que dejes vacío toma el texto original o las imágenes de la obra destacada.
+        Lo primero que se ve al entrar en la web: el diseño, sus textos en los dos idiomas y
+        <a href="#imagenes">sus fotos</a>. Lo que dejes vacío toma el texto original o las imágenes de la obra
+        destacada. El resto de la portada se edita en <a href="/admin/home/blocks/">Bloques</a>.
       </p>
     </div>
     <a class="btn btn--quiet" href="/es/" target="_blank" rel="noreferrer">Ver la portada ↗</a>
   </header>
+
+  <HomeTabs current="hero" />
 
   <form class="hero-admin" data-hero-form novalidate>
     <section class="panel">
@@ -334,7 +346,7 @@ const featuredOptions = works
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="imagenes">
       <h2>Imágenes</h2>
       <p class="hint">
         Elige o sube las imágenes en Medios. Si dejas una vacía, se usa la de la obra destacada.
@@ -348,8 +360,17 @@ const featuredOptions = works
               { key: 'photo', title: 'Foto original', image: content.images.photo, auto: automatic.photo },
             ] as const
           ).map((slot) => (
-            <div class="slot" data-slot={slot.key} data-auto-src={slot.auto?.src ?? ''}>
+            <div
+              class="slot"
+              data-slot={slot.key}
+              data-auto-src={slot.auto?.src ?? ''}
+              data-used-by={slotDesigns[slot.key].join(' ')}
+            >
               <h3>{slot.title}</h3>
+              <p class="slot__uses">
+                {slotDesigns[slot.key].length === 5 ? 'La usan todos los diseños.' : `La usan: ${designNames(slotDesigns[slot.key])}.`}
+              </p>
+              <p class="slot__unused" data-unused-note hidden></p>
               <button type="button" class="slot__image" data-slot-choose title="Elegir de Medios">
                 <img src={slot.image?.src ?? slot.auto?.src} alt="" data-slot-thumb />
                 <span class="slot__badge" data-slot-badge hidden={Boolean(slot.image)}>
@@ -380,7 +401,9 @@ const featuredOptions = works
         }
       </div>
 
+      <div class="extras-block" data-used-by={slotDesigns.extras.join(' ')}>
       <h3 class="extras__title">Obras de alrededor</h3>
+      <p class="slot__unused" data-unused-note hidden></p>
       <p class="hint">
         Las usan Estudio ({HERO_EXTRAS.collage}) y Salón ({HERO_EXTRAS.salon}). Si eliges menos, se completan con
         tus obras.
@@ -420,6 +443,7 @@ const featuredOptions = works
         </li>
       </template>
       <button type="button" class="btn--quiet" data-extras-add>Añadir desde Medios</button>
+      </div>
     </section>
 
     <div class="savebar">
@@ -698,6 +722,30 @@ const featuredOptions = works
     display: none;
   }
 
+  .slot__uses {
+    margin: -0.3rem 0 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .slot__unused {
+    margin: 0;
+    padding: 0.45rem 0.65rem;
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--warn, #b7791f) 14%, transparent);
+    color: var(--ink);
+    font-size: 0.85rem;
+  }
+
+  .slot__unused[hidden] {
+    display: none;
+  }
+
+  /* pictures the chosen design does not show */
+  .is-unused > :not(h3):not(.slot__unused):not(.slot__uses) {
+    opacity: 0.45;
+  }
+
   .slot__name {
     margin: 0;
     overflow: hidden;
@@ -838,7 +886,28 @@ const featuredOptions = works
     };
     fit();
     new ResizeObserver(fit).observe(screen ?? form);
-    form.querySelectorAll<HTMLInputElement>('input[name="design"]').forEach((input) => input.addEventListener('change', refresh));
+    // Dim the pictures the chosen design does not show, and say so.
+    const designLabel = (value: string) =>
+      form.querySelector<HTMLInputElement>(`input[name="design"][value="${value}"]`)?.closest('label')?.querySelector('.design__name')?.textContent ?? value;
+    const markUnused = () => {
+      const current = design();
+      form.querySelectorAll<HTMLElement>('[data-used-by]').forEach((box) => {
+        const used = (box.dataset.usedBy ?? '').split(' ').includes(current);
+        box.classList.toggle('is-unused', !used);
+        const note = box.querySelector<HTMLElement>('[data-unused-note]');
+        if (note) {
+          note.hidden = used;
+          note.textContent = used ? '' : `El diseño «${designLabel(current)}» no usa ${box.matches('.extras-block') ? 'estas obras' : 'esta foto'}.`;
+        }
+      });
+    };
+    markUnused();
+    form.querySelectorAll<HTMLInputElement>('input[name="design"]').forEach((input) =>
+      input.addEventListener('change', () => {
+        refresh();
+        markUnused();
+      }),
+    );
     form.querySelectorAll<HTMLButtonElement>('[data-preview-lang]').forEach((button) => {
       button.addEventListener('click', () => {
         lang = button.dataset.previewLang ?? 'es';

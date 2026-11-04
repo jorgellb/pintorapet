@@ -44,7 +44,7 @@ const copySchema = z
   })
   .strict();
 
-const imageSchema = z
+export const imageSchema = z
   .object({
     mediaId: z.uuid().nullable().default(null),
     src: z

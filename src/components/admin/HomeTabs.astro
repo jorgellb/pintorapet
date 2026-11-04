@@ -1,0 +1,18 @@
+---
+/** Tabs of Admin › Portada: the hero and the blocks below it. */
+interface Props {
+  current: 'hero' | 'blocks';
+}
+const { current } = Astro.props;
+---
+
+<ul class="tabs home-tabs">
+  <li><a href="/admin/home/" aria-current={current === 'hero' ? 'page' : undefined}>Hero</a></li>
+  <li><a href="/admin/home/blocks/" aria-current={current === 'blocks' ? 'page' : undefined}>Bloques</a></li>
+</ul>
+
+<style>
+  .home-tabs {
+    margin-bottom: 1.25rem;
+  }
+</style>
