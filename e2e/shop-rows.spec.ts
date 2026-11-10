@@ -56,3 +56,30 @@ test('choosing a portrait shows only its row', async ({ page }) => {
   await expect(page.locator('.set')).toHaveCount(1);
   await expect(page.locator('.set__name')).toHaveText('Cockapoo');
 });
+
+test('choosing a type shows all its pieces together, named by portrait', async ({ page }) => {
+  await page.goto('/es/tienda/?category=mugs');
+  // No rows by portrait: one grid with every mug.
+  await expect(page.locator('.set')).toHaveCount(0);
+  const grid = page.locator('[data-kind-grid]');
+  await expect(grid).toBeVisible();
+  await expect(grid.getByRole('heading', { level: 2 })).toHaveText('Tazas');
+  const titles = await grid.locator('.item__title').allInnerTexts();
+  expect(titles.length).toBeGreaterThan(3);
+  for (const name of ['Cockapoo', 'Bulldog francés', 'Pug']) expect(titles).toContain(name);
+  // Every tag on the grid says mug.
+  const kinds = await grid.locator('.tag__kind').allTextContents();
+  expect(new Set(kinds)).toEqual(new Set(['Taza']));
+  await expect(page.locator('.kind.is-active')).toHaveText('Tazas');
+
+  // "All" keeps the rows by portrait.
+  await page.locator('.kind', { hasText: 'Todos' }).click();
+  await expect(page.locator('[data-kind-grid]')).toHaveCount(0);
+  await expect(page.locator('.set').first()).toBeVisible();
+});
+
+test('a type and a portrait together show just that piece', async ({ page }) => {
+  await page.goto('/en/shop/?category=keyrings&breed=pug');
+  const grid = page.locator('[data-kind-grid]');
+  await expect(grid.locator('.item__title')).toHaveText(['Pug']);
+});
