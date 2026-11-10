@@ -52,9 +52,10 @@ describe('buildShopSets', () => {
     expect(sets[0].name).toBe('Bulldog francés');
   });
 
-  it('orders products by type: card, coaster, mug, Christmas ornament', () => {
+  it('orders products by type: card, coaster, mug, Christmas ornament, keyring', () => {
     const items = buildShopSets(
       [
+        product('keyrings', 'Pug', 'c-pug'),
         product('ornaments', 'Pug', 'c-pug'),
         product('mugs', 'Pug', 'c-pug'),
         product('greeting-cards', 'Pug', 'c-pug'),
@@ -63,7 +64,7 @@ describe('buildShopSets', () => {
       ],
       [pug],
     )[0].items;
-    expect(items.map((p) => p.category)).toEqual(['greeting-cards', 'coasters', 'mugs', 'mugs', 'ornaments']);
+    expect(items.map((p) => p.category)).toEqual(['greeting-cards', 'coasters', 'mugs', 'mugs', 'ornaments', 'keyrings']);
   });
 
   it('uses the chosen portrait, else the coaster photo', () => {

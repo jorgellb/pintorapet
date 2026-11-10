@@ -62,6 +62,7 @@ const productCategory: Record<string, string> = {
   coasters: 'Posavasos',
   mugs: 'Tazas',
   ornaments: 'Bolas de Navidad',
+  keyrings: 'Llaveros',
 };
 
 function pick(map: Record<string, Label>, key: string | null | undefined): Label {

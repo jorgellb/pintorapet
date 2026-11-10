@@ -11,6 +11,7 @@ const googleCategory: Record<ProductCategoryCode, string> = {
   coasters: 'Home & Garden > Kitchen & Dining > Tableware > Drinkware > Coasters',
   mugs: 'Home & Garden > Kitchen & Dining > Tableware > Drinkware > Mugs',
   ornaments: 'Home & Garden > Decor > Seasonal & Holiday Decorations > Holiday Ornaments',
+  keyrings: 'Apparel & Accessories > Handbag & Wallet Accessories > Keychains',
 };
 
 const typeLabel: Record<ProductCategoryCode, Record<Locale, string>> = {
@@ -18,6 +19,7 @@ const typeLabel: Record<ProductCategoryCode, Record<Locale, string>> = {
   coasters: { es: 'Posavasos', en: 'Coasters' },
   mugs: { es: 'Tazas', en: 'Mugs' },
   ornaments: { es: 'Bolas de Navidad', en: 'Christmas ornaments' },
+  keyrings: { es: 'Llaveros', en: 'Keyrings' },
 };
 
 function escapeXml(value: string): string {

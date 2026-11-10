@@ -33,10 +33,22 @@ test('a row slides right with its arrows', async ({ page }) => {
   await next.click();
   await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
   await expect(prev).toBeEnabled();
-  await expect(next).toBeDisabled();
 
-  await prev.click();
+  // However many pieces the row has, the arrow walks it to the end…
+  for (let step = 0; step < 12 && (await next.isEnabled()); step += 1) {
+    await next.click();
+    await page.waitForTimeout(450);
+  }
+  await expect(next).toBeDisabled();
+  await expect(row).not.toHaveClass(/has-more-end/);
+
+  // …and back to the start.
+  for (let step = 0; step < 12 && (await prev.isEnabled()); step += 1) {
+    await prev.click();
+    await page.waitForTimeout(450);
+  }
   await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBeLessThan(5);
+  await expect(prev).toBeDisabled();
 });
 
 test('choosing a portrait shows only its row', async ({ page }) => {

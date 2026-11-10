@@ -18,12 +18,13 @@ const [catalog, collections] = await Promise.all([loadPublicCatalog(locale), loa
 const { source } = catalog;
 const products = topLevelProducts(catalog.products);
 
-const categoryOrder = ['greeting-cards', 'coasters', 'mugs', 'ornaments'] as const;
+const categoryOrder = ['greeting-cards', 'coasters', 'mugs', 'ornaments', 'keyrings'] as const;
 const categoryNames: Record<string, { en: string; es: string }> = {
   'greeting-cards': { en: 'Card', es: 'Tarjeta' },
   coasters: { en: 'Coaster', es: 'Posavasos' },
   mugs: { en: 'Mug', es: 'Taza' },
   ornaments: { en: 'Christmas ornament', es: 'Bola de Navidad' },
+  keyrings: { en: 'Keyring', es: 'Llavero' },
 };
 // As written mid-sentence ("en tarjeta, posavasos y bola de Navidad"): Navidad keeps its capital.
 const categoryInline: Record<string, { en: string; es: string }> = {
@@ -31,12 +32,14 @@ const categoryInline: Record<string, { en: string; es: string }> = {
   coasters: { en: 'coaster', es: 'posavasos' },
   mugs: { en: 'mug', es: 'taza' },
   ornaments: { en: 'Christmas ornament', es: 'bola de Navidad' },
+  keyrings: { en: 'keyring', es: 'llavero' },
 };
 const categoryPlural: Record<string, { en: string; es: string }> = {
   'greeting-cards': { en: 'Cards', es: 'Tarjetas' },
   coasters: { en: 'Coasters', es: 'Posavasos' },
   mugs: { en: 'Mugs', es: 'Tazas' },
   ornaments: { en: 'Christmas ornaments', es: 'Bolas de Navidad' },
+  keyrings: { en: 'Keyrings', es: 'Llaveros' },
 };
 
 const category = Astro.url.searchParams.get('category') ?? 'all';
@@ -167,6 +170,13 @@ const swing = [-6, 4, -3, 7, -5, 3];
                   <circle cx="12" cy="14.5" r="6.5" />
                   <path d="M12 8V3.5" />
                   <path d="M12 8c-1.6-1.6-4-1.4-4 .1 0 1.4 2.4 1.1 4-.1zm0 0c1.6-1.6 4-1.4 4 .1 0 1.4-2.4 1.1-4-.1z" />
+                </svg>
+              )}
+              {c.id === 'keyrings' && (
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="8" cy="7" r="4" />
+                  <path d="M10.8 9.8l2.4 2.4" />
+                  <rect x="11.5" y="11.5" width="8" height="10" rx="2" transform="rotate(-45 15.5 16.5)" />
                 </svg>
               )}
               {c.id === 'mugs' && (

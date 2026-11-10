@@ -27,7 +27,7 @@ export type ShopSet = {
   items: ProductPublic[];
 };
 
-const TYPE_ORDER = ['greeting-cards', 'coasters', 'mugs', 'ornaments'];
+const TYPE_ORDER = ['greeting-cards', 'coasters', 'mugs', 'ornaments', 'keyrings'];
 
 export const slugify = (value: string) =>
   value
