@@ -249,6 +249,10 @@ function protect(root: HTMLElement): void {
       const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       button?.setAttribute('aria-busy', 'true');
       form[READY]!()
+        // Send again from a later task: when everything is already prepared this
+        // runs while the first submit event is still being dispatched, and the
+        // browser ignores requestSubmit() then (the click did nothing).
+        .then(() => new Promise((resolve) => setTimeout(resolve, 0)))
         .then(() => {
           releasing = true;
           form.requestSubmit(submitter instanceof HTMLButtonElement ? submitter : undefined);

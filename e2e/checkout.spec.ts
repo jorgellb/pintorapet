@@ -59,6 +59,8 @@ test.describe('checkout form', () => {
   });
 
   test('has no critical accessibility issues', async ({ page }) => {
+    // The settled page: mid-way through an entrance animation text reads as low contrast.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/es/finalizar-compra/');
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

@@ -93,6 +93,8 @@ test.describe('order confirmation', () => {
   });
 
   test('has no critical accessibility issues', async ({ page }) => {
+    // The settled page: mid-way through an entrance animation text reads as low contrast.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.route('**/api/orders/lookup/', (route) => route.fulfill({ json: order('paid') }));
     await seed(page);
     await page.goto('/es/compra/confirmacion/');

@@ -23,6 +23,23 @@ test.describe('anti-bot gate', () => {
     await expect(page.getByRole('alert')).toContainText('no coinciden', { timeout: 20_000 });
   });
 
+  // A person takes a moment to type: by the time they press the button the
+  // challenge is long solved. One click must be enough (it once needed two).
+  for (const [path, button, field] of [
+    ['/es/cuenta/entrar/', 'Entrar', 'input[name="password"]'],
+    ['/es/cuenta/recuperar/', 'Enviar enlace', null],
+  ] as const) {
+    test(`one click sends ${path} after taking a moment`, async ({ page }) => {
+      await page.goto(path);
+      await page.getByLabel('Email').fill(SIGN_IN_EMAIL);
+      if (field) await page.locator(field).fill('una-contraseña-mala');
+      await page.waitForTimeout(2_000);
+      const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().includes('/api/auth/'), { timeout: 15_000 });
+      await page.getByRole('button', { name: button }).click();
+      await sent;
+    });
+  }
+
   test('a person writing to Meili sends a solved challenge', async ({ page }) => {
     // Caught before the server: the real endpoint would email Meili.
     let sent: URLSearchParams | null = null;
