@@ -155,7 +155,7 @@ const copy = es
       helpLink: 'Write to Meili',
     };
 
-const showJourney = Boolean(status) && !['refunded', 'review', 'processing'].includes(status!.key);
+const showJourney = Boolean(status) && !['refunded', 'review', 'processing', 'cancelled'].includes(status!.key);
 ---
 
 <PublicLayout locale={locale} title={`${copy.eyebrow} ${reference}`} noindex>

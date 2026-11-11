@@ -3,6 +3,7 @@ import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 import { processOutboxBatch } from '@/lib/server/commerce/outbox';
 import { hasResend, hasServiceSupabase } from '@/lib/server/env';
 import { createServiceClient } from '@/lib/server/supabase';
+import { syncOpenShipments } from '@/lib/server/shipping/trackingSync';
 
 export const prerender = false;
 
@@ -15,6 +16,9 @@ async function run(request: Request): Promise<Response> {
   }
 
   await createServiceClient()?.rpc('release_expired_paypal_attempts');
+  // Parcels on their way: their Correos state (nothing to do when Correos is not connected).
+  const tracker = createServiceClient();
+  if (tracker) await syncOpenShipments(tracker).catch((err) => console.error('tracking cron', err));
 
   if (!hasServiceSupabase() || !hasResend()) {
     return Response.json(

@@ -318,3 +318,8 @@ export async function testCorreos(cfg: CorreosConfig): Promise<void> {
     if (err instanceof CorreosApiError && (err.status === 401 || err.status === 403)) throw err;
   }
 }
+
+/** A parcel's tracking events (API gateway, trackpub v2). The raw answer: see tracking.ts. */
+export async function trackShipment(cfg: CorreosConfig, code: string): Promise<unknown> {
+  return call<unknown>(cfg, 'GET', `/support/trackpub/api/v2/search/${encodeURIComponent(code)}`);
+}

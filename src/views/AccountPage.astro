@@ -126,7 +126,7 @@ const address = profile.address;
                       <span class="order__side">
                         <span class="order__total price">{formatEur(order.total_cents, locale)}</span>
                         <span class={`chip-status chip-status--${status.key}`}>{status.label}</span>
-                        {status.key !== 'refunded' && status.key !== 'review' && (
+                        {!['refunded', 'review', 'cancelled'].includes(status.key) && (
                           <span class="order__track" aria-hidden="true">
                             {copy.steps.map((_, s) => (
                               <span class:list={['order__dot', { 'is-on': s <= status.step && status.key !== 'processing' }]} />
@@ -401,7 +401,14 @@ const address = profile.address;
     color: var(--success);
   }
 
+  .chip-status--incident,
+  .chip-status--returned {
+    background: color-mix(in srgb, var(--danger, #9b2c2c) 10%, transparent);
+    color: var(--danger, #9b2c2c);
+  }
+
   .chip-status--review,
+  .chip-status--cancelled,
   .chip-status--refunded {
     background: var(--paper-deep);
     color: var(--ink-soft);

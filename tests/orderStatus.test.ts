@@ -15,3 +15,22 @@ describe('customerStatus', () => {
     expect(customerStatus('refunded', 'shipped', 'es').key).toBe('refunded');
   });
 });
+
+describe('customerStatus with the carrier’s states', () => {
+  it('shows the parcel on its way, out for delivery, or in trouble', () => {
+    expect(customerStatus('paid', 'in_transit', 'es')).toMatchObject({ key: 'shipped', step: 2 });
+    expect(customerStatus('paid', 'out_for_delivery', 'es')).toMatchObject({ key: 'out_for_delivery', label: 'En reparto', step: 2 });
+    expect(customerStatus('paid', 'incident', 'en')).toMatchObject({ key: 'incident', step: 2 });
+    expect(customerStatus('paid', 'returned', 'es')).toMatchObject({ key: 'returned', step: 2 });
+  });
+
+  it('keeps following the parcel when only part was refunded', () => {
+    expect(customerStatus('partially_refunded', 'shipped', 'es')).toMatchObject({ key: 'shipped', step: 2 });
+    expect(customerStatus('refunded', 'unfulfilled', 'es').key).toBe('refunded');
+  });
+
+  it('says so when the order was cancelled or never paid', () => {
+    expect(customerStatus('cancelled', 'unfulfilled', 'es')).toMatchObject({ key: 'cancelled', label: 'Cancelado' });
+    expect(customerStatus('expired', 'unfulfilled', 'en')).toMatchObject({ key: 'cancelled', label: 'Not paid' });
+  });
+});

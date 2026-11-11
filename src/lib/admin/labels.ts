@@ -27,7 +27,11 @@ const fulfillment: Record<string, Label> = {
   unfulfilled: { text: 'Por preparar', tone: 'warn' },
   preparing: { text: 'Preparando', tone: 'info' },
   shipped: { text: 'Enviado', tone: 'ok' },
+  in_transit: { text: 'En tránsito', tone: 'info' },
+  out_for_delivery: { text: 'En reparto', tone: 'info' },
   completed: { text: 'Entregado', tone: 'ok' },
+  incident: { text: 'Incidencia', tone: 'danger' },
+  returned: { text: 'Devuelto al remitente', tone: 'danger' },
 };
 
 const inventory: Record<string, Label> = {

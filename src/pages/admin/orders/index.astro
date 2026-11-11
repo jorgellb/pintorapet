@@ -14,27 +14,50 @@ if (!admin) return Astro.redirect('/admin/login/');
 const { data, error } = await admin.client
   .from('orders')
   .select(
-    'id, reference, payment_status, payment_provider, fulfillment_status, total_cents, customer_name, customer_email, created_at, shipping_zone_name, shipping_country, tracking_code, shipping_destination_ok, order_items(product_title, quantity)',
+    'id, reference, payment_status, payment_provider, fulfillment_status, total_cents, customer_name, customer_email, created_at, paid_at, archived_at, shipping_zone_name, shipping_country, tracking_code, tracking_status, shipping_destination_ok, order_items(product_title, quantity)',
   )
   .order('created_at', { ascending: false })
-  .limit(200);
+  .limit(300);
 
-const orders = data ?? [];
-const toShip = (o: (typeof orders)[number]) =>
-  o.payment_status === 'paid' && (o.fulfillment_status === 'unfulfilled' || o.fulfillment_status === 'preparing');
+type Order = NonNullable<typeof data>[number];
+const all = data ?? [];
+const live = all.filter((o) => !o.archived_at);
+const archived = all.filter((o) => o.archived_at);
+
+const UNPAID = ['pending_session', 'checkout_open', 'expired', 'cancelled'];
+const ON_THE_WAY = ['shipped', 'in_transit', 'out_for_delivery'];
+const charged = (o: Order) => o.payment_status === 'paid' || o.payment_status === 'partially_refunded';
+const toShip = (o: Order) => charged(o) && (o.fulfillment_status === 'unfulfilled' || o.fulfillment_status === 'preparing');
+const unpaid = (o: Order) => UNPAID.includes(o.payment_status) && !o.paid_at;
+// What the "Borrar abandonados" button deletes (same rule as admin_delete_abandoned_orders).
+const DAY = 24 * 60 * 60 * 1000;
+const abandoned = all.filter(
+  (o) =>
+    unpaid(o) &&
+    ((o.payment_status !== 'checkout_open' && Date.now() - new Date(o.created_at).getTime() > DAY) ||
+      (o.payment_status === 'checkout_open' && Date.now() - new Date(o.created_at).getTime() > 2 * DAY)),
+).length;
 
 const filters = {
-  'por-enviar': { label: 'Por enviar', test: toShip },
-  pagados: { label: 'Pagados', test: (o: (typeof orders)[number]) => o.payment_status === 'paid' },
-  revisar: { label: 'Revisar', test: (o: (typeof orders)[number]) => o.payment_status === 'review' },
+  'por-enviar': { label: 'Por enviar', test: toShip, list: live },
+  'en-camino': { label: 'En camino', test: (o: Order) => charged(o) && ON_THE_WAY.includes(o.fulfillment_status), list: live },
+  incidencias: {
+    label: 'Incidencias',
+    test: (o: Order) => o.fulfillment_status === 'incident' || o.fulfillment_status === 'returned',
+    list: live,
+  },
+  pagados: { label: 'Pagados', test: charged, list: live },
+  'sin-pagar': { label: 'Sin pagar', test: unpaid, list: live },
+  revisar: { label: 'Revisar', test: (o: Order) => o.payment_status === 'review', list: live },
+  archivados: { label: 'Archivados', test: () => true, list: archived },
 } as const;
 type FilterKey = keyof typeof filters;
 
 const param = Astro.url.searchParams.get('filtro');
 const current = param && param in filters ? (param as FilterKey) : null;
-const visible = current ? orders.filter(filters[current].test) : orders;
-const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'completed'];
-const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum, o) => sum + o.total_cents, 0);
+const visible = current ? filters[current].list.filter(filters[current].test) : live;
+const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'in_transit', 'out_for_delivery', 'completed', 'incident', 'returned'];
+const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0);
 ---
 
 <AdminLayout title="Pedidos" email={admin.user.email}>
@@ -42,33 +65,41 @@ const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum,
     <div>
       <h1>Pedidos</h1>
       <p class="lead">
-        Compras de la tienda. Los pagos confirmados aparecen como pagados; abre un pedido para ver
-        la dirección, crear el envío en Correos o añadir el seguimiento.
+        Compras de la tienda. Cambia el estado del envío desde la lista o abre un pedido para ver la
+        dirección, imprimir la etiqueta, añadir el seguimiento o devolver dinero. Los pedidos sin pagar
+        se pueden cancelar y borrar; los pagados, archivar.
       </p>
     </div>
+    {
+      abandoned > 0 && (
+        <button type="button" class="btn--danger" data-delete-abandoned data-count={abandoned}>
+          Borrar {abandoned} {abandoned === 1 ? 'pedido abandonado' : 'pedidos abandonados'}
+        </button>
+      )
+    }
   </header>
 
   {
     error ? (
       <p class="err">{error.message}</p>
-    ) : orders.length === 0 ? (
+    ) : all.length === 0 ? (
       <p class="empty">Los pedidos aparecerán aquí cuando la tienda abra las ventas.</p>
     ) : (
       <>
         <p class="summary">
-          <span><strong>{orders.filter(toShip).length}</strong> por enviar</span>
+          <span><strong>{live.filter(toShip).length}</strong> por enviar</span>
           <span><strong>{euros(paidTotal)}</strong> cobrado en total</span>
         </p>
         <ul class="tabs">
           <li>
             <a href="/admin/orders/" aria-current={!current ? 'page' : undefined}>
-              Todos <span class="count">{orders.length}</span>
+              Todos <span class="count">{live.length}</span>
             </a>
           </li>
           {(Object.keys(filters) as FilterKey[]).map((key) => (
             <li>
               <a href={`/admin/orders/?filtro=${key}`} aria-current={current === key ? 'page' : undefined}>
-                {filters[key].label} <span class="count">{orders.filter(filters[key].test).length}</span>
+                {filters[key].label} <span class="count">{filters[key].list.filter(filters[key].test).length}</span>
               </a>
             </li>
           ))}
@@ -90,6 +121,7 @@ const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum,
                   <th>Pago</th>
                   <th>Envío</th>
                   <th class="num">Total</th>
+                  <th><span class="visually-hidden">Acciones</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -120,7 +152,7 @@ const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum,
                         <span class="muted line">{o.payment_provider === 'paypal' ? 'PayPal' : 'Stripe'}</span>
                       </td>
                       <td>
-                        {o.payment_status === 'paid' ? (
+                        {charged(o) ? (
                           <select data-fulfillment data-id={o.id} aria-label={`Envío del pedido ${o.reference}`}>
                             {fulfillmentSteps.map((step) => (
                               <option value={step} selected={o.fulfillment_status === step}>
@@ -133,11 +165,23 @@ const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum,
                         )}
                         {o.shipping_zone_name && <span class="muted line">{o.shipping_zone_name}</span>}
                         {o.tracking_code && <span class="muted line"><code>{o.tracking_code}</code></span>}
+                        {o.tracking_status && <span class="muted line">Correos: {o.tracking_status}</span>}
                         {o.shipping_destination_ok === false && (
                           <a class="chip chip--danger line-chip" href={`/admin/orders/${o.id}/`}>Revisar destino</a>
                         )}
                       </td>
                       <td class="num">{euros(o.total_cents)}</td>
+                      <td class="actions">
+                        {unpaid(o) ? (
+                          <button type="button" class="btn--quiet btn--danger" data-delete-order={o.id} data-reference={o.reference}>
+                            Borrar
+                          </button>
+                        ) : (
+                          <button type="button" class="btn--quiet" data-archive-order={o.id} data-archived={o.archived_at ? '1' : ''}>
+                            {o.archived_at ? 'Desarchivar' : 'Archivar'}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -183,10 +227,86 @@ const paidTotal = orders.filter((o) => o.payment_status === 'paid').reduce((sum,
   .line-chip {
     margin-top: 0.35rem;
   }
+
+  .actions {
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .actions button {
+    min-height: 2rem;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.82rem;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 </style>
 
 <script>
   const feedback = document.querySelector<HTMLElement>('[data-fulfillment-feedback]');
+  const tell = (text: string) => {
+    if (!feedback) return;
+    feedback.hidden = false;
+    feedback.textContent = text;
+  };
+  const errorOf = async (res: Response | null) =>
+    ((await res?.json().catch(() => null)) as { error?: { message?: string } } | null)?.error?.message ??
+    'No hubo respuesta del servidor.';
+
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-order]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!confirm(`¿Borrar el pedido ${button.dataset.reference}? No se llegó a pagar; se borra con todo lo suyo y no se puede deshacer.`)) return;
+      button.disabled = true;
+      const res = await fetch(`/api/admin/orders/${button.dataset.deleteOrder}/`, { method: 'DELETE' }).catch(() => null);
+      if (res?.ok) {
+        button.closest('tr')?.remove();
+        tell(`Pedido ${button.dataset.reference} borrado.`);
+      } else {
+        button.disabled = false;
+        tell(await errorOf(res));
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-archive-order]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const archive = !button.dataset.archived;
+      button.disabled = true;
+      const res = await fetch(`/api/admin/orders/${button.dataset.archiveOrder}/`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ archived: archive }),
+      }).catch(() => null);
+      if (res?.ok) {
+        button.closest('tr')?.remove();
+        tell(archive ? 'Pedido archivado: está en «Archivados».' : 'Pedido de vuelta en la lista.');
+      } else {
+        button.disabled = false;
+        tell(await errorOf(res));
+      }
+    });
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-delete-abandoned]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    if (!confirm(`¿Borrar ${button.dataset.count} pedidos que nunca se pagaron (cerrados hace más de un día, o abiertos hace más de dos)? No se puede deshacer.`)) return;
+    button.disabled = true;
+    const res = await fetch('/api/admin/orders/abandoned/', { method: 'DELETE' }).catch(() => null);
+    if (res?.ok) {
+      location.reload();
+      return;
+    }
+    button.disabled = false;
+    tell(await errorOf(res));
+  });
+
   document.querySelectorAll<HTMLSelectElement>('[data-fulfillment]').forEach((select) => {
     let saved = select.value;
     select.addEventListener('change', async () => {

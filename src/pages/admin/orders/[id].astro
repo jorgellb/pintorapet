@@ -121,7 +121,68 @@ const hasCorreosShipment = order.carrier === 'correos' && Boolean(order.carrier_
 const trackLink =
   order.tracking_code && order.carrier === 'correos' ? trackingUrl(order.tracking_code, 'es') : null;
 const carriers = ['Correos', 'Correos Express', 'SEUR', 'MRW', 'GLS', 'DHL', 'UPS', 'Otro'];
-const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'completed'];
+const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'in_transit', 'out_for_delivery', 'completed', 'incident', 'returned'];
+
+// ——— Unpaid orders: cancel / delete; any order: archive ———
+const unpaidOrder = ['pending_session', 'checkout_open', 'expired', 'cancelled'].includes(order.payment_status) && !order.paid_at;
+const cancellable = unpaidOrder && order.payment_status !== 'cancelled';
+
+// ——— Correos tracking ———
+type TrackingEvent = { at: string | null; text: string };
+const trackingEvents = [...((order.tracking_events ?? []) as TrackingEvent[])].reverse();
+const canAskCorreos = Boolean(correos) && order.carrier === 'correos' && Boolean(order.tracking_code);
+const eventTime = (at: string | null) =>
+  at
+    ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(at))
+    : '';
+
+// ——— History: what happened to the order, from the admin's log ———
+const { data: logRows } = await admin.client
+  .from('admin_audit_log')
+  .select('operation, change, created_at')
+  .eq('entity_id', order.id)
+  .order('created_at', { ascending: false })
+  .limit(50);
+const money = (cents: unknown) => euros(Number(cents ?? 0));
+const historyText = (operation: string, change: Record<string, unknown>) => {
+  switch (operation) {
+    case 'update_order_fulfillment':
+      return `Envío: ${fulfillmentLabel(String(change.fulfillmentStatus ?? '')).text}`;
+    case 'tracking_update':
+      return `Correos: ${fulfillmentLabel(String(change.status ?? '')).text}`;
+    case 'mark_order_shipped':
+      return `Marcado como enviado${change.trackingCode ? ` (${change.trackingCode})` : ''}`;
+    case 'create_shipment':
+      return 'Envío creado en Correos';
+    case 'cancel_shipment':
+      return 'Envío de Correos anulado';
+    case 'refund_order':
+      return `Devolución de ${money(change.amountCents)} (${change.status === 'succeeded' ? 'hecha' : change.status === 'failed' ? 'fallida' : 'en curso'})`;
+    case 'record_refund':
+      return `Devolución de ${money(change.amountCents)} registrada`;
+    case 'retry_refund':
+      return 'Devolución reintentada';
+    case 'issue_invoice':
+      return 'Facturas emitidas';
+    case 'cancel_order':
+      return 'Pedido cancelado';
+    case 'archive_order':
+      return 'Archivado';
+    case 'unarchive_order':
+      return 'Sacado del archivo';
+    default:
+      return operation.replaceAll('_', ' ');
+  }
+};
+const history = [
+  ...(logRows ?? []).map((row) => ({
+    at: String(row.created_at),
+    text: historyText(String(row.operation), (row.change ?? {}) as Record<string, unknown>),
+  })),
+  ...(order.shipped_at ? [{ at: String(order.shipped_at), text: 'Enviado' }] : []),
+  ...(order.paid_at ? [{ at: String(order.paid_at), text: 'Pagado' }] : []),
+  { at: String(order.created_at), text: 'Pedido creado' },
+].sort((a, b) => b.at.localeCompare(a.at));
 const carrierName = (value: string | null) =>
   value === 'correos' ? 'Correos' : value ? value : '—';
 ---
@@ -135,9 +196,29 @@ const carrierName = (value: string | null) =>
         {shortDate(order.created_at)} · {order.payment_provider === 'paypal' ? 'PayPal' : 'Stripe'}
       </p>
     </div>
-    <div class="chips">
-      <span class={chipClass(pay.tone)}>{pay.text}</span>
-      <span class={chipClass(fulfillment.tone)}>{fulfillment.text}</span>
+    <div class="head-side">
+      <div class="chips">
+        {order.archived_at && <span class="chip">Archivado</span>}
+        <span class={chipClass(pay.tone)}>{pay.text}</span>
+        <span class={chipClass(fulfillment.tone)}>{fulfillment.text}</span>
+      </div>
+      <div class="actions" data-order-actions data-id={order.id} data-reference={order.reference}>
+        {cancellable && (
+          <button type="button" class="btn--quiet" data-cancel-unpaid>
+            Cancelar pedido
+          </button>
+        )}
+        {unpaidOrder ? (
+          <button type="button" class="btn--quiet btn--danger" data-delete-unpaid>
+            Borrar pedido
+          </button>
+        ) : (
+          <button type="button" class="btn--quiet" data-archive data-archived={order.archived_at ? '1' : ''}>
+            {order.archived_at ? 'Sacar del archivo' : 'Archivar'}
+          </button>
+        )}
+      </div>
+      <p class="status" data-order-status role="status" hidden></p>
     </div>
   </header>
 
@@ -281,7 +362,13 @@ const carrierName = (value: string | null) =>
     <h2>Envío</h2>
     {
       !paid ? (
-        <p class="muted">El envío se prepara cuando el pedido está pagado.</p>
+        <p class="muted">
+          {unpaidOrder
+            ? `Este pedido no está pagado (${pay.text.toLowerCase()}): no hay nada que enviar. Puedes ${cancellable ? 'cancelarlo o ' : ''}borrarlo con los botones de arriba.`
+            : order.payment_status === 'refunded'
+              ? 'Pedido reembolsado entero: no hay nada que enviar.'
+              : 'El envío se prepara cuando el pedido está pagado.'}
+        </p>
       ) : (
         <>
           <div class="state">
@@ -307,6 +394,37 @@ const carrierName = (value: string | null) =>
               </div>
             )}
           </div>
+
+          {(canAskCorreos || trackingEvents.length > 0) && (
+            <div class="box tracking-box">
+              <div class="tracking-head">
+                <p>
+                  <strong>Seguimiento de Correos</strong>
+                  <span class="muted line">
+                    {order.tracking_checked_at
+                      ? `Consultado ${eventTime(String(order.tracking_checked_at))}. Se actualiza solo cada mañana.`
+                      : 'Se actualiza solo cada mañana; el estado del envío avanza con él.'}
+                  </span>
+                </p>
+                {canAskCorreos && (
+                  <button type="button" class="btn--quiet" data-track>
+                    Actualizar desde Correos
+                  </button>
+                )}
+              </div>
+              {trackingEvents.length > 0 ? (
+                <ol class="events">
+                  {trackingEvents.map((event, i) => (
+                    <li class:list={{ latest: i === 0 }}>
+                      <span class="muted">{eventTime(event.at)}</span> {event.text}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p class="muted">Todavía sin noticias de Correos.</p>
+              )}
+            </div>
+          )}
 
           <div class="prints">
             <a class="btn btn--quiet" href={`/api/admin/orders/${order.id}/label/`} target="_blank" rel="noopener">
@@ -574,6 +692,16 @@ const carrierName = (value: string | null) =>
       </section>
     )
   }
+  <section class="panel history">
+    <h2>Historial</h2>
+    <ol class="events">
+      {history.map((entry) => (
+        <li>
+          <span class="muted">{shortDate(entry.at)}</span> {entry.text}
+        </li>
+      ))}
+    </ol>
+  </section>
 </AdminLayout>
 
 <style>
@@ -731,6 +859,41 @@ const carrierName = (value: string | null) =>
     color: var(--danger);
   }
 
+  .head-side {
+    display: grid;
+    justify-items: end;
+    gap: 0.5rem;
+  }
+
+  .tracking-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .events {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.92rem;
+  }
+
+  .events .latest {
+    font-weight: 600;
+  }
+
+  .history {
+    margin-top: 1.25rem;
+  }
+
+  .history h2 {
+    margin: 0 0 0.75rem;
+  }
+
   .prints {
     display: flex;
     flex-wrap: wrap;
@@ -819,6 +982,75 @@ const carrierName = (value: string | null) =>
         : 'No se pudo emitir la factura.';
     }
     button.disabled = false;
+  });
+
+  // ——— Cancel / delete / archive / Correos ———
+  const actions = document.querySelector<HTMLElement>('[data-order-actions]');
+  if (actions) {
+    const id = actions.dataset.id!;
+    const reference = actions.dataset.reference ?? '';
+    const status = document.querySelector<HTMLElement>('[data-order-status]');
+    const say = (text: string) => {
+      if (!status) return;
+      status.hidden = false;
+      status.textContent = text;
+    };
+    const call = async (method: 'PATCH' | 'DELETE', body?: unknown) => {
+      const res = await fetch(`/api/admin/orders/${id}/`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      return { ok: Boolean(res?.ok), message: data?.error?.message ?? 'No hubo respuesta del servidor.' };
+    };
+    actions.querySelector<HTMLButtonElement>('[data-cancel-unpaid]')?.addEventListener('click', async (event) => {
+      if (!confirm(`¿Cancelar el pedido ${reference}? No está pagado: se libera su stock y ya no se podrá pagar.`)) return;
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      const { ok, message } = await call('PATCH', { cancel: true });
+      if (ok) location.reload();
+      else {
+        say(message);
+        button.disabled = false;
+      }
+    });
+    actions.querySelector<HTMLButtonElement>('[data-delete-unpaid]')?.addEventListener('click', async (event) => {
+      if (!confirm(`¿Borrar el pedido ${reference}? No se llegó a pagar; se borra con todo lo suyo y no se puede deshacer.`)) return;
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      const { ok, message } = await call('DELETE');
+      if (ok) location.assign('/admin/orders/');
+      else {
+        say(message);
+        button.disabled = false;
+      }
+    });
+    actions.querySelector<HTMLButtonElement>('[data-archive]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      const { ok, message } = await call('PATCH', { archived: !button.dataset.archived });
+      if (ok) location.reload();
+      else {
+        say(message);
+        button.disabled = false;
+      }
+    });
+  }
+  document.querySelector<HTMLButtonElement>('[data-track]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const id = document.querySelector<HTMLElement>('[data-shipping-panel]')?.dataset.id;
+    button.disabled = true;
+    button.textContent = 'Consultando…';
+    const res = await fetch(`/api/admin/orders/${id}/tracking/`, { method: 'POST' }).catch(() => null);
+    if (res?.ok) {
+      location.reload();
+      return;
+    }
+    const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+    alert(data?.error?.message ?? 'Correos no respondió.');
+    button.disabled = false;
+    button.textContent = 'Actualizar desde Correos';
   });
 
   // ——— Refunds ———
