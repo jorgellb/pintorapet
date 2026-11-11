@@ -27,6 +27,7 @@ const STRIPE_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
   // Refunds: ours confirmed, or made in the Stripe dashboard.
   'refund.created',
   'refund.updated',
+  'refund.failed',
 ];
 const WEBHOOK_TAG = 'pets-drawings-admin';
 

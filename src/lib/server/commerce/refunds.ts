@@ -28,8 +28,11 @@ export const refundRequestSchema = z
 
 export type RefundRequest = z.infer<typeof refundRequestSchema>;
 
-/** What Stripe or PayPal answered: done (ok) or refused for good (with why). */
-export type ProviderRefund = { id: string; ok: boolean; message?: string };
+/**
+ * What Stripe or PayPal answered: done (ok), still processing (ok + pending:
+ * not done until they confirm it) or refused for good (with why).
+ */
+export type ProviderRefund = { id: string; ok: boolean; pending?: boolean; message?: string };
 
 /** The answer was lost (network, timeout, 5xx): the refund may or may not exist. */
 export class ProviderUnreachable extends Error {
@@ -106,6 +109,17 @@ async function payBack(
       };
     }
     throw err;
+  }
+  const name = refund.provider === 'paypal' ? 'PayPal' : 'Stripe';
+  // Still processing: nothing is booked (no stock, no invoice, no email) until it is confirmed.
+  if (answer.ok && answer.pending) {
+    await rpc(client, 'admin_mark_refund_processing', { p_refund_id: refund.refundId, p_provider_refund_id: answer.id });
+    return {
+      refundId: refund.refundId,
+      amountCents: refund.amountCents,
+      status: 'pending',
+      message: `${name} está tramitando la devolución. Se completará sola cuando ${name} la confirme; también puedes pulsar «Comprobar ahora» más tarde.`,
+    };
   }
   if (!answer.ok) {
     const message = answer.message || 'La devolución fue rechazada.';
@@ -204,7 +218,7 @@ export const defaultProviders: RefundProviders = {
       // a refund already made with this id, so it is never paid back twice.
       const earlier = await stripe.refunds.list({ payment_intent: paymentIntent, limit: 100 });
       const mine = earlier.data.find((r) => r.metadata?.refund_id === refundId && r.status !== 'failed' && r.status !== 'canceled');
-      if (mine) return { id: mine.id, ok: true };
+      if (mine) return mine.status === 'succeeded' ? { id: mine.id, ok: true } : { id: mine.id, ok: true, pending: true };
       const refund = await stripe.refunds.create(
         {
           payment_intent: paymentIntent,
@@ -217,7 +231,7 @@ export const defaultProviders: RefundProviders = {
       if (refund.status === 'failed' || refund.status === 'canceled') {
         return { id: refund.id, ok: false, message: `Stripe no pudo devolverlo (${refund.failure_reason ?? refund.status}).` };
       }
-      return { id: refund.id, ok: true };
+      return refund.status === 'succeeded' ? { id: refund.id, ok: true } : { id: refund.id, ok: true, pending: true };
     } catch (err) {
       // A request Stripe understood and refused (already refunded, too much…) is final.
       if (
@@ -244,7 +258,7 @@ export const defaultProviders: RefundProviders = {
       if (refund.status === 'FAILED' || refund.status === 'CANCELLED') {
         return { id: refund.id, ok: false, message: `PayPal no pudo devolverlo (${refund.status}).` };
       }
-      return { id: refund.id, ok: true };
+      return refund.status === 'COMPLETED' ? { id: refund.id, ok: true } : { id: refund.id, ok: true, pending: true };
     } catch (err) {
       if (err instanceof PaypalApiError && err.status >= 400 && err.status < 500) {
         return { id: '', ok: false, message: `PayPal: ${err.message}` };
@@ -263,12 +277,27 @@ export function paypalRefundOf(resource: {
   amount?: { value?: string; currency_code?: string };
   links?: Array<{ rel?: string; href?: string }>;
 }): { refundId: string; captureId: string; cents: number } | null {
-  if (!resource.id || (resource.status !== 'COMPLETED' && resource.status !== 'PENDING')) return null;
+  // Only a completed refund is booked; a pending one comes again when it completes.
+  if (!resource.id || resource.status !== 'COMPLETED') return null;
   const up = resource.links?.find((link) => link.rel === 'up')?.href ?? '';
   const captureId = /\/captures\/([^/?#]+)/.exec(up)?.[1];
   const cents = Math.round(Number(resource.amount?.value ?? 0) * 100);
   if (!captureId || !(cents > 0)) return null;
   return { refundId: resource.id, captureId: decodeURIComponent(captureId), cents };
+}
+
+/** Stripe/PayPal says a refund failed: failed if it was processing, flagged for review if it was done. */
+export async function recordProviderRefundFailed(
+  supabase: SupabaseClient,
+  providerRefundId: string,
+  reason: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('provider_refund_failed', {
+    p_provider_refund_id: providerRefundId,
+    p_reason: reason,
+  });
+  if (error) throw mapPgError(error);
+  return String(data);
 }
 
 /**

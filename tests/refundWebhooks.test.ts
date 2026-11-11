@@ -18,8 +18,10 @@ describe('paypalRefundOf', () => {
     ).toEqual({ refundId: '1JU08902781691411', captureId: '2GG279541U471931P', cents: 1348 });
   });
 
-  it('ignores a refund that did not go through', () => {
-    expect(paypalRefundOf({ id: 'X', status: 'FAILED', amount: { value: '1.00' }, links: [] })).toBeNull();
+  it('only takes a refund PayPal completed', () => {
+    const links = [{ rel: 'up', href: 'https://api.paypal.com/v2/payments/captures/CAP1' }];
+    expect(paypalRefundOf({ id: 'X', status: 'FAILED', amount: { value: '1.00' }, links })).toBeNull();
+    expect(paypalRefundOf({ id: 'X', status: 'PENDING', amount: { value: '1.00' }, links })).toBeNull();
   });
 });
 
@@ -50,9 +52,20 @@ describe('Stripe refund events', () => {
     });
   });
 
-  it('leaves out a refund Stripe could not make', async () => {
+  it('waits while Stripe is still processing a refund', async () => {
     const { client, rpc } = fakeSupabase('unassigned');
-    await handleStripeEvent(client, refundEvent('failed'));
+    await handleStripeEvent(client, refundEvent('pending'));
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('marks a refund Stripe could not make as failed (or for review if it was done)', async () => {
+    const { client, rpc } = fakeSupabase('failed');
+    const event = refundEvent('failed');
+    (event.data.object as unknown as { failure_reason: string }).failure_reason = 'expired_or_canceled_card';
+    await handleStripeEvent(client, event);
+    expect(rpc).toHaveBeenCalledWith('provider_refund_failed', {
+      p_provider_refund_id: 're_1',
+      p_reason: 'expired_or_canceled_card',
+    });
   });
 });

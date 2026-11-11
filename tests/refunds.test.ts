@@ -91,6 +91,15 @@ describe('startRefund', () => {
     expect(out).toMatchObject({ status: 'failed', message: 'Charge already refunded' });
   });
 
+  it('keeps a refund Stripe is still processing pending, with its id, until Stripe confirms it', async () => {
+    const { client, rpc } = fakeClient((name) => (name === 'admin_begin_refund' ? { data: begun() } : {}));
+    const p = providers({ stripe: vi.fn(async () => ({ id: 're_slow', ok: true, pending: true })) });
+    const out = await startRefund(client, ORDER, input, p);
+    expect(rpc).toHaveBeenCalledWith('admin_mark_refund_processing', { p_refund_id: REFUND, p_provider_refund_id: 're_slow' });
+    expect(rpc.mock.calls.map((call) => call[0])).not.toContain('admin_complete_refund');
+    expect(out.status).toBe('pending');
+  });
+
   it('leaves the refund pending when the answer is lost, to retry it safely', async () => {
     const { client, rpc } = fakeClient((name) => (name === 'admin_begin_refund' ? { data: begun() } : {}));
     const p = providers({

@@ -16,6 +16,14 @@ describe('Stripe refunds', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('reports a refund Stripe is still processing as such, not as done', async () => {
+    list.mockResolvedValue({ data: [] });
+    create.mockResolvedValue({ id: 're_slow', status: 'pending' });
+    expect(await defaultProviders.stripe('pi_1', 999, 'ref-3', 'order-1')).toEqual({ id: 're_slow', ok: true, pending: true });
+    list.mockResolvedValue({ data: [{ id: 're_slow', status: 'pending', metadata: { refund_id: 'ref-3' } }] });
+    expect(await defaultProviders.stripe('pi_1', 999, 'ref-3', 'order-1')).toEqual({ id: 're_slow', ok: true, pending: true });
+  });
+
   it('creates it, with the refund as idempotency key, when there is none', async () => {
     list.mockResolvedValue({ data: [{ id: 're_other', status: 'succeeded', metadata: { refund_id: 'ref-0' } }] });
     create.mockResolvedValue({ id: 're_new', status: 'succeeded' });

@@ -58,6 +58,7 @@ type RefundRow = {
   reason: string;
   error: string | null;
   invoice_id: string | null;
+  provider_refund_id: string | null;
   created_at: string;
 };
 type RefundLeft = {
@@ -433,13 +434,14 @@ const carrierName = (value: string | null) =>
             <p>
               <strong>Devolución de {euros(pendingRefund.amount_cents)} en curso</strong>
               <span class="muted line">
-                No llegó la respuesta de {pendingRefund.provider === 'paypal' ? 'PayPal' : 'Stripe'}. Reintentar es
-                seguro: nunca se devuelve dos veces.
+                {pendingRefund.provider_refund_id
+                  ? `${pendingRefund.provider === 'paypal' ? 'PayPal' : 'Stripe'} la está tramitando. Se completa sola cuando la confirme (stock, factura rectificativa y email a la clienta); puedes comprobarlo ahora.`
+                  : `No llegó la respuesta de ${pendingRefund.provider === 'paypal' ? 'PayPal' : 'Stripe'}. Reintentar es seguro: nunca se devuelve dos veces.`}
               </span>
             </p>
             <div class="actions">
               <button type="button" class="btn" data-refund-retry={pendingRefund.id}>
-                Reintentar
+                {pendingRefund.provider_refund_id ? 'Comprobar ahora' : 'Reintentar'}
               </button>
             </div>
           </div>
@@ -467,7 +469,9 @@ const carrierName = (value: string | null) =>
                     {refundWhat(r)}
                     {r.restock && r.status === 'succeeded' && <span class="muted line">Vuelto al stock</span>}
                     {r.reason && <span class="muted line">{r.reason}</span>}
-                    {r.status === 'failed' && r.error && <span class="line err-text">{r.error}</span>}
+                    {r.error && (r.status === 'failed' || r.status === 'succeeded') && (
+                      <span class="line err-text">{r.error}</span>
+                    )}
                   </td>
                   <td>{refundHow(r)}</td>
                   <td class="num">−{euros(r.amount_cents)}</td>

@@ -213,6 +213,28 @@ try:
     check('the webhook completes a refund left pending', cur.fetchone()[0], 'completed')
     check('which is now done', one("select status from order_refunds where id = %s", (started['refund_id'],))[0], 'succeeded')
 
+    # ——— A refund Stripe/PayPal is still processing ———
+    n, n_items = paid_order('PD-REF-N')
+    as_role('authenticated', adm)
+    started = begin(n, [(n_items['CARD-T'], 1)], restock=True)
+    cur.execute("select public.admin_mark_refund_processing(%s, 're_n')", (started['refund_id'],))
+    check('a refund in progress stays pending', one("select status, provider_refund_id from order_refunds where id = %s", (started['refund_id'],)), ('pending', 're_n'))
+    check('and the order is still paid', one("select payment_status::text from orders where id = %s", (n,))[0], 'paid')
+    check('with no rectifying invoice yet', one("select count(*) from invoices where order_id = %s and kind = 'rectifying'", (n,))[0], 0)
+    as_role('postgres')
+    cur.execute("select public.provider_refund_failed('re_n', 'insufficient_funds')")
+    check('a refund that fails while processing is failed', cur.fetchone()[0], 'failed')
+    check('and nothing else changed', one("select r.status, o.payment_status::text from order_refunds r join orders o on o.id = r.order_id where r.id = %s", (started['refund_id'],)), ('failed', 'paid'))
+    as_role('authenticated', ana)
+    denied('customers cannot touch a refund in progress', "select public.admin_mark_refund_processing(%s, 'x')", (started['refund_id'],))
+    as_role('postgres')
+    # One that fails after it was done: kept, flagged for Meili.
+    cur.execute("select public.provider_refund_failed('re_test_1', 'failed later')")
+    check('a refund that fails after succeeding is flagged for review', cur.fetchone()[0], 'review')
+    check('with a note for Meili', one("select status, error is not null from order_refunds where provider_refund_id = 're_test_1'"), ('succeeded', True))
+    cur.execute("select public.provider_refund_failed('re_unknown', 'x')")
+    check('an unknown refund is ignored', cur.fetchone()[0], 'unknown')
+
     # ——— Without tax data the rectifying invoice waits ———
     cur.execute("update shop_settings set invoice_config = invoice_config - 'issuerNif' where id = 1")
     m, m_items = paid_order('PD-REF-M')

@@ -5,7 +5,7 @@ import { mapPgError } from './pgErrors';
 import { sendOrderEmails } from './outbox';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
 import { stripeFor } from './stripeClient';
-import { recordProviderRefund } from './refunds';
+import { recordProviderRefund, recordProviderRefundFailed } from './refunds';
 
 export async function constructStripeEvent(
   rawBody: string,
@@ -128,13 +128,18 @@ export async function handleStripeEvent(
 
     // A refund: ours (confirmed), or made in the Stripe dashboard.
     case 'refund.created':
-    case 'refund.updated': {
+    case 'refund.updated':
+    case 'refund.failed': {
       const refund = event.data.object as Stripe.Refund;
       const paymentIntent =
         typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id ?? null;
-      const done = refund.status === 'succeeded' || refund.status === 'pending';
+      // Only a refund Stripe completed is booked; a pending one comes again when it settles.
       const result =
-        done && paymentIntent ? await recordProviderRefund(supabase, 'stripe', paymentIntent, refund.id, refund.amount) : 'ignored';
+        refund.status === 'succeeded' && paymentIntent
+          ? await recordProviderRefund(supabase, 'stripe', paymentIntent, refund.id, refund.amount)
+          : refund.status === 'failed' || refund.status === 'canceled'
+            ? await recordProviderRefundFailed(supabase, refund.id, refund.failure_reason ?? refund.status)
+            : 'ignored';
       await supabase.from('stripe_events').upsert(
         {
           event_id: event.id,
