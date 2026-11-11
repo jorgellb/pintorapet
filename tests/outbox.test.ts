@@ -72,6 +72,20 @@ describe('sendOrderEmails', () => {
     expect(updates[0].values).toMatchObject({ status: 'failed', last_error: 'domain not verified' });
   });
 
+  it('tells the customer how much comes back, and where', async () => {
+    send.mockResolvedValue({ error: null });
+    const row = {
+      ...paid('r1', 'order_refunded_customer', 'ana@example.com'),
+      payload: { order_id: 'order-1', reference: 'PD-ABC123', amount_cents: 1348, provider: 'paypal', full: false },
+    };
+    const { client } = fakeSupabase([row]);
+    await sendOrderEmails(client, 'order-1');
+    const mail = send.mock.calls[0][0];
+    expect(mail.subject).toBe('Devolución de tu pedido PD-ABC123');
+    expect(mail.text).toContain('13,48');
+    expect(mail.text).toContain('PayPal');
+  });
+
   it('does not break the payment when the database is unreachable', async () => {
     const { client } = fakeSupabase([], { message: 'timeout' });
     vi.spyOn(console, 'error').mockImplementation(() => {});

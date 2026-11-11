@@ -24,6 +24,9 @@ const STRIPE_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
   'checkout.session.completed',
   'checkout.session.async_payment_succeeded',
   'checkout.session.expired',
+  // Refunds: ours confirmed, or made in the Stripe dashboard.
+  'refund.created',
+  'refund.updated',
 ];
 const WEBHOOK_TAG = 'pets-drawings-admin';
 
@@ -190,6 +193,39 @@ export async function connectStripe(
     { secret_key: secretKey, webhook_secret: webhook.secret },
   );
   return currentRow(client, 'stripe');
+}
+
+/**
+ * Whether the webhook this site created in Stripe misses events it now needs
+ * (refunds were added later). null when it cannot tell: no webhook of ours,
+ * Stripe unreachable, or a key that cannot read webhooks.
+ */
+export async function stripeWebhookMissingEvents(client: SupabaseClient): Promise<boolean | null> {
+  try {
+    const row = await currentRow(client, 'stripe');
+    const { stripe: config } = await loadPaymentConfig();
+    if (!row?.webhook_id || !config) return null;
+    const endpoint = await stripeFor(config.secretKey).webhookEndpoints.retrieve(row.webhook_id);
+    const enabled = new Set(endpoint.enabled_events);
+    if (enabled.has('*')) return false;
+    return STRIPE_EVENTS.some((event) => !enabled.has(event));
+  } catch {
+    return null;
+  }
+}
+
+/** Add the missing events to the webhook this site created in Stripe (same address, same secret). */
+export async function updateStripeWebhookEvents(client: SupabaseClient): Promise<void> {
+  const row = await currentRow(client, 'stripe');
+  const { stripe: config } = await loadPaymentConfig();
+  if (!row?.webhook_id || !config) {
+    throw new CommerceError('VALIDATION', 'Stripe no tiene un webhook creado desde aquí. Vuelve a conectar Stripe.', 409);
+  }
+  try {
+    await stripeFor(config.secretKey).webhookEndpoints.update(row.webhook_id, { enabled_events: STRIPE_EVENTS });
+  } catch {
+    throw new CommerceError('UNAVAILABLE', 'Stripe no dejó actualizar el webhook. Prueba a volver a conectar Stripe.', 502);
+  }
 }
 
 /** Manual webhook secret, for sites without a public address yet (e.g. `stripe listen`). */

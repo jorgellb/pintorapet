@@ -336,3 +336,24 @@ export async function verifyPaypalWebhook(
   );
   return result.verification_status === 'SUCCESS';
 }
+
+export type PaypalRefund = { id: string; status: 'COMPLETED' | 'PENDING' | 'FAILED' | 'CANCELLED' | string };
+
+/**
+ * Pays back part or all of a capture. `requestId` makes it idempotent: asking
+ * again with the same one returns the same refund instead of a second one.
+ */
+export async function refundPaypalCapture(
+  creds: PaypalCredentials,
+  captureId: string,
+  cents: number,
+  requestId: string,
+): Promise<PaypalRefund> {
+  return call<PaypalRefund>(
+    creds,
+    'POST',
+    `/v2/payments/captures/${encodeURIComponent(captureId)}/refund`,
+    { amount: money(cents), custom_id: requestId },
+    requestId,
+  );
+}

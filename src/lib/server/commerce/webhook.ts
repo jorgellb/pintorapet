@@ -5,6 +5,7 @@ import { mapPgError } from './pgErrors';
 import { sendOrderEmails } from './outbox';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
 import { stripeFor } from './stripeClient';
+import { recordProviderRefund } from './refunds';
 
 export async function constructStripeEvent(
   rawBody: string,
@@ -123,6 +124,29 @@ export async function handleStripeEvent(
       );
 
       return { handled: true, detail: data };
+    }
+
+    // A refund: ours (confirmed), or made in the Stripe dashboard.
+    case 'refund.created':
+    case 'refund.updated': {
+      const refund = event.data.object as Stripe.Refund;
+      const paymentIntent =
+        typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id ?? null;
+      const done = refund.status === 'succeeded' || refund.status === 'pending';
+      const result =
+        done && paymentIntent ? await recordProviderRefund(supabase, 'stripe', paymentIntent, refund.id, refund.amount) : 'ignored';
+      await supabase.from('stripe_events').upsert(
+        {
+          event_id: event.id,
+          event_type: event.type,
+          related_object_id: refund.id,
+          status: result === 'ignored' ? 'ignored' : 'processed',
+          processed_at: new Date().toISOString(),
+          payload_summary: { refund_status: refund.status, result },
+        },
+        { onConflict: 'event_id' },
+      );
+      return { handled: true, detail: result };
     }
 
     default: {

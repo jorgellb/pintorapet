@@ -29,7 +29,10 @@ const track =
   order?.carrier === 'correos' && order.tracking_code ? trackingUrl(order.tracking_code, locale) : null;
 // The invoice that counts is the full one that replaced the simplified, if any.
 const invoices = order?.invoices ?? [];
-const current = invoices.find((i) => i.replaces_invoice_id) ?? invoices[invoices.length - 1] ?? null;
+// Rectifying invoices (refunds) are listed apart; they never count as the order's invoice.
+const originals = invoices.filter((i) => i.kind !== 'rectifying');
+const rectifying = invoices.filter((i) => i.kind === 'rectifying');
+const current = originals.find((i) => i.replaces_invoice_id) ?? originals[originals.length - 1] ?? null;
 const replaced = current?.replaces_invoice_id ? invoices.find((i) => i.id === current.replaces_invoice_id) : null;
 const canAskFull = order?.payment_status === 'paid' && current?.kind !== 'full' && !order?.invoice_customer;
 const waitingFull = Boolean(order?.invoice_customer) && current?.kind !== 'full';
@@ -70,6 +73,8 @@ const copy = es
       simplified: 'Factura simplificada',
       full: 'Factura completa',
       replacedBy: 'Sustituida por la factura completa',
+      rectifying: 'Factura rectificativa',
+      refund: 'devolución',
       view: 'Ver',
       download: 'Descargar PDF',
       askTitle: '¿Necesitas factura con tu NIF?',
@@ -120,6 +125,8 @@ const copy = es
       simplified: 'Simplified invoice',
       full: 'Full invoice',
       replacedBy: 'Replaced by the full invoice',
+      rectifying: 'Corrective invoice',
+      refund: 'refund',
       view: 'View',
       download: 'Download PDF',
       askTitle: 'Need an invoice with your tax ID?',
@@ -265,6 +272,24 @@ const showJourney = Boolean(status) && !['refunded', 'review', 'processing'].inc
                     <a href={`/api/account/invoices/${current.id}/?download=1`}>{copy.download}</a>
                   </span>
                 </li>
+                {rectifying.map((doc) => (
+                  <li class="op__doc">
+                    <span class="op__doc-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4M9 12h6M9 15.5h6M9 9h3" /></svg>
+                    </span>
+                    <span class="op__doc-name">
+                      {copy.rectifying}
+                      <strong>{doc.full_number}</strong>
+                      <small>
+                        {copy.refund} {formatEur(-doc.total_cents, locale)}
+                      </small>
+                    </span>
+                    <span class="op__doc-actions">
+                      <a href={`/api/account/invoices/${doc.id}/`} target="_blank" rel="noopener">{copy.view}</a>
+                      <a href={`/api/account/invoices/${doc.id}/?download=1`}>{copy.download}</a>
+                    </span>
+                  </li>
+                ))}
                 {replaced && (
                   <li class="op__doc op__doc--old">
                     <span class="op__doc-name">

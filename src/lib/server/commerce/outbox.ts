@@ -79,6 +79,27 @@ function renderTemplate(
           : `Your order ${payload.reference ?? ''} is on its way!\n\nTracking number: ${code}${link}\n\nThank you for your order.`,
     };
   }
+  if (templateKey === 'order_refunded_customer') {
+    const amount = new Intl.NumberFormat(locale === 'es' ? 'es-ES' : 'en-IE', { style: 'currency', currency: 'EUR' })
+      .format(Number(payload.amount_cents ?? 0) / 100)
+      .replace(/\u00a0/g, ' ');
+    const where = payload.provider === 'paypal' ? 'PayPal' : locale === 'es' ? 'tu tarjeta' : 'your card';
+    const full = payload.full === true;
+    return {
+      subject:
+        locale === 'es'
+          ? `Devolución de tu pedido ${payload.reference ?? ''}`
+          : `Refund for your order ${payload.reference ?? ''}`,
+      text:
+        locale === 'es'
+          ? `Te hemos devuelto ${amount} del pedido ${payload.reference ?? ''}${full ? ' (el pedido completo)' : ''}.\n\n` +
+            `Lo verás en ${where === 'PayPal' ? 'tu cuenta de PayPal' : where} en unos días, según tu banco. ` +
+            `La factura rectificativa está en tu cuenta, en el pedido.\n\nGracias.`
+          : `We have refunded ${amount} from order ${payload.reference ?? ''}${full ? ' (the whole order)' : ''}.\n\n` +
+            `It will show on ${where === 'PayPal' ? 'your PayPal account' : where} within a few days, depending on your bank. ` +
+            `The corrective invoice is in your account, with the order.\n\nThank you.`,
+    };
+  }
   return {
     subject: `Pets Drawings · ${templateKey}`,
     text: JSON.stringify(payload, null, 2),

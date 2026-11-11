@@ -30,7 +30,7 @@ export type InvoiceCustomer = {
 export type InvoiceRow = {
   id: string;
   order_id: string;
-  kind: 'simplified' | 'full';
+  kind: 'simplified' | 'full' | 'rectifying';
   full_number: string;
   issued_at: string;
   operation_date: string;
@@ -48,4 +48,9 @@ export type InvoiceRow = {
   /** Set on a full invoice issued in place of a simplified one (Veri*factu F3). */
   replaces_invoice_id?: string | null;
   replaces_number?: string | null;
+  /** Set on a rectifying invoice (Veri*factu R1/R5): the invoice it corrects, and why. */
+  rectifies_invoice_id?: string | null;
+  rectifies_number?: string | null;
+  rectifies_issued_at?: string | null;
+  rectification_reason?: string | null;
 };

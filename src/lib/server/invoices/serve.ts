@@ -42,8 +42,15 @@ export async function customerInvoice(client: SupabaseClient, id: string): Promi
   return data as InvoiceRow;
 }
 
-/** The invoice that counts for an order (the replacement when there is one). */
-export async function adminCurrentInvoice(client: SupabaseClient, orderId: string): Promise<InvoiceRow | null> {
+/**
+ * One of an order's invoices for the admin: the one asked for (a rectifying
+ * one, say), else the one that counts (the replacement when there is one).
+ */
+export async function adminCurrentInvoice(
+  client: SupabaseClient,
+  orderId: string,
+  invoiceId?: string | null,
+): Promise<InvoiceRow | null> {
   const { data, error } = await client
     .from('invoices')
     .select('*')
@@ -51,9 +58,17 @@ export async function adminCurrentInvoice(client: SupabaseClient, orderId: strin
     .order('issued_at', { ascending: false });
   if (error) throw mapPgError(error);
   const rows = (data ?? []) as InvoiceRow[];
-  const current = rows.find((r) => r.replaces_invoice_id) ?? rows[0] ?? null;
+  const originals = rows.filter((r) => !r.rectifies_invoice_id);
+  const current = invoiceId
+    ? (rows.find((r) => r.id === invoiceId) ?? null)
+    : (originals.find((r) => r.replaces_invoice_id) ?? originals[0] ?? null);
   if (current?.replaces_invoice_id) {
     current.replaces_number = rows.find((r) => r.id === current.replaces_invoice_id)?.full_number ?? null;
+  }
+  if (current?.rectifies_invoice_id) {
+    const rectified = rows.find((r) => r.id === current.rectifies_invoice_id);
+    current.rectifies_number = rectified?.full_number ?? null;
+    current.rectifies_issued_at = rectified?.issued_at ?? null;
   }
   return current;
 }

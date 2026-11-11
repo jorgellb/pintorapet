@@ -120,7 +120,8 @@ async function paidOrder(client: SupabaseClient, id: string): Promise<OrderForSh
   if (error) throw mapPgError(error);
   if (!data) throw new CommerceError('UNAVAILABLE', 'Pedido no encontrado.', 404);
   const order = data as OrderForShipment;
-  if (order.payment_status !== 'paid') {
+  // A partly refunded order still has pieces to send.
+  if (order.payment_status !== 'paid' && order.payment_status !== 'partially_refunded') {
     throw new CommerceError('CONFLICT', 'Solo se envían pedidos pagados.', 409);
   }
   return order;

@@ -23,7 +23,8 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
       .from('orders')
       .update({ fulfillment_status: body.fulfillmentStatus })
       .eq('id', id)
-      .eq('payment_status', 'paid')
+      // A partly refunded order still has pieces to send.
+      .in('payment_status', ['paid', 'partially_refunded'])
       .select('id, fulfillment_status')
       .maybeSingle();
     if (error) throw mapPgError(error);

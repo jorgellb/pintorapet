@@ -50,6 +50,27 @@ describe('renderInvoicePdf', () => {
     expect(doc.getTitle()).toBe('Factura F2026-0001');
   });
 
+  it('titles a rectifying invoice as such, with negative amounts', async () => {
+    const rectifying: InvoiceRow = {
+      ...sampleInvoice,
+      kind: 'rectifying',
+      full_number: 'R2026-0001',
+      lines: [{ ...sampleInvoice.lines[0], quantity: -1, baseCents: -826, vatCents: -173, totalCents: -999 }],
+      breakdown: { '21': { base: -826, vat: -173 } },
+      base_cents: -826,
+      vat_cents: -173,
+      total_cents: -999,
+      replaces_number: null,
+      rectifies_number: 'F2026-0001',
+      rectifies_issued_at: '2026-10-24T10:30:00+02:00',
+      rectification_reason: 'Devolución de una taza',
+    };
+    const doc = await PDFDocument.load(await renderInvoicePdf(rectifying, { verifactuEnabled: false }));
+    expect(doc.getTitle()).toBe('Factura rectificativa R2026-0001');
+    const en = await PDFDocument.load(await renderInvoicePdf({ ...rectifying, locale: 'en' }, { verifactuEnabled: false }));
+    expect(en.getTitle()).toBe('Corrective invoice R2026-0001');
+  });
+
   it('copes with characters the standard fonts lack and with many lines', async () => {
     const lines = Array.from({ length: 40 }, (_, i) => ({ ...sampleInvoice.lines[0], description: `Pieza ${i} — 🐶 ✓` }));
     const bytes = await renderInvoicePdf({ ...sampleInvoice, lines, locale: 'en', customer: null }, { verifactuEnabled: false });

@@ -89,7 +89,7 @@ export type OrderDetail = Omit<OrderSummary, 'item_count' | 'items'> & {
   }>;
   invoices: Array<{
     id: string;
-    kind: 'simplified' | 'full';
+    kind: 'simplified' | 'full' | 'rectifying';
     full_number: string;
     issued_at: string;
     total_cents: number;

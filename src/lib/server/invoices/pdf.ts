@@ -30,6 +30,11 @@ const TEXT = {
     vatAmount: 'Cuota',
     grandTotal: 'Total factura',
     replaces: 'Sustituye a la factura simplificada',
+    rectifying: 'Factura rectificativa',
+    rectifies: 'Rectifica la factura',
+    of: 'del',
+    reason: 'Motivo',
+    byDifference: 'Rectificación por diferencias: importes en negativo.',
     verifactu: 'Factura verificable en la sede electrónica de la AEAT',
   },
   en: {
@@ -50,6 +55,11 @@ const TEXT = {
     vatAmount: 'VAT',
     grandTotal: 'Invoice total',
     replaces: 'Replaces simplified invoice',
+    rectifying: 'Corrective invoice',
+    rectifies: 'Corrects invoice',
+    of: 'of',
+    reason: 'Reason',
+    byDifference: 'Correction by difference: amounts shown as negative.',
     verifactu: 'Invoice verifiable at the AEAT electronic office',
   },
 } as const;
@@ -114,7 +124,8 @@ export async function renderInvoicePdf(
   const t = TEXT[invoice.locale === 'en' ? 'en' : 'es'];
   const locale = invoice.locale === 'en' ? 'en' : 'es';
   const doc = await PDFDocument.create();
-  doc.setTitle(`${invoice.kind === 'full' ? t.full : t.simplified} ${invoice.full_number}`);
+  const title = invoice.kind === 'rectifying' ? t.rectifying : invoice.kind === 'full' ? t.full : t.simplified;
+  doc.setTitle(`${title} ${invoice.full_number}`);
   doc.setAuthor(invoice.issuer.issuerName);
   doc.setCreator(opts.brand ?? 'Pets Drawings');
 
@@ -143,7 +154,7 @@ export async function renderInvoicePdf(
   rule(y, INK, 0.8);
   y -= 30;
 
-  text(invoice.kind === 'full' ? t.full : t.simplified, MARGIN, y, 22, bold, INK);
+  text(title, MARGIN, y, 22, bold, INK);
   textRight(invoice.full_number, right, y, 18, bold, ACCENT);
   y -= 18;
   text(`${t.issued}: ${day(invoice.issued_at, locale)}`, MARGIN, y, 9, regular, MUTED);
@@ -151,6 +162,21 @@ export async function renderInvoicePdf(
   if (invoice.replaces_number) {
     y -= 13;
     text(`${t.replaces} ${invoice.replaces_number}`, MARGIN, y, 9, regular, ACCENT);
+  }
+  if (invoice.rectifies_number) {
+    y -= 13;
+    const when = invoice.rectifies_issued_at ? ` ${t.of} ${day(invoice.rectifies_issued_at, locale)}` : '';
+    text(`${t.rectifies} ${invoice.rectifies_number}${when}`, MARGIN, y, 9, regular, ACCENT);
+  }
+  if (invoice.kind === 'rectifying') {
+    if (invoice.rectification_reason) {
+      for (const part of wrap(regular, `${t.reason}: ${invoice.rectification_reason}`, 9, contentWidth)) {
+        y -= 13;
+        text(part, MARGIN, y, 9, regular, SOFT);
+      }
+    }
+    y -= 13;
+    text(t.byDifference, MARGIN, y, 9, regular, SOFT);
   }
   y -= 28;
 

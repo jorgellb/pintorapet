@@ -9,6 +9,7 @@ import {
   disconnectProvider,
   setProviderEnabled,
   setStripeWebhookSecret,
+  updateStripeWebhookEvents,
   type ProviderRow,
 } from '@/lib/server/payments/connect';
 
@@ -29,6 +30,8 @@ const patchSchema = z
   .object({
     enabled: z.boolean().optional(),
     webhookSecret: z.string().trim().min(1).max(255).optional(),
+    /** Add the events the site now listens to (refunds) to its Stripe webhook. */
+    webhookEvents: z.literal(true).optional(),
   })
   .strict();
 
@@ -104,12 +107,19 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
       }
       await setStripeWebhookSecret(admin.client, body.webhookSecret);
     }
+    if (body.webhookEvents) {
+      if (provider !== 'stripe') {
+        throw new CommerceError('VALIDATION', 'Solo el webhook de Stripe se actualiza así.', 400);
+      }
+      await updateStripeWebhookEvents(admin.client);
+    }
     if (typeof body.enabled === 'boolean') {
       await setProviderEnabled(admin.client, provider, body.enabled);
     }
     await audit(admin, 'update_payment_provider', provider, {
       enabled: body.enabled,
       webhookSecret: body.webhookSecret ? 'actualizado' : undefined,
+      webhookEvents: body.webhookEvents,
     });
     return Response.json({ ok: true });
   } catch (err) {

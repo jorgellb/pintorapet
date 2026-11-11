@@ -32,6 +32,9 @@ def main():
             print(f'OK {name}')
 
     cur.execute('BEGIN')
+    # Optional migrations to check, applied inside the same rolled-back transaction.
+    for migration in sys.argv[1:]:
+        cur.execute(open(migration).read())
 
     check('hash_official', """
       SELECT public.verifactu_hash(

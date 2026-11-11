@@ -2,10 +2,11 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasSupabase } from '@/lib/server/env';
-import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate, type Tone } from '@/lib/admin/labels';
 import { countryOptions } from '@/lib/domain/countries';
 import { trackingUrl } from '@/lib/server/shipping/correos';
 import { carrierRow } from '@/lib/server/shipping/admin';
+import { loadShippingSettings } from '@/lib/server/shipping/correos';
 
 export const prerender = false;
 
@@ -16,23 +17,104 @@ if (!admin) return Astro.redirect('/admin/login/');
 const { data: order } = await admin.client
   .from('orders')
   .select(
-    '*, order_items(product_title, product_sku, quantity, unit_price_cents, line_subtotal_cents), invoices(id, kind, full_number, issued_at, replaces_invoice_id)',
+    '*, order_items(id, product_title, product_sku, quantity, unit_price_cents, line_subtotal_cents, created_at), invoices(id, kind, full_number, issued_at, replaces_invoice_id, rectifies_invoice_id, total_cents)',
   )
   .eq('id', Astro.params.id ?? '')
   .maybeSingle();
 if (!order) return Astro.redirect('/admin/orders/');
 
-const correos = await carrierRow(admin.client).catch(() => null);
-type InvoiceRef = { id: string; kind: 'simplified' | 'full'; full_number: string; issued_at: string; replaces_invoice_id: string | null };
-const invoiceRows = ((order.invoices ?? []) as InvoiceRef[]).sort((x, y) => x.issued_at.localeCompare(y.issued_at));
+const [correos, shippingSettings] = await Promise.all([
+  carrierRow(admin.client).catch(() => null),
+  loadShippingSettings().catch(() => ({ sender: {} as Record<string, string> })),
+]);
+const sender = shippingSettings.sender as Record<string, string | undefined>;
+const senderReady = Boolean(sender.name && sender.address && sender.locality && sender.postalCode);
+type InvoiceRef = {
+  id: string;
+  kind: 'simplified' | 'full' | 'rectifying';
+  full_number: string;
+  issued_at: string;
+  replaces_invoice_id: string | null;
+  rectifies_invoice_id: string | null;
+  total_cents: number;
+};
+const allInvoices = ((order.invoices ?? []) as InvoiceRef[]).sort((x, y) => x.issued_at.localeCompare(y.issued_at));
+// The invoice that counts: the full one that replaced the simplified, if any; never a rectifying one.
+const invoiceRows = allInvoices.filter((i) => i.kind !== 'rectifying');
 const invoice = invoiceRows.find((i) => i.replaces_invoice_id) ?? invoiceRows[invoiceRows.length - 1] ?? null;
+const invoiceNumber = new Map(allInvoices.map((i) => [i.id, i.full_number]));
+
+// ——— Refunds (Devolver dinero) ———
+type OrderItem = { id: string; product_title: string; product_sku: string; quantity: number; unit_price_cents: number; line_subtotal_cents: number; created_at: string };
+type RefundRow = {
+  id: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'unassigned';
+  channel: 'api' | 'manual' | 'provider';
+  provider: 'stripe' | 'paypal' | null;
+  items: Array<{ order_item_id: string; quantity: number; amount_cents: number }>;
+  shipping_cents: number;
+  amount_cents: number;
+  restock: boolean;
+  reason: string;
+  error: string | null;
+  invoice_id: string | null;
+  created_at: string;
+};
+type RefundLeft = {
+  items: Array<{ order_item_id: string; quantity: number; unit_price_cents: number }>;
+  shipping_cents: number;
+  refunded_cents: number;
+  unassigned_cents: number;
+};
+const items = ((order.order_items ?? []) as OrderItem[]).sort(
+  (x, y) => x.created_at.localeCompare(y.created_at) || x.id.localeCompare(y.id),
+);
+const itemTitle = new Map(items.map((i) => [i.id, i.product_title]));
+const [{ data: refundData }, { data: leftData }] = await Promise.all([
+  admin.client.from('order_refunds').select('*').eq('order_id', order.id).order('created_at'),
+  admin.client.rpc('admin_refund_left', { p_order_id: order.id }),
+]);
+const refunds = (refundData ?? []) as RefundRow[];
+const left = (leftData ?? { items: [], shipping_cents: 0, refunded_cents: 0, unassigned_cents: 0 }) as RefundLeft;
+const leftOf = new Map(left.items.map((l) => [l.order_item_id, l.quantity]));
+const pendingRefund = refunds.find((r) => r.status === 'pending') ?? null;
+const unassigned = refunds.filter((r) => r.status === 'unassigned');
+const unassignedCents = unassigned.reduce((sum, r) => sum + r.amount_cents, 0);
+const refundable =
+  (order.payment_status === 'paid' || order.payment_status === 'partially_refunded') &&
+  !pendingRefund &&
+  order.total_cents - left.refunded_cents + unassignedCents > 0;
+const nothingRefunded = refunds.every((r) => r.status === 'failed');
+const providerName = order.payment_provider === 'paypal' ? 'PayPal' : 'Stripe';
+const refundWhat = (r: RefundRow) =>
+  [
+    ...r.items.map((i) => `${i.quantity} × ${itemTitle.get(i.order_item_id) ?? 'pieza'}`),
+    ...(r.shipping_cents > 0 ? ['Envío'] : []),
+  ].join(', ') || 'Sin indicar todavía';
+const refundHow = (r: RefundRow) =>
+  r.channel === 'api'
+    ? `Por ${r.provider === 'paypal' ? 'PayPal' : 'Stripe'}`
+    : r.channel === 'manual'
+      ? 'Registrada (devuelta fuera)'
+      : `Desde el panel de ${r.provider === 'paypal' ? 'PayPal' : 'Stripe'}`;
+const refundState: Record<RefundRow['status'], { text: string; tone: Tone }> = {
+  succeeded: { text: 'Hecha', tone: 'ok' },
+  pending: { text: 'En curso', tone: 'warn' },
+  failed: { text: 'Fallida', tone: 'danger' },
+  unassigned: { text: 'Falta indicar las piezas', tone: 'warn' },
+};
+const rectifyingPending = refunds.some((r) => r.status === 'succeeded' && !r.invoice_id);
+const notSentYet = order.fulfillment_status === 'unfulfilled' || order.fulfillment_status === 'preparing';
 const replacedInvoice = invoice?.replaces_invoice_id ? invoiceRows.find((i) => i.id === invoice.replaces_invoice_id) : null;
 const invoiceCustomer = (order.invoice_customer ?? null) as Record<string, string> | null;
 const names = Object.fromEntries(countryOptions('es').map((c) => [c.code, c.name]));
 const address = (order.shipping_address ?? null) as Record<string, string> | null;
 const pay = paymentLabel(order.payment_status);
 const fulfillment = fulfillmentLabel(order.fulfillment_status);
-const paid = order.payment_status === 'paid';
+// Paid, or partly refunded: there are still pieces to prepare and send.
+const paid = order.payment_status === 'paid' || order.payment_status === 'partially_refunded';
+// Charged at some point: it has (or will have) an invoice.
+const charged = paid || order.payment_status === 'refunded';
 const sent = order.fulfillment_status === 'shipped' || order.fulfillment_status === 'completed';
 const hasCorreosShipment = order.carrier === 'correos' && Boolean(order.carrier_shipment_code);
 const trackLink =
@@ -164,13 +246,21 @@ const carrierName = (value: string | null) =>
               <a href={`/api/admin/orders/${order.id}/invoice/`} target="_blank" rel="noopener">Abrir PDF</a>
             </p>
           </>
-        ) : paid ? (
+        ) : charged ? (
           <>
             <p class="muted">Factura pendiente: se emite al completar los datos fiscales en Ajustes.</p>
             <button type="button" class="btn--quiet" data-issue-invoice={order.id}>Emitir ahora</button>
           </>
         ) : (
           <p class="muted">Se emite cuando se confirme el pago.</p>
+        )
+      }
+      {
+        invoice && rectifyingPending && (
+          <p class="muted">
+            Hay facturas rectificativas pendientes: se emiten al completar los datos fiscales.{' '}
+            <button type="button" class="btn--quiet" data-issue-invoice={order.id}>Emitir ahora</button>
+          </p>
         )
       }
       {
@@ -215,6 +305,24 @@ const carrierName = (value: string | null) =>
                 )}
               </div>
             )}
+          </div>
+
+          <div class="prints">
+            <a class="btn btn--quiet" href={`/api/admin/orders/${order.id}/label/`} target="_blank" rel="noopener">
+              Imprimir etiqueta de dirección
+            </a>
+            <a class="btn btn--quiet" href={`/api/admin/orders/${order.id}/packing-slip/`} target="_blank" rel="noopener">
+              Imprimir albarán
+            </a>
+            <span class="hint">
+              La etiqueta (A6) se pega en el paquete para franquearlo en Correos; el albarán va dentro, sin precios.
+              {!senderReady && (
+                <>
+                  {' '}
+                  Falta tu dirección de remitente: <a href="/admin/shipping/#remitente">complétala en Envíos</a>.
+                </>
+              )}
+            </span>
           </div>
 
           {hasCorreosShipment ? (
@@ -292,6 +400,176 @@ const carrierName = (value: string | null) =>
     }
     <p class="status" data-status hidden role="status"></p>
   </section>
+
+  {
+    (charged || refunds.length > 0) && (
+      <section class="panel refunds" data-refunds-panel data-id={order.id} data-provider={providerName}>
+        <div class="refunds__head">
+          <h2>Devoluciones</h2>
+          {refundable && (
+            <div class="actions">
+              {nothingRefunded && notSentYet && unassigned.length === 0 && (
+                <button type="button" class="btn--danger" data-cancel-order>
+                  Cancelar pedido y devolver todo
+                </button>
+              )}
+              <button type="button" class="btn--quiet" data-refund-open>
+                Devolver dinero…
+              </button>
+            </div>
+          )}
+        </div>
+
+        {unassigned.length > 0 && (
+          <p class="alert">
+            Se devolvieron {euros(unassignedCents)} desde el panel de {providerName}, pero la web no sabe de qué
+            piezas. Indícalo con «Devolver dinero…» marcando «Ya lo devolví» para que salga la factura
+            rectificativa y, si quieres, vuelvan al stock.
+          </p>
+        )}
+
+        {pendingRefund && (
+          <div class="box">
+            <p>
+              <strong>Devolución de {euros(pendingRefund.amount_cents)} en curso</strong>
+              <span class="muted line">
+                No llegó la respuesta de {pendingRefund.provider === 'paypal' ? 'PayPal' : 'Stripe'}. Reintentar es
+                seguro: nunca se devuelve dos veces.
+              </span>
+            </p>
+            <div class="actions">
+              <button type="button" class="btn" data-refund-retry={pendingRefund.id}>
+                Reintentar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {refunds.length === 0 ? (
+          <p class="muted">Sin devoluciones.</p>
+        ) : (
+          <table class="refunds__table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Qué</th>
+                <th>Cómo</th>
+                <th class="num">Importe</th>
+                <th>Estado</th>
+                <th>Rectificativa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {refunds.map((r) => (
+                <tr>
+                  <td>{shortDate(r.created_at)}</td>
+                  <td>
+                    {refundWhat(r)}
+                    {r.restock && r.status === 'succeeded' && <span class="muted line">Vuelto al stock</span>}
+                    {r.reason && <span class="muted line">{r.reason}</span>}
+                    {r.status === 'failed' && r.error && <span class="line err-text">{r.error}</span>}
+                  </td>
+                  <td>{refundHow(r)}</td>
+                  <td class="num">−{euros(r.amount_cents)}</td>
+                  <td>
+                    <span class={chipClass(refundState[r.status].tone)}>{refundState[r.status].text}</span>
+                  </td>
+                  <td>
+                    {r.invoice_id ? (
+                      <a href={`/api/admin/orders/${order.id}/invoice/?factura=${r.invoice_id}`} target="_blank" rel="noopener">
+                        {invoiceNumber.get(r.invoice_id) ?? 'PDF'}
+                      </a>
+                    ) : r.status === 'succeeded' ? (
+                      <span class="muted">Pendiente</span>
+                    ) : (
+                      <span class="muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {refundable && (
+          <form class="refund-form" data-refund-form hidden>
+            <h3>Devolver dinero</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Pieza</th>
+                  <th class="num">Precio</th>
+                  <th class="num">Quedan</th>
+                  <th class="num">Devolver</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const max = leftOf.get(item.id) ?? 0;
+                  return (
+                    <tr>
+                      <td>
+                        {item.product_title}
+                        <span class="muted line">{item.product_sku}</span>
+                      </td>
+                      <td class="num">{euros(item.unit_price_cents)}</td>
+                      <td class="num">
+                        {max} de {item.quantity}
+                      </td>
+                      <td class="num">
+                        <input
+                          class="qty"
+                          type="number"
+                          inputmode="numeric"
+                          min="0"
+                          max={max}
+                          step="1"
+                          value="0"
+                          disabled={max === 0}
+                          data-refund-item={item.id}
+                          data-price={item.unit_price_cents}
+                          data-max={max}
+                          aria-label={`Unidades de ${item.product_title} a devolver`}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {left.shipping_cents > 0 && (
+              <label class="check">
+                <input type="checkbox" data-refund-shipping data-price={left.shipping_cents} />
+                Devolver también el envío ({euros(left.shipping_cents)})
+              </label>
+            )}
+            <label class="check">
+              <input type="checkbox" data-refund-restock checked={notSentYet} />
+              Volver a poner las piezas en stock
+              <span class="hint">Solo cuenta para productos con stock controlado.</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" data-refund-manual checked={unassigned.length > 0} />
+              Ya lo devolví desde el panel de {providerName}: solo registrarlo
+            </label>
+            <label>
+              Motivo <span class="hint">opcional · sale en la factura rectificativa</span>
+              <input type="text" maxlength="300" data-refund-reason placeholder="Ej.: llegó rota" />
+            </label>
+            <div class="actions">
+              <button type="submit" class="btn" data-refund-submit disabled>
+                Devolver 0,00 €
+              </button>
+              <button type="button" class="btn--quiet" data-refund-close>
+                Cerrar
+              </button>
+            </div>
+          </form>
+        )}
+        <p class="status" data-refund-status hidden role="status"></p>
+      </section>
+    )
+  }
 </AdminLayout>
 
 <style>
@@ -449,6 +727,68 @@ const carrierName = (value: string | null) =>
     color: var(--danger);
   }
 
+  .prints {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .prints .hint {
+    flex-basis: 100%;
+  }
+
+  .refunds {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.25rem;
+  }
+
+  .refunds__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .refunds__head h2 {
+    margin: 0;
+  }
+
+  .refund-form {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius-sm);
+    background: var(--sheet);
+  }
+
+  .refund-form[hidden] {
+    display: none;
+  }
+
+  .refund-form h3 {
+    margin: 0;
+  }
+
+  .refund-form .qty {
+    width: 4.5rem;
+    text-align: right;
+  }
+
+  .check {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .err-text {
+    color: var(--danger);
+  }
+
   @media (max-width: 62rem) {
     .detail,
     .manual-form {
@@ -476,6 +816,132 @@ const carrierName = (value: string | null) =>
     }
     button.disabled = false;
   });
+
+  // ——— Refunds ———
+  const refunds = document.querySelector<HTMLElement>('[data-refunds-panel]');
+  if (refunds) {
+    const orderId = refunds.dataset.id!;
+    const provider = refunds.dataset.provider ?? 'Stripe';
+    const form = refunds.querySelector<HTMLFormElement>('[data-refund-form]');
+    const status = refunds.querySelector<HTMLElement>('[data-refund-status]');
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      if (!status) return;
+      status.hidden = false;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+    const euros = (cents: number) =>
+      new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(cents / 100);
+    const qtyInputs = [...(form?.querySelectorAll<HTMLInputElement>('[data-refund-item]') ?? [])];
+    const shipping = form?.querySelector<HTMLInputElement>('[data-refund-shipping]') ?? null;
+    const restock = form?.querySelector<HTMLInputElement>('[data-refund-restock]') ?? null;
+    const manual = form?.querySelector<HTMLInputElement>('[data-refund-manual]') ?? null;
+    const reason = form?.querySelector<HTMLInputElement>('[data-refund-reason]') ?? null;
+    const submit = form?.querySelector<HTMLButtonElement>('[data-refund-submit]') ?? null;
+
+    const clamp = (input: HTMLInputElement) => {
+      const max = Number(input.dataset.max ?? 0);
+      const value = Math.max(0, Math.min(max, Math.floor(Number(input.value) || 0)));
+      if (String(value) !== input.value) input.value = String(value);
+      return value;
+    };
+    const total = () =>
+      qtyInputs.reduce((sum, input) => sum + clamp(input) * Number(input.dataset.price ?? 0), 0) +
+      (shipping?.checked ? Number(shipping.dataset.price ?? 0) : 0);
+    const refresh = () => {
+      const cents = total();
+      if (submit) {
+        submit.disabled = cents <= 0;
+        submit.textContent = manual?.checked ? `Registrar ${euros(cents)}` : `Devolver ${euros(cents)}`;
+      }
+    };
+    form?.addEventListener('input', refresh);
+    form?.addEventListener('change', refresh);
+
+    const open = () => {
+      if (!form) return;
+      form.hidden = false;
+      refresh();
+      qtyInputs.find((input) => !input.disabled)?.focus();
+    };
+    refunds.querySelector('[data-refund-open]')?.addEventListener('click', open);
+    refunds.querySelector('[data-refund-close]')?.addEventListener('click', () => {
+      if (form) form.hidden = true;
+    });
+
+    const send = async (method: 'POST' | 'PATCH', body: unknown, button: HTMLButtonElement | null) => {
+      if (button) button.disabled = true;
+      say(method === 'PATCH' ? `Preguntando de nuevo a ${provider}…` : 'Haciendo la devolución…');
+      const res = await fetch(`/api/admin/orders/${orderId}/refund/`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as
+        | { status?: string; message?: string; amountCents?: number; error?: { message?: string } }
+        | null;
+      if (data?.status === 'succeeded') {
+        say(`Hecho: ${euros(data.amountCents ?? 0)} devueltos. Actualizando…`, 'ok');
+        location.reload();
+        return;
+      }
+      if (data?.status === 'pending' || data?.status === 'failed') {
+        say(data.message ?? 'La devolución no se completó.', data.status === 'failed' ? 'err' : 'info');
+        setTimeout(() => location.reload(), 2500);
+        return;
+      }
+      say(data?.error?.message ?? 'No hubo respuesta del servidor. Recarga antes de volver a intentarlo.', 'err');
+      if (button) button.disabled = false;
+    };
+
+    form?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const cents = total();
+      if (cents <= 0) return;
+      const recordOnly = Boolean(manual?.checked);
+      const question = recordOnly
+        ? `¿Registrar una devolución de ${euros(cents)} hecha desde ${provider}? No se mueve dinero.`
+        : `¿Devolver ${euros(cents)} a la clienta por ${provider}? No se puede deshacer.`;
+      if (!confirm(question)) return;
+      void send(
+        'POST',
+        {
+          items: qtyInputs.map((input) => ({ orderItemId: input.dataset.refundItem, quantity: clamp(input) })),
+          shipping: Boolean(shipping?.checked),
+          restock: Boolean(restock?.checked),
+          reason: reason?.value.trim() ?? '',
+          manual: recordOnly,
+        },
+        submit,
+      );
+    });
+
+    // Cancel: everything left, shipping included, back to stock.
+    refunds.querySelector<HTMLButtonElement>('[data-cancel-order]')?.addEventListener('click', (event) => {
+      qtyInputs.forEach((input) => (input.value = input.dataset.max ?? '0'));
+      if (shipping) shipping.checked = true;
+      if (restock) restock.checked = true;
+      if (manual) manual.checked = false;
+      const cents = total();
+      if (!confirm(`¿Cancelar el pedido y devolver ${euros(cents)} a la clienta por ${provider}? Las piezas vuelven al stock. No se puede deshacer.`)) return;
+      void send(
+        'POST',
+        {
+          items: qtyInputs.map((input) => ({ orderItemId: input.dataset.refundItem, quantity: clamp(input) })),
+          shipping: Boolean(shipping),
+          restock: true,
+          reason: 'Pedido cancelado',
+          manual: false,
+        },
+        event.currentTarget as HTMLButtonElement,
+      );
+    });
+
+    refunds.querySelector<HTMLButtonElement>('[data-refund-retry]')?.addEventListener('click', (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      void send('PATCH', { refundId: button.dataset.refundRetry }, button);
+    });
+  }
 
   const panel = document.querySelector<HTMLElement>('[data-shipping-panel]');
   if (panel) {

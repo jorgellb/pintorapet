@@ -2,7 +2,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { siteUrl } from '@/lib/server/env';
 import { loadPaymentConfig, type PaymentProvider } from '@/lib/server/payments/config';
-import { listProviderRows, publicWebhookBase, webhookUrlFor } from '@/lib/server/payments/connect';
+import {
+  listProviderRows,
+  publicWebhookBase,
+  stripeWebhookMissingEvents,
+  webhookUrlFor,
+} from '@/lib/server/payments/connect';
 
 interface Props {
   client: SupabaseClient;
@@ -12,6 +17,8 @@ const rows = await listProviderRows(Astro.props.client).catch(() => []);
 const config = await loadPaymentConfig();
 const autoWebhooks = Boolean(publicWebhookBase());
 const origin = siteUrl();
+// The Stripe webhook made before refunds existed does not tell the site about them.
+const stripeMissingEvents = await stripeWebhookMissingEvents(Astro.props.client);
 
 const cards = (['stripe', 'paypal'] as PaymentProvider[]).map((provider) => {
   const row = rows.find((r) => r.provider === provider) ?? null;
@@ -113,6 +120,18 @@ const cards = (['stripe', 'paypal'] as PaymentProvider[]).map((provider) => {
                   </span>
                 </span>
               </label>
+
+              {card.provider === 'stripe' && card.webhook && stripeMissingEvents === true && (
+                <div class="refund-events">
+                  <p class="hint">
+                    <span class="chip chip--warn">Faltan los avisos de devoluciones</span> Así la web se entera de
+                    lo que devuelvas desde el panel de Stripe (estado del pedido, stock y factura rectificativa).
+                  </p>
+                  <button type="button" class="btn--quiet" data-webhook-events>
+                    Activar avisos de devoluciones
+                  </button>
+                </div>
+              )}
 
               {!card.webhook && card.provider === 'stripe' && (
                 <details class="manual">
@@ -480,6 +499,20 @@ const cards = (['stripe', 'paypal'] as PaymentProvider[]).map((provider) => {
         location.reload();
       } else {
         say(errorOf(data), 'err');
+      }
+    });
+
+    card.querySelector<HTMLButtonElement>('[data-webhook-events]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      say('Actualizando el webhook de Stripe…');
+      const { ok, data } = await send(base, 'PATCH', { webhookEvents: true });
+      if (ok) {
+        say('Listo: Stripe avisará también de las devoluciones.', 'ok');
+        button.closest('.refund-events')?.remove();
+      } else {
+        say(errorOf(data), 'err');
+        button.disabled = false;
       }
     });
 

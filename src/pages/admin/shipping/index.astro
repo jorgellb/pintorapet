@@ -282,13 +282,13 @@ const blankZone: Zone = {
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="remitente">
     <h2>Remitente y paquete</h2>
     <p class="hint">
-      Correos imprime esta dirección en la etiqueta como remitente. El peso del embalaje se suma al
-      de las piezas para elegir el tramo.
+      Esta dirección sale como remitente en la etiqueta: la de Correos y la que imprimes desde cada pedido. El
+      peso del embalaje se suma al de las piezas para elegir el tramo.
     </p>
-    {!senderReady && <p class="note">Completa la dirección del remitente para poder crear envíos en Correos.</p>}
+    {!senderReady && <p class="note">Completa la dirección del remitente para que salga en las etiquetas.</p>}
     <form class="settings-form" data-settings-form>
       <div class="grid-2">
         <label>

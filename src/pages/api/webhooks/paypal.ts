@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 import { finalizePaypalOrder } from '@/lib/server/commerce/paypalCheckout';
+import { paypalRefundOf, recordProviderRefund } from '@/lib/server/commerce/refunds';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
 import { verifyPaypalWebhook } from '@/lib/server/payments/paypal';
 import { createServiceClient } from '@/lib/server/supabase';
@@ -12,6 +13,9 @@ type PaypalEvent = {
   event_type: string;
   resource?: {
     id?: string;
+    status?: string;
+    amount?: { value?: string };
+    links?: Array<{ rel?: string; href?: string }>;
     supplementary_data?: { related_ids?: { order_id?: string } };
   };
 };
@@ -31,6 +35,14 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const event = JSON.parse(rawBody) as PaypalEvent;
+
+    // A refund: ours (confirmed), or made in the PayPal dashboard.
+    if (event.event_type === 'PAYMENT.CAPTURE.REFUNDED') {
+      const refund = paypalRefundOf(event.resource ?? {});
+      if (!refund) return Response.json({ received: true, ignored: event.event_type });
+      const result = await recordProviderRefund(supabase, 'paypal', refund.captureId, refund.refundId, refund.cents);
+      return Response.json({ received: true, status: result });
+    }
     const orderId =
       event.event_type === 'CHECKOUT.ORDER.APPROVED'
         ? event.resource?.id
