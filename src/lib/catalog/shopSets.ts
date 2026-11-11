@@ -109,3 +109,17 @@ export function buildShopSets(products: ProductPublic[], collections: ShopCollec
       return { ...s, items, portrait: s.portrait ?? portraitOf(items) };
     });
 }
+
+export type Piece = { product: ProductPublic; title: string };
+
+/**
+ * Every piece of one type (all the mugs…) for the shop's type filter, in the
+ * catalogue's order (Admin › Productos › Tazas ↑↓), each named after its
+ * portrait. Only pieces of the sets on show.
+ */
+export function piecesOfType(products: ProductPublic[], sets: ShopSet[], type: string): Piece[] {
+  const portraitOf = new Map(sets.flatMap((s) => s.items.map((p) => [p.id, s.name] as const)));
+  return products
+    .filter((p) => p.category === type && portraitOf.has(p.id))
+    .map((product) => ({ product, title: portraitOf.get(product.id)! }));
+}

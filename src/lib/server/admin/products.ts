@@ -176,6 +176,15 @@ export async function setProductCollection(client: SupabaseClient, id: string, c
   if (error) throw mapPgError(error);
 }
 
+/**
+ * The order of the pieces of one type (all the mugs…), as the shop shows them
+ * when that type is picked. Options follow their product.
+ */
+export async function reorderProducts(client: SupabaseClient, ids: string[]): Promise<void> {
+  const { error } = await client.rpc('admin_reorder_products', { p_ids: ids });
+  if (error) throw mapPgError(error);
+}
+
 export async function createAdminProduct(
   client: SupabaseClient,
   input: CreateProductInput,

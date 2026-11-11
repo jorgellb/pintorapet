@@ -85,6 +85,10 @@ const visible = rows.filter((row) => {
   return true;
 });
 
+// On a type's tab, the pieces can be put in the order the shop shows for that type.
+const ordering = Boolean(category) && !inventory && !onSale;
+const typeName = productCategoryLabel(category);
+
 const tabs = [
   { href: '/admin/products/', label: 'Todos', count: rows.length, current: !category && !inventory && !onSale },
   ...['greeting-cards', 'coasters', 'mugs', 'ornaments', 'keyrings'].map((key) => ({
@@ -143,6 +147,13 @@ const tabs = [
           label="Buscar productos"
           emptyText="Ningún producto coincide con la búsqueda."
         />
+        {ordering && visible.length > 1 && (
+          <p class="order-hint">
+            Usa ↑ ↓ para elegir en qué orden salen los productos cuando alguien pulsa «{typeName}» en la tienda. Se
+            guarda al momento.
+          </p>
+        )}
+        {ordering && <p class="status" data-order-status role="status" hidden />}
         {visible.length === 0 ? (
           <p class="empty">No hay productos con este filtro.</p>
         ) : (
@@ -150,6 +161,7 @@ const tabs = [
             <table>
               <thead>
                 <tr>
+                  {ordering && <th>Orden</th>}
                   <th>Producto</th>
                   <th>Tipo</th>
                   <th>Categoría</th>
@@ -159,12 +171,25 @@ const tabs = [
                   <th><span class="visually-hidden">Acciones</span></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody data-order-rows={ordering ? '' : undefined}>
                 {visible.map((row) => {
                   const inv = inventoryLabel(row.mode);
                   const status = productStatusLabel(row.status);
                   return (
-                    <tr data-search-text={`${row.title} ${row.motif} ${row.shop_collections?.name_es ?? ''} ${row.sku}`.toLowerCase()}>
+                    <tr
+                      data-product-id={row.id}
+                      data-search-text={`${row.title} ${row.motif} ${row.shop_collections?.name_es ?? ''} ${row.sku}`.toLowerCase()}
+                    >
+                      {ordering && (
+                        <td class="order">
+                          <button type="button" class="btn--quiet" data-move="up" aria-label={`Subir ${row.title}`}>
+                            ↑
+                          </button>
+                          <button type="button" class="btn--quiet" data-move="down" aria-label={`Bajar ${row.title}`}>
+                            ↓
+                          </button>
+                        </td>
+                      )}
                       <td>
                         <a class="title-cell" href={`/admin/products/${row.id}/`}>
                           {row.cover ? (
@@ -248,6 +273,24 @@ const tabs = [
     font-size: 0.82rem;
   }
 
+  .order {
+    white-space: nowrap;
+  }
+
+  .order button {
+    min-height: 2rem;
+    padding: 0.2rem 0.65rem;
+  }
+
+  .order button:disabled {
+    visibility: hidden;
+  }
+
+  .order-hint {
+    margin: 0 0 1rem;
+    color: var(--muted);
+  }
+
   .notice {
     margin: 0 0 1.25rem;
     padding: 0.7rem 0.9rem;
@@ -266,6 +309,53 @@ const tabs = [
 </style>
 
 <script>
+  // ——— The order of one type's pieces in the shop (↑ ↓) ———
+  const orderRows = document.querySelector<HTMLElement>('[data-order-rows]');
+  const orderStatus = document.querySelector<HTMLElement>('[data-order-status]');
+  const say = (text: string) => {
+    if (!orderStatus) return;
+    orderStatus.hidden = false;
+    orderStatus.textContent = text;
+  };
+  // While searching, an arrow jumps over the rows the search hides.
+  const shown = (row: Element | null, step: 'previousElementSibling' | 'nextElementSibling') => {
+    let next = row?.[step] ?? null;
+    while (next instanceof HTMLElement && next.hidden) next = next[step];
+    return next;
+  };
+  const refreshArrows = () => {
+    const rows = [...(orderRows?.querySelectorAll<HTMLElement>('tr') ?? [])].filter((row) => !row.hidden);
+    rows.forEach((row, i) => {
+      row.querySelector<HTMLButtonElement>('[data-move="up"]')!.disabled = i === 0;
+      row.querySelector<HTMLButtonElement>('[data-move="down"]')!.disabled = i === rows.length - 1;
+    });
+  };
+  if (orderRows) {
+    refreshArrows();
+    document.addEventListener('input', () => requestAnimationFrame(refreshArrows));
+    orderRows.addEventListener('click', async (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-move]');
+      const row = button?.closest('tr');
+      if (!button || !row) return;
+      const up = button.dataset.move === 'up';
+      const sibling = shown(row, up ? 'previousElementSibling' : 'nextElementSibling');
+      if (!sibling) return;
+      if (up) sibling.before(row);
+      else sibling.after(row);
+      refreshArrows();
+      // Keep the focus on an arrow that still works.
+      (button.disabled ? row.querySelector<HTMLButtonElement>(`[data-move="${up ? 'down' : 'up'}"]`) : button)?.focus();
+      const ids = [...orderRows.querySelectorAll<HTMLElement>('[data-product-id]')].map((tr) => tr.dataset.productId!);
+      say('Guardando el orden…');
+      const res = await fetch('/api/admin/products/order/', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      }).catch(() => null);
+      say(res?.ok ? 'Orden guardado. Así salen en la tienda.' : 'No se pudo guardar el orden. Recarga e inténtalo de nuevo.');
+    });
+  }
+
   document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach((button) => {
     button.addEventListener('click', async () => {
       const variants = Number(button.dataset.variants ?? 0);

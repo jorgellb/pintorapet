@@ -3,9 +3,8 @@ import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
-import { buildShopSets, loadShopCollections } from '@/lib/catalog/shopSets';
+import { buildShopSets, loadShopCollections, piecesOfType } from '@/lib/catalog/shopSets';
 import StallItem from '@/components/shop/StallItem.astro';
-import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
   locale: Locale;
@@ -57,10 +56,8 @@ const sets = allSets
   .filter((s) => s.items.length > 0);
 
 // "All": one sliding row per portrait. One type chosen: every piece of that type
-// together on one table, each named after its portrait.
-type Piece = { product: ProductPublic; title: string };
-const byKind: Piece[] =
-  category === 'all' ? [] : sets.flatMap((s) => s.items.map((product) => ({ product, title: s.name })));
+// together on one table, in the order set in Admin › Productos, named after its portrait.
+const byKind = category === 'all' ? [] : piecesOfType(products, sets, category);
 
 const shopPath = localizedPath(locale, 'shop');
 const filterHref = (next: { category?: string; breed?: string }) => {

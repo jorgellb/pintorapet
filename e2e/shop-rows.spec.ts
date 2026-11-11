@@ -20,6 +20,8 @@ test('every category has its row, with the new portraits', async ({ page }) => {
 
 test('a row slides right with its arrows', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
+  // No smooth scrolling: each arrow lands at once, so the test never races the animation.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/es/tienda/');
   const set = setNamed(page, 'Pug');
   const row = set.locator('[data-row]');
@@ -35,17 +37,22 @@ test('a row slides right with its arrows', async ({ page }) => {
   await expect(prev).toBeEnabled();
 
   // However many pieces the row has, the arrow walks it to the end…
-  for (let step = 0; step < 12 && (await next.isEnabled()); step += 1) {
+  // The row's own position decides; the arrows' state follows a scroll event later.
+  const atEnd = () => row.evaluate((el) => el.scrollLeft >= el.scrollWidth - el.clientWidth - 4);
+  const atStart = () => row.evaluate((el) => el.scrollLeft <= 4);
+  for (let step = 0; step < 12 && !(await atEnd()); step += 1) {
+    const from = await row.evaluate((el) => el.scrollLeft);
     await next.click();
-    await page.waitForTimeout(450);
+    await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBeGreaterThan(from);
   }
   await expect(next).toBeDisabled();
   await expect(row).not.toHaveClass(/has-more-end/);
 
   // …and back to the start.
-  for (let step = 0; step < 12 && (await prev.isEnabled()); step += 1) {
+  for (let step = 0; step < 12 && !(await atStart()); step += 1) {
+    const from = await row.evaluate((el) => el.scrollLeft);
     await prev.click();
-    await page.waitForTimeout(450);
+    await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBeLessThan(from);
   }
   await expect.poll(() => row.evaluate((el) => el.scrollLeft)).toBeLessThan(5);
   await expect(prev).toBeDisabled();

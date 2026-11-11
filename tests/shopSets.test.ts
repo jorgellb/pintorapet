@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildShopSets, slugify, type ShopCollection } from '../src/lib/catalog/shopSets';
+import { buildShopSets, piecesOfType, slugify, type ShopCollection } from '../src/lib/catalog/shopSets';
 import type { ProductPublic } from '../src/lib/domain/types';
 
 let n = 0;
@@ -88,6 +88,32 @@ describe('buildShopSets', () => {
     // 'c-hidden' is not among the visible categories.
     const sets = buildShopSets([product('mugs', 'Pug', 'c-hidden')], [pug, frenchie]);
     expect(sets).toEqual([]);
+  });
+});
+
+describe('piecesOfType', () => {
+  const pug = collection('c-pug', 'pug', 'Pug', 20);
+  const frenchie = collection('c-fr', 'french-bulldog', 'Bulldog francés', 10);
+
+  it('follows the order Meili gave the pieces, not the portraits’ order', () => {
+    // The catalogue arrives in the order chosen in Admin › Productos.
+    const pugMug = product('mugs', 'Pug', 'c-pug');
+    const frenchieMug = product('mugs', 'French Bulldog', 'c-fr');
+    const products = [pugMug, product('coasters', 'Pug', 'c-pug'), frenchieMug];
+    const sets = buildShopSets(products, [pug, frenchie]);
+    expect(piecesOfType(products, sets, 'mugs')).toEqual([
+      { product: pugMug, title: 'Pug' },
+      { product: frenchieMug, title: 'Bulldog francés' },
+    ]);
+  });
+
+  it('leaves out pieces whose portrait is not shown', () => {
+    const hiddenMug = product('mugs', 'Pug', 'c-hidden');
+    const frenchieMug = product('mugs', 'French Bulldog', 'c-fr');
+    const products = [hiddenMug, frenchieMug];
+    // Only the French Bulldog is on show (a hidden category, or ?breed=french-bulldog).
+    const sets = buildShopSets(products, [frenchie]);
+    expect(piecesOfType(products, sets, 'mugs').map((piece) => piece.product)).toEqual([frenchieMug]);
   });
 });
 
