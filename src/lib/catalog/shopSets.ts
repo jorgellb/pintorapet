@@ -2,6 +2,7 @@ import type { Locale } from '@/i18n/routes';
 import type { ProductPublic } from '@/lib/domain/types';
 import { hasSupabase } from '@/lib/server/env';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
+import { DEFAULT_TYPES } from '@/lib/catalog/productTypes';
 
 /**
  * The shop is arranged by shop category: one portrait (Pug, Cockapoo…) and
@@ -27,7 +28,8 @@ export type ShopSet = {
   items: ProductPublic[];
 };
 
-const TYPE_ORDER = ['greeting-cards', 'coasters', 'mugs', 'ornaments', 'keyrings'];
+/** The built-in order of the types, when none is given. */
+const DEFAULT_ORDER = DEFAULT_TYPES.map((t) => t.code);
 
 export const slugify = (value: string) =>
   value
@@ -64,8 +66,14 @@ export async function loadShopCollections(locale: Locale): Promise<ShopCollectio
   }
 }
 
-const byType = (a: ProductPublic, b: ProductPublic) =>
-  TYPE_ORDER.indexOf(a.category) - TYPE_ORDER.indexOf(b.category);
+/** By the types' order (Admin › Tienda › Tipos de producto); unknown types last. */
+const byType = (order: string[]) => {
+  const rank = (p: ProductPublic) => {
+    const i = order.indexOf(p.category);
+    return i === -1 ? order.length : i;
+  };
+  return (a: ProductPublic, b: ProductPublic) => rank(a) - rank(b);
+};
 
 /** The coaster photo shows the drawing flat and centred: the best portrait. */
 const portraitOf = (items: ProductPublic[]) =>
@@ -77,8 +85,13 @@ const portraitOf = (items: ProductPublic[]) =>
  * Group the shop's products by category, in the categories' order. Products
  * without a category are grouped by their motif after them, as the shop did
  * before categories existed; products of a hidden category are left out.
+ * Within a set, pieces follow the types' order (`typeOrder`, a list of codes).
  */
-export function buildShopSets(products: ProductPublic[], collections: ShopCollection[]): ShopSet[] {
+export function buildShopSets(
+  products: ProductPublic[],
+  collections: ShopCollection[],
+  typeOrder: string[] = DEFAULT_ORDER,
+): ShopSet[] {
   const known = new Map(collections.map((c) => [c.id, c]));
   const sets: ShopSet[] = [...collections]
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -105,7 +118,7 @@ export function buildShopSets(products: ProductPublic[], collections: ShopCollec
   return sets
     .filter((s) => s.items.length > 0)
     .map((s) => {
-      const items = [...s.items].sort(byType);
+      const items = [...s.items].sort(byType(typeOrder));
       return { ...s, items, portrait: s.portrait ?? portraitOf(items) };
     });
 }

@@ -1,4 +1,5 @@
-export type ProductCategoryCode = 'greeting-cards' | 'coasters' | 'mugs' | 'ornaments' | 'keyrings';
+/** A product type's code (Admin › Tienda › Tipos de producto): 'mugs', 'keyrings'… */
+export type ProductCategoryCode = string;
 
 export type ProductStatus = 'draft' | 'published' | 'archived';
 

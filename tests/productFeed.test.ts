@@ -63,6 +63,17 @@ describe('product feeds', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('names each type as set in the admin, and leaves hidden types out', () => {
+    const types = [
+      { code: 'mugs', plural: 'Tazones', singular: 'Tazón', phrase: 'tazón', icon: 'mug' as const, googleCategory: 'Mugs > Big' },
+    ];
+    const [offer] = catalogOffers([product], 'https://petsdrawings.com', 'es', types);
+    expect(offer?.productType).toBe('Tazones > Springer & Spaniel');
+    expect(offer?.googleProductCategory).toBe('Mugs > Big');
+    // Keyrings are hidden here: not in the list of visible types.
+    expect(catalogOffers([{ ...product, category: 'keyrings' }], 'https://petsdrawings.com', 'es', types)).toEqual([]);
+  });
+
   it('skips products without an image', () => {
     const xml = buildProductFeed({
       products: [{ ...product, imageUrls: [], coverImageUrl: null }],

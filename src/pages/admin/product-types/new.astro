@@ -1,0 +1,26 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ProductTypeForm from '@/components/admin/ProductTypeForm.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+---
+
+<AdminLayout title="Nuevo tipo de producto" email={admin.user.email}>
+  <a class="back" href="/admin/product-types/">← Tipos de producto</a>
+  <header class="page-head">
+    <div>
+      <h1>Nuevo tipo de producto</h1>
+      <p class="lead">
+        Un tipo nuevo de pieza para la tienda (láminas, bolsas…). Después créale productos desde Productos › Nuevo
+        producto; su filtro aparece en la tienda en cuanto tenga alguno publicado.
+      </p>
+    </div>
+  </header>
+  <ProductTypeForm />
+</AdminLayout>

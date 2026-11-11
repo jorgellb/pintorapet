@@ -1,4 +1,5 @@
 ---
+import { productTypeNames } from '@/lib/server/admin/productTypes';
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import MediaPicker from '@/components/admin/MediaPicker.astro';
 import ShopCategoryForm from '@/components/admin/ShopCategoryForm.astro';
@@ -7,7 +8,7 @@ import { hasSupabase } from '@/lib/server/env';
 import { listMedia } from '@/lib/server/admin/editorial';
 import { mediaDisplayName } from '@/lib/admin/mediaPicker';
 import { getShopCategory } from '@/lib/server/admin/shopCategories';
-import { euros, productCategoryLabel } from '@/lib/admin/labels';
+import { euros } from '@/lib/admin/labels';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
 
 export const prerender = false;
@@ -30,7 +31,7 @@ type ProductRow = {
   product_translations: Array<{ locale: string; title: string }>;
   product_images: Array<{ is_cover: boolean; position: number; media_assets: { bucket: string; object_path: string } | null }>;
 };
-const [{ data: productData }, media] = await Promise.all([
+const [{ data: productData }, media, typeNames] = await Promise.all([
   admin.client
     .from('products')
     .select('id, sku, status, price_cents, categories(code), product_translations(locale, title), product_images(is_cover, position, media_assets(bucket, object_path))')
@@ -38,6 +39,7 @@ const [{ data: productData }, media] = await Promise.all([
     .is('parent_id', null)
     .order('editorial_order'),
   listMedia(admin.client).catch(() => []),
+  productTypeNames(admin.client),
 ]);
 const products = ((productData ?? []) as unknown as ProductRow[]).map((row) => {
   const cover = [...row.product_images].sort((a, b) => Number(b.is_cover) - Number(a.is_cover) || a.position - b.position)[0]
@@ -90,7 +92,7 @@ const isNew = Astro.url.searchParams.has('nueva');
                   <span>
                     {product.title}
                     <span class="muted line">
-                      {productCategoryLabel(product.categories?.code)} · {euros(product.price_cents)}
+                      {typeNames.get(product.categories?.code ?? '') ?? product.categories?.code} · {euros(product.price_cents)}
                       {product.status !== 'published' && ' · no publicado'}
                     </span>
                   </span>

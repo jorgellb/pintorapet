@@ -5,6 +5,8 @@ import { localizedPath } from '@/i18n/routes';
 import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
 import { buildShopSets, loadShopCollections, piecesOfType } from '@/lib/catalog/shopSets';
 import StallItem from '@/components/shop/StallItem.astro';
+import TypeIcon from '@/components/shop/TypeIcon.astro';
+import { loadProductTypes } from '@/lib/catalog/productTypes';
 
 interface Props {
   locale: Locale;
@@ -13,39 +15,22 @@ interface Props {
 const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const [catalog, collections] = await Promise.all([loadPublicCatalog(locale), loadShopCollections(locale)]);
+const [catalog, collections, types] = await Promise.all([
+  loadPublicCatalog(locale),
+  loadShopCollections(locale),
+  loadProductTypes(locale),
+]);
 const { source } = catalog;
-const products = topLevelProducts(catalog.products);
-
-const categoryOrder = ['greeting-cards', 'coasters', 'mugs', 'ornaments', 'keyrings'] as const;
-const categoryNames: Record<string, { en: string; es: string }> = {
-  'greeting-cards': { en: 'Card', es: 'Tarjeta' },
-  coasters: { en: 'Coaster', es: 'Posavasos' },
-  mugs: { en: 'Mug', es: 'Taza' },
-  ornaments: { en: 'Christmas ornament', es: 'Bola de Navidad' },
-  keyrings: { en: 'Keyring', es: 'Llavero' },
-};
-// As written mid-sentence ("en tarjeta, posavasos y bola de Navidad"): Navidad keeps its capital.
-const categoryInline: Record<string, { en: string; es: string }> = {
-  'greeting-cards': { en: 'card', es: 'tarjeta' },
-  coasters: { en: 'coaster', es: 'posavasos' },
-  mugs: { en: 'mug', es: 'taza' },
-  ornaments: { en: 'Christmas ornament', es: 'bola de Navidad' },
-  keyrings: { en: 'keyring', es: 'llavero' },
-};
-const categoryPlural: Record<string, { en: string; es: string }> = {
-  'greeting-cards': { en: 'Cards', es: 'Tarjetas' },
-  coasters: { en: 'Coasters', es: 'Posavasos' },
-  mugs: { en: 'Mugs', es: 'Tazas' },
-  ornaments: { en: 'Christmas ornaments', es: 'Bolas de Navidad' },
-  keyrings: { en: 'Keyrings', es: 'Llaveros' },
-};
+// Types (Admin › Tienda › Tipos de producto): a hidden type takes its pieces out of the shop list.
+const typeOf = new Map(types.map((type) => [type.code, type]));
+const products = topLevelProducts(catalog.products).filter((p) => typeOf.has(p.category));
+const singular = (code: string) => typeOf.get(code)?.singular ?? '';
 
 const category = Astro.url.searchParams.get('category') ?? 'all';
 const breed = Astro.url.searchParams.get('breed') ?? 'all';
 
 // One set per shop category (Admin › Tienda › Categorías): the same portrait on a card, a coaster, a mug…
-const allSets = buildShopSets(products, collections);
+const allSets = buildShopSets(products, collections, types.map((type) => type.code));
 
 const sets = allSets
   .filter((s) => breed === 'all' || s.id === breed)
@@ -71,11 +56,11 @@ const filterHref = (next: { category?: string; breed?: string }) => {
 };
 
 const categories = [
-  { id: 'all', label: dict.shop.all },
+  { id: 'all', label: dict.shop.all, icon: null },
   // Only the types the shop has right now: no filter that leads to an empty stall.
-  ...categoryOrder
-    .filter((id) => products.some((p) => p.category === id))
-    .map((id) => ({ id, label: categoryPlural[id][locale] })),
+  ...types
+    .filter((type) => products.some((p) => p.category === type.code))
+    .map((type) => ({ id: type.code, label: type.plural, icon: type.icon })),
 ];
 
 const swing = [-6, 4, -3, 7, -5, 3];
@@ -147,38 +132,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
               href={filterHref({ category: c.id })}
               aria-current={category === c.id ? 'true' : undefined}
             >
-              {c.id === 'greeting-cards' && (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 4h11l3 3v13H5z" />
-                  <path d="M16 4v3h3" />
-                </svg>
-              )}
-              {c.id === 'coasters' && (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="4" y="4" width="16" height="14" rx="3" />
-                  <path d="M6 20.5h12" />
-                </svg>
-              )}
-              {c.id === 'ornaments' && (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="14.5" r="6.5" />
-                  <path d="M12 8V3.5" />
-                  <path d="M12 8c-1.6-1.6-4-1.4-4 .1 0 1.4 2.4 1.1 4-.1zm0 0c1.6-1.6 4-1.4 4 .1 0 1.4-2.4 1.1-4-.1z" />
-                </svg>
-              )}
-              {c.id === 'keyrings' && (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="8" cy="7" r="4" />
-                  <path d="M10.8 9.8l2.4 2.4" />
-                  <rect x="11.5" y="11.5" width="8" height="10" rx="2" transform="rotate(-45 15.5 16.5)" />
-                </svg>
-              )}
-              {c.id === 'mugs' && (
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 6h11v10a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z" />
-                  <path d="M16 9h1.5a2.5 2.5 0 0 1 0 5H16" />
-                </svg>
-              )}
+              {c.icon && <TypeIcon icon={c.icon} />}
               {c.label}
             </a>
           ))
@@ -199,7 +153,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
           <section class="kindgrid" data-kind-grid aria-labelledby="kindgrid-title">
             <header class="kindgrid__head">
               <h2 id="kindgrid-title" class="display set__name">
-                {categoryPlural[category]?.[locale] ?? category}
+                {typeOf.get(category)?.plural ?? category}
               </h2>
               <p class="set__meta">
                 {es
@@ -212,7 +166,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
                 <StallItem
                   product={product}
                   title={title}
-                  kind={categoryNames[product.category]?.[locale] ?? ''}
+                  kind={singular(product.category)}
                   tilt={swing[i % swing.length]}
                   eager={i < 4}
                   locale={locale}
@@ -262,7 +216,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
                         {[...new Set(set.items.map((p) => p.category))].map((kind, i, kinds) => (
                           <>
                             {i > 0 && (i === kinds.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
-                            {categoryInline[kind]?.[locale] ?? kind}
+                            {typeOf.get(kind)?.phrase ?? kind}
                           </>
                         ))}
                       </>
@@ -275,8 +229,8 @@ const swing = [-6, 4, -3, 7, -5, 3];
                 {set.items.map((product, i) => (
                   <StallItem
                     product={product}
-                    title={categoryNames[product.category]?.[locale] ?? product.title}
-                    kind={categoryNames[product.category]?.[locale] ?? ''}
+                    title={singular(product.category) || product.title}
+                    kind={singular(product.category)}
                     tilt={swing[(setIndex * 3 + i) % swing.length]}
                     eager={setIndex === 0}
                     locale={locale}
@@ -572,16 +526,6 @@ const swing = [-6, 4, -3, 7, -5, 3];
       border-color var(--dur-ui) var(--ease-soft),
       background var(--dur-ui) var(--ease-soft),
       color var(--dur-ui) var(--ease-soft);
-  }
-
-  .kind svg {
-    width: 1.15rem;
-    height: 1.15rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.4;
-    stroke-linejoin: round;
-    stroke-linecap: round;
   }
 
   .kind:hover {

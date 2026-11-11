@@ -57,14 +57,6 @@ const galleryGroup: Record<string, string> = {
   other: 'Otros',
 };
 
-const productCategory: Record<string, string> = {
-  'greeting-cards': 'Tarjetas',
-  coasters: 'Posavasos',
-  mugs: 'Tazas',
-  ornaments: 'Bolas de Navidad',
-  keyrings: 'Llaveros',
-};
-
 function pick(map: Record<string, Label>, key: string | null | undefined): Label {
   return (key && map[key]) || { text: key || '—', tone: 'neutral' };
 }
@@ -79,8 +71,6 @@ export const workCategoryLabel = (key: string | null | undefined) =>
   (key && workCategory[key]) || key || '—';
 export const galleryGroupLabel = (key: string | null | undefined) =>
   (key && galleryGroup[key]) || key || '—';
-export const productCategoryLabel = (key: string | null | undefined) =>
-  (key && productCategory[key]) || key || '—';
 
 export function chipClass(tone: Tone): string {
   return tone === 'neutral' ? 'chip' : `chip chip--${tone}`;

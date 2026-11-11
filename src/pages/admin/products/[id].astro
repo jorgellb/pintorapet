@@ -1,4 +1,5 @@
 ---
+import { productTypeNames } from '@/lib/server/admin/productTypes';
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import MediaPicker from '@/components/admin/MediaPicker.astro';
 import { mediaDisplayName } from '@/lib/admin/mediaPicker';
@@ -8,7 +9,7 @@ import { getAdminProduct, listProductImages, listVariants } from '@/lib/server/a
 import { listMedia } from '@/lib/server/admin/editorial';
 import { hasSupabase, siteUrl } from '@/lib/server/env';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
-import { chipClass, euros, inventoryLabel, productCategoryLabel, productStatusLabel } from '@/lib/admin/labels';
+import { chipClass, euros, inventoryLabel, productStatusLabel } from '@/lib/admin/labels';
 
 export const prerender = false;
 
@@ -28,11 +29,12 @@ const es = product.product_translations.find((t) => t.locale === 'es');
 const inv = product.inventory;
 const title = es?.title || en?.title || product.sku;
 
-const [variants, images, media, { data: shopCategories }] = await Promise.all([
+const [variants, images, media, { data: shopCategories }, typeNames] = await Promise.all([
   listVariants(admin.client, product.id),
   listProductImages(admin.client, product.id),
   listMedia(admin.client).catch(() => []),
   admin.client.from('shop_collections').select('id, name_es, published').order('sort_order'),
+  productTypeNames(admin.client),
 ]);
 
 const altById = new Map(media.map((item) => [item.id, item.altEs]));
@@ -67,7 +69,7 @@ const statuses = ['draft', 'published', 'archived'];
         <code>{product.sku}</code>
         <span class={chipClass(status.tone)}>{status.text}</span>
         <span class={chipClass(stock.tone)}>{stock.text}</span>
-        <span class="muted">{productCategoryLabel(product.categories?.code)} · {euros(product.price_cents)}</span>
+        <span class="muted">{typeNames.get(product.categories?.code ?? '') ?? product.categories?.code} · {euros(product.price_cents)}</span>
         {variants.length > 0 && <span class="chip chip--info">{variants.length + 1} opciones</span>}
       </p>
     </div>

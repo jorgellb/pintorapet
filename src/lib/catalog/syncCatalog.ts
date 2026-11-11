@@ -1,5 +1,6 @@
 import { loadPublicCatalog } from '@/lib/catalog/loadProducts';
 import { catalogOffers, type CatalogOffer } from '@/lib/catalog/productFeed';
+import { loadProductTypes } from '@/lib/catalog/productTypes';
 import { siteUrl } from '@/lib/server/env';
 
 export type ChannelSync = {
@@ -189,8 +190,8 @@ export async function syncShopCatalog(fetchImpl: typeof fetch = fetch): Promise<
   google: ChannelSync;
   meta: ChannelSync;
 }> {
-  const { products } = await loadPublicCatalog('es');
-  const offers = catalogOffers(products, siteUrl(), 'es');
+  const [{ products }, types] = await Promise.all([loadPublicCatalog('es'), loadProductTypes('es')]);
+  const offers = catalogOffers(products, siteUrl(), 'es', types);
   const [google, meta] = await Promise.all([
     pushToGoogle(offers, googleMerchantConfig(), fetchImpl).catch((err: unknown) => ({
       configured: true,

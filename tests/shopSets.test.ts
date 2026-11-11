@@ -67,6 +67,24 @@ describe('buildShopSets', () => {
     expect(items.map((p) => p.category)).toEqual(['greeting-cards', 'coasters', 'mugs', 'mugs', 'ornaments', 'keyrings']);
   });
 
+  it('follows the order of the types set in the admin', () => {
+    const items = buildShopSets(
+      [product('mugs', 'Pug', 'c-pug'), product('keyrings', 'Pug', 'c-pug'), product('greeting-cards', 'Pug', 'c-pug')],
+      [pug],
+      ['keyrings', 'mugs', 'greeting-cards'],
+    )[0].items;
+    expect(items.map((p) => p.category)).toEqual(['keyrings', 'mugs', 'greeting-cards']);
+  });
+
+  it('puts a type it does not know last', () => {
+    const items = buildShopSets(
+      [product('prints', 'Pug', 'c-pug'), product('mugs', 'Pug', 'c-pug')],
+      [pug],
+      ['mugs'],
+    )[0].items;
+    expect(items.map((p) => p.category)).toEqual(['mugs', 'prints']);
+  });
+
   it('uses the chosen portrait, else the coaster photo', () => {
     const sets = buildShopSets(
       [product('mugs', 'French Bulldog', 'c-fr'), product('coasters', 'Pug', 'c-pug', '/pug-coaster.jpg'), product('mugs', 'Pug', 'c-pug')],

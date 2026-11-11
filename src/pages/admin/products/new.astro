@@ -16,6 +16,8 @@ const [{ data: categories }, { data: skus }, { data: shopCategories }] = await P
 ]);
 // Coming from a category's page ("Nuevo producto en esta categoría").
 const preselected = Astro.url.searchParams.get('categoria') ?? '';
+// Coming from a type's page ("Nuevo producto de este tipo").
+const preselectedType = Astro.url.searchParams.get('tipo') ?? '';
 
 const nextNumber =
   Math.max(0, ...(skus ?? []).map((row) => Number(/^PD-(\d+)$/.exec(String(row.sku))?.[1] ?? 0))) + 1;
@@ -39,7 +41,7 @@ const suggestedSku = `PD-${nextNumber}`;
       <label>
         Tipo
         <select name="categoryCode" required>
-          {(categories ?? []).map((c) => <option value={c.code}>{c.name_es}</option>)}
+          {(categories ?? []).map((c) => <option value={c.code} selected={c.code === preselectedType}>{c.name_es}</option>)}
         </select>
         <span class="hint">Decide el IVA y el peso de envío.</span>
       </label>

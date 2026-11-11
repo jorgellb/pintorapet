@@ -1,4 +1,5 @@
 ---
+import { productTypeNames } from '@/lib/server/admin/productTypes';
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
@@ -8,7 +9,6 @@ import {
   chipClass,
   euros,
   inventoryLabel,
-  productCategoryLabel,
   productStatusLabel,
 } from '@/lib/admin/labels';
 
@@ -43,6 +43,9 @@ const { data, error } = await admin.client
     'id, sku, motif, status, price_cents, sale_enabled, parent_id, categories(code), shop_collections(name_es), product_translations(locale, title), inventory(inventory_mode, stock_on_hand, stock_reserved), product_images(position, is_cover, media_assets(bucket, object_path))',
   )
   .order('editorial_order');
+// Types in the shop's order (Admin › Tienda › Tipos de producto): one tab each.
+const typeNames = await productTypeNames(admin.client);
+const typeLabel = (code: string) => typeNames.get(code) ?? code;
 
 const all = (data ?? []) as unknown as Row[];
 const variantCount = new Map<string, number>();
@@ -87,13 +90,13 @@ const visible = rows.filter((row) => {
 
 // On a type's tab, the pieces can be put in the order the shop shows for that type.
 const ordering = Boolean(category) && !inventory && !onSale;
-const typeName = productCategoryLabel(category);
+const typeName = typeLabel(category);
 
 const tabs = [
   { href: '/admin/products/', label: 'Todos', count: rows.length, current: !category && !inventory && !onSale },
-  ...['greeting-cards', 'coasters', 'mugs', 'ornaments', 'keyrings'].map((key) => ({
+  ...[...typeNames.keys()].map((key) => ({
     href: `/admin/products/?categoria=${key}`,
-    label: productCategoryLabel(key),
+    label: typeLabel(key),
     count: rows.filter((row) => row.category === key).length,
     current: category === key,
   })),
@@ -117,8 +120,9 @@ const tabs = [
     <div>
       <h1>Productos</h1>
       <p class="lead">
-        Tarjetas, posavasos, tazas, bolas de Navidad y llaveros. Cada producto se vende en cuanto tiene la
-        venta activada y el inventario verificado.
+        Todas las piezas de la tienda, por tipo (los tipos se editan en
+        <a href="/admin/product-types/">Tipos de producto</a>). Cada producto se vende en cuanto tiene la venta
+        activada y el inventario verificado.
       </p>
     </div>
     <a class="btn" href="/admin/products/new/">Nuevo producto</a>
@@ -206,7 +210,7 @@ const tabs = [
                           </span>
                         </a>
                       </td>
-                      <td>{productCategoryLabel(row.category)}</td>
+                      <td>{typeLabel(row.category)}</td>
                       <td>{row.shop_collections?.name_es ?? <span class="muted">Sin categoría</span>}</td>
                       <td class="num">{euros(row.price_cents)}</td>
                       <td>

@@ -1,0 +1,81 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import ProductTypeForm from '@/components/admin/ProductTypeForm.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasSupabase } from '@/lib/server/env';
+import { getProductType } from '@/lib/server/admin/productTypes';
+
+export const prerender = false;
+
+if (!hasSupabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const id = Astro.params.id ?? '';
+if (!/^[0-9a-f-]{36}$/i.test(id)) return Astro.redirect('/admin/product-types/');
+const type = await getProductType(admin.client, id).catch(() => null);
+if (!type) return Astro.redirect('/admin/product-types/');
+const isNew = Astro.url.searchParams.has('nuevo');
+---
+
+<AdminLayout title={type.nameEs} email={admin.user.email}>
+  <a class="back" href="/admin/product-types/">← Tipos de producto</a>
+  <header class="page-head">
+    <div>
+      <h1>{type.nameEs}</h1>
+      <p class="lead">
+        {
+          type.productCount === 0
+            ? 'Todavía sin productos.'
+            : `${type.productCount} ${type.productCount === 1 ? 'producto' : 'productos'}.`
+        }{' '}
+        <a href={`/admin/products/?categoria=${type.code}`}>Ver sus productos</a> ·{' '}
+        <a href={`/admin/products/new/?tipo=${type.code}`}>Nuevo producto de este tipo</a>
+      </p>
+    </div>
+  </header>
+  {isNew && <p class="status">Tipo creado. Ya puedes crearle productos.</p>}
+
+  <ProductTypeForm type={type} />
+
+  <section class="panel danger">
+    <h2>Borrar el tipo</h2>
+    {
+      type.productCount > 0 ? (
+        <p class="hint">
+          Solo se puede borrar un tipo sin productos. Para quitarlo de la tienda sin perder nada, desactiva «Visible en
+          la tienda».
+        </p>
+      ) : (
+        <>
+          <p class="hint">No tiene productos, así que se puede borrar.</p>
+          <button type="button" class="btn--quiet btn--danger" data-delete-type data-id={type.id} data-name={type.nameEs}>
+            Borrar «{type.nameEs}»
+          </button>
+        </>
+      )
+    }
+  </section>
+</AdminLayout>
+
+<style>
+  .danger {
+    margin-top: 1.25rem;
+  }
+</style>
+
+<script>
+  document.querySelector<HTMLButtonElement>('[data-delete-type]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    if (!confirm(`¿Borrar el tipo «${button.dataset.name}»?`)) return;
+    button.disabled = true;
+    const res = await fetch(`/api/admin/product-types/${button.dataset.id}/`, { method: 'DELETE' }).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+    if (!res?.ok) {
+      button.disabled = false;
+      alert(data?.error?.message ?? 'No se pudo borrar.');
+      return;
+    }
+    window.location.href = '/admin/product-types/?borrado=1';
+  });
+</script>

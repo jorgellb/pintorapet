@@ -1,26 +1,10 @@
 import type { Locale } from '@/i18n/routes';
 import { productPath } from '@/i18n/routes';
-import type { ProductCategoryCode, ProductPublic } from '@/lib/domain/types';
+import type { ProductPublic } from '@/lib/domain/types';
+import { DEFAULT_TYPES, fromRow, type ProductType } from '@/lib/catalog/productTypes';
 import { variantTitle } from '@/lib/admin/slug';
 
 export type FeedChannel = 'google' | 'meta';
-
-const googleCategory: Record<ProductCategoryCode, string> = {
-  'greeting-cards':
-    'Arts & Entertainment > Party & Celebration > Gift Giving > Greeting Cards',
-  coasters: 'Home & Garden > Kitchen & Dining > Tableware > Drinkware > Coasters',
-  mugs: 'Home & Garden > Kitchen & Dining > Tableware > Drinkware > Mugs',
-  ornaments: 'Home & Garden > Decor > Seasonal & Holiday Decorations > Holiday Ornaments',
-  keyrings: 'Apparel & Accessories > Handbag & Wallet Accessories > Keychains',
-};
-
-const typeLabel: Record<ProductCategoryCode, Record<Locale, string>> = {
-  'greeting-cards': { es: 'Tarjetas de felicitación', en: 'Greeting cards' },
-  coasters: { es: 'Posavasos', en: 'Coasters' },
-  mugs: { es: 'Tazas', en: 'Mugs' },
-  ornaments: { es: 'Bolas de Navidad', en: 'Christmas ornaments' },
-  keyrings: { es: 'Llaveros', en: 'Keyrings' },
-};
 
 function escapeXml(value: string): string {
   return value
@@ -63,18 +47,26 @@ export type CatalogOffer = {
   itemGroupId?: string;
 };
 
-/** Sellable rows become offers. Shared by the XML feeds and the Google/Meta push. */
+/**
+ * Sellable rows become offers. Shared by the XML feeds and the Google/Meta push.
+ * `types` are the visible product types (Admin › Tienda › Tipos de producto):
+ * their names and Google categories go in the offers, and products of a type
+ * not among them (hidden) are left out. Without them, the built-in types.
+ */
 export function catalogOffers(
   products: ProductPublic[],
   origin: string,
   locale: Locale,
+  types: ProductType[] = DEFAULT_TYPES.map((row) => fromRow(row, locale)),
 ): CatalogOffer[] {
   const base = origin.replace(/\/$/, '');
+  const typeOf = new Map(types.map((type) => [type.code, type]));
   const byId = new Map(products.map((p) => [p.id, p]));
   const parents = new Set(products.flatMap((p) => (p.parentId ? [p.parentId] : [])));
   return products.flatMap((product) => {
     const images = product.imageUrls.filter(Boolean);
-    if (product.status !== 'published' || images.length === 0 || product.priceCents <= 0) return [];
+    const type = typeOf.get(product.category);
+    if (!type || product.status !== 'published' || images.length === 0 || product.priceCents <= 0) return [];
     const onSale = product.saleEnabled && product.availability === 'available';
     const group = product.parentId ? byId.get(product.parentId) : parents.has(product.id) ? product : undefined;
     return [
@@ -96,8 +88,8 @@ export function catalogOffers(
         brand: 'Pets Drawings',
         condition: 'new',
         identifierExists: false,
-        googleProductCategory: googleCategory[product.category],
-        productType: `${typeLabel[product.category][locale]} > ${product.motif}`,
+        googleProductCategory: type.googleCategory,
+        productType: `${type.plural} > ${product.motif}`,
       },
     ];
   });
@@ -134,10 +126,11 @@ export function buildProductFeed(input: {
   origin: string;
   locale: Locale;
   channel: FeedChannel;
+  types?: ProductType[];
 }): string {
   const shop = absoluteUrl(input.origin, productPath(input.locale, ''));
   const title = input.channel === 'meta' ? 'Pets Drawings — Meta catalog' : 'Pets Drawings — Google Merchant';
-  const items = catalogOffers(input.products, input.origin, input.locale).map((offer) =>
+  const items = catalogOffers(input.products, input.origin, input.locale, input.types).map((offer) =>
     itemXml(offer, input.channel),
   );
 
@@ -147,7 +140,7 @@ export function buildProductFeed(input: {
     '  <channel>',
     `    <title>${escapeXml(title)}</title>`,
     `    <link>${escapeXml(shop)}</link>`,
-    '    <description>Catálogo de Pets Drawings. Tarjetas, posavasos y tazas ilustrados.</description>',
+    '    <description>Catálogo de Pets Drawings: piezas con los retratos a lápiz de Meili.</description>',
     ...items,
     '  </channel>',
     '</rss>',
