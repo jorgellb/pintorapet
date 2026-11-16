@@ -4,7 +4,7 @@ import { finalizePaypalOrder } from '@/lib/server/commerce/paypalCheckout';
 import { paypalRefundOf, recordProviderRefund } from '@/lib/server/commerce/refunds';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
 import { verifyPaypalWebhook } from '@/lib/server/payments/paypal';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -22,7 +22,7 @@ type PaypalEvent = {
 
 export const POST: APIRoute = async ({ request }) => {
   const { paypal } = await loadPaymentConfig();
-  const supabase = createServiceClient();
+  const supabase = serviceDb();
   if (!paypal?.webhookId || !supabase) {
     return jsonError(new CommerceError('NOT_CONFIGURED', 'PayPal webhook not configured', 503));
   }

@@ -15,7 +15,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonError(new CommerceError('VALIDATION', 'Choose an image', 400));
     }
     const row = await uploadMedia(
-      admin.client,
+      admin.db,
       file,
       String(form.get('bucket') ?? 'portfolio-public'),
       String(form.get('altEn') ?? ''),

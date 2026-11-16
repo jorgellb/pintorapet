@@ -1,8 +1,10 @@
 import type { APIRoute } from 'astro';
+import { audit } from '@/lib/server/shipping/http';
+import { setColumns } from '@/lib/server/db';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 
 export const prerender = false;
 
@@ -21,14 +23,10 @@ export const GET: APIRoute = async ({ request, cookies }) => {
     if (!admin) {
       return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     }
-    const { data, error } = await admin.client
-      .from('shop_settings')
-      .select(
-        'public_name, sales_enabled, payments_enabled, tax_policy, config_version, cart_max_qty_per_line, cart_max_lines, cart_max_units, quote_ttl_seconds, reservation_minutes',
-      )
-      .eq('id', 1)
-      .maybeSingle();
-    if (error) throw mapPgError(error);
+    const data = await dbCall(() => admin.db.one`
+      select public_name, sales_enabled, payments_enabled, tax_policy, config_version, cart_max_qty_per_line,
+             cart_max_lines, cart_max_units, quote_ttl_seconds, reservation_minutes
+      from public.shop_settings where id = 1`);
     return Response.json({ settings: data });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
@@ -57,31 +55,16 @@ export const PATCH: APIRoute = async ({ request, cookies }) => {
       typeof body.paymentsEnabled === 'boolean' ||
       body.taxPolicy
     ) {
-      const { data: current } = await admin.client
-        .from('shop_settings')
-        .select('config_version')
-        .eq('id', 1)
-        .maybeSingle();
+      const current = await admin.db.one<{ config_version: number }>`
+        select config_version from public.shop_settings where id = 1`;
       patch.config_version = (current?.config_version ?? 1) + 1;
     }
 
-    const { data, error } = await admin.client
-      .from('shop_settings')
-      .update(patch)
-      .eq('id', 1)
-      .select(
-        'public_name, sales_enabled, payments_enabled, tax_policy, config_version',
-      )
-      .single();
-    if (error) throw mapPgError(error);
+    const data = await dbCall(() => admin.db.one`
+      update public.shop_settings set ${setColumns(patch)} where id = 1
+      returning public_name, sales_enabled, payments_enabled, tax_policy, config_version`);
 
-    await admin.client.from('admin_audit_log').insert({
-      actor_user_id: admin.user.id,
-      operation: 'update_shop_settings',
-      entity_type: 'shop_settings',
-      entity_id: '1',
-      change: patch,
-    });
+    await audit(admin, 'update_shop_settings', 'shop_settings', '1', patch);
 
     return Response.json({ ok: true, settings: data });
   } catch (err) {

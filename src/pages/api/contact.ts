@@ -4,7 +4,8 @@ import { contactSchema } from '@/lib/validation/checkout';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 import { parseRequestBody } from '@/lib/server/parseBody';
 import { submitContact } from '@/lib/server/commerce/forms';
-import { hasResend, hasServiceSupabase } from '@/lib/server/env';
+import { hasResend } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { localizedPath, type Locale } from '@/i18n/routes';
 import { clientIp, inspect, withoutAntibotFields } from '@/lib/server/antibot';
 
@@ -48,7 +49,7 @@ export const POST: APIRoute = async (context) => {
       return Response.json(fake);
     }
 
-    if (!hasServiceSupabase() || !hasResend()) {
+    if (!hasDatabase() || !hasResend()) {
       const payload = {
         error: {
           code: 'NOT_CONFIGURED',

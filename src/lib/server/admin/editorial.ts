@@ -1,6 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { ident, insertValues, setColumns, type Db } from '@/lib/server/db';
+import type { ArtworkAssetsRow, ArtworksRow, GalleryAssetsRow, GalleryItemsRow } from '@/lib/server/dbTypes';
 import { CommerceError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { mediaPublicId } from '@/lib/server/media/cloudinary';
 import { cloudinaryStore, mediaStoreError, type MediaStore } from '@/lib/server/media/store';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
@@ -18,74 +19,42 @@ export type MediaRow = {
   altEs: string;
 };
 
-type Translation = { locale: string; alt_text: string; caption: string };
-
-export async function listMedia(client: SupabaseClient): Promise<MediaRow[]> {
-  const { data, error } = await client
-    .from('media_assets')
-    .select(
-      'id, bucket, object_path, mime_type, byte_size, processing_status, created_at, media_translations(locale, alt_text, caption)',
-    )
-    .order('created_at', { ascending: false });
-  if (error) throw mapPgError(error);
-  return (data ?? []).map((row) => {
-    const translations = (row.media_translations ?? []) as Translation[];
-    const en = translations.find((t) => t.locale === 'en');
-    const es = translations.find((t) => t.locale === 'es');
-    return {
-      id: row.id as string,
-      bucket: row.bucket as string,
-      object_path: row.object_path as string,
-      mime_type: row.mime_type as string,
-      byte_size: (row.byte_size as number | null) ?? null,
-      processing_status: row.processing_status as string,
-      created_at: row.created_at as string,
-      publicUrl: storagePublicUrl(row.bucket as string, row.object_path as string),
-      altEn: en?.alt_text ?? '',
-      altEs: es?.alt_text ?? '',
-    };
-  });
+export async function listMedia(client: Db): Promise<MediaRow[]> {
+  const rows = await dbCall(() =>
+    client.rows<Omit<MediaRow, 'publicUrl'>>`
+      select m.id, m.bucket, m.object_path, m.mime_type, m.byte_size, m.processing_status, m.created_at,
+             coalesce((select t.alt_text from public.media_translations t where t.media_asset_id = m.id and t.locale = 'en'), '') as "altEn",
+             coalesce((select t.alt_text from public.media_translations t where t.media_asset_id = m.id and t.locale = 'es'), '') as "altEs"
+      from public.media_assets m
+      order by m.created_at desc`,
+  );
+  return rows.map((row) => ({ ...row, publicUrl: storagePublicUrl(row.bucket, row.object_path) }));
 }
 
-export async function saveMediaAlts(
-  client: SupabaseClient,
-  id: string,
-  altEn: string,
-  altEs: string,
-): Promise<void> {
-  const rows = [
-    { media_asset_id: id, locale: 'en', alt_text: altEn, caption: '' },
-    { media_asset_id: id, locale: 'es', alt_text: altEs, caption: '' },
-  ];
-  const { error } = await client
-    .from('media_translations')
-    .upsert(rows, { onConflict: 'media_asset_id,locale' });
-  if (error) throw mapPgError(error);
+export async function saveMediaAlts(client: Db, id: string, altEn: string, altEs: string): Promise<void> {
+  await dbCall(() => client.run`
+    insert into public.media_translations ${insertValues([
+      { media_asset_id: id, locale: 'en', alt_text: altEn, caption: '' },
+      { media_asset_id: id, locale: 'es', alt_text: altEs, caption: '' },
+    ])}
+    on conflict (media_asset_id, locale) do update set alt_text = excluded.alt_text, caption = excluded.caption`);
 }
 
-export async function deleteMedia(
-  client: SupabaseClient,
-  id: string,
-  store: MediaStore = cloudinaryStore(),
-): Promise<void> {
-  const { data, error } = await client
-    .from('media_assets')
-    .select('bucket, object_path')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
+export async function deleteMedia(client: Db, id: string, store: MediaStore = cloudinaryStore()): Promise<void> {
+  const data = await dbCall(() =>
+    client.one<{ bucket: string; object_path: string }>`select bucket, object_path from public.media_assets where id = ${id}`,
+  );
   if (!data) throw new CommerceError('VALIDATION', 'Media not found', 404);
   await store.remove(mediaPublicId(data.bucket, data.object_path)).catch((err: unknown) => {
     throw mediaStoreError(err);
   });
-  const del = await client.from('media_assets').delete().eq('id', id);
-  if (del.error) throw mapPgError(del.error);
+  await dbCall(() => client.run`delete from public.media_assets where id = ${id}`);
 }
 
 const buckets = new Set(['portfolio-public', 'catalog-public']);
 
 export async function uploadMedia(
-  client: SupabaseClient,
+  client: Db,
   file: File,
   bucket: string,
   altEn: string,
@@ -114,30 +83,30 @@ export async function uploadMedia(
     throw mediaStoreError(err);
   });
 
-  const inserted = await client
-    .from('media_assets')
-    .insert({
-      origin: 'upload',
-      bucket,
-      object_path: objectPath,
-      mime_type: file.type,
-      byte_size: file.size,
-      processing_status: 'ready',
-    })
-    .select('id, bucket, object_path, mime_type, byte_size, processing_status, created_at')
-    .single();
-  if (inserted.error || !inserted.data) {
+  let inserted: Omit<MediaRow, 'publicUrl' | 'altEn' | 'altEs'> | null;
+  try {
+    inserted = await dbCall(() =>
+      client.one<Omit<MediaRow, 'publicUrl' | 'altEn' | 'altEs'>>`
+        insert into public.media_assets ${insertValues({
+          origin: 'upload',
+          bucket,
+          object_path: objectPath,
+          mime_type: file.type,
+          byte_size: file.size,
+          processing_status: 'ready',
+        })}
+        returning id, bucket, object_path, mime_type, byte_size, processing_status, created_at`,
+    );
+  } catch (err) {
     await store.remove(publicId).catch(() => {});
-    if (inserted.error) throw mapPgError(inserted.error);
+    throw err;
+  }
+  if (!inserted) {
+    await store.remove(publicId).catch(() => {});
     throw new CommerceError('INTERNAL', 'Could not record the upload', 500);
   }
-  await saveMediaAlts(client, inserted.data.id, altEn, altEs);
-  return {
-    ...inserted.data,
-    publicUrl: storagePublicUrl(bucket, objectPath),
-    altEn,
-    altEs,
-  };
+  await saveMediaAlts(client, inserted.id, altEn, altEs);
+  return { ...inserted, publicUrl: storagePublicUrl(bucket, objectPath), altEn, altEs };
 }
 
 export type AssetInput = {
@@ -205,20 +174,6 @@ function assetRows(assets: AssetInput[], owner: 'artwork' | 'gallery', ownerId: 
     }));
 }
 
-export async function listArtworks(client: SupabaseClient) {
-  const { data, error } = await client
-    .from('artworks')
-    .select(
-      'id, legacy_id, slug_en, slug_es, category, title_es, title_en, summary_es, story_es, sort_order, published, updated_at, artwork_assets(src, role, sort_order)',
-    )
-    .order('sort_order');
-  if (error) throw mapPgError(error);
-  return (data ?? []).map((row) => ({
-    ...row,
-    cover: coverOf(row.artwork_assets as AssetPreview[] | null),
-  }));
-}
-
 type AssetPreview = { src: string; role: string; sort_order: number };
 
 function coverOf(assets: AssetPreview[] | null): string | null {
@@ -226,172 +181,114 @@ function coverOf(assets: AssetPreview[] | null): string | null {
   return (sorted.find((a) => a.role === 'drawing') ?? sorted[0])?.src ?? null;
 }
 
-export async function getArtwork(client: SupabaseClient, id: string) {
-  const { data, error } = await client
-    .from('artworks')
-    .select('*, artwork_assets(*)')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
-  return data;
+export async function listArtworks(client: Db) {
+  const rows = await dbCall(() =>
+    client.rows<Omit<ArtworksRow, 'summary_en' | 'story_en' | 'created_at' | 'seo_title_en' | 'seo_title_es' | 'seo_description_en' | 'seo_description_es'> & { artwork_assets: AssetPreview[] }>`
+      select a.id, a.legacy_id, a.slug_en, a.slug_es, a.category, a.title_es, a.title_en, a.summary_es, a.story_es,
+             a.sort_order, a.published, a.updated_at,
+             coalesce((select json_agg(json_build_object('src', x.src, 'role', x.role, 'sort_order', x.sort_order))
+                       from public.artwork_assets x where x.artwork_id = a.id), '[]'::json) as artwork_assets
+      from public.artworks a order by a.sort_order`,
+  );
+  return rows.map((row) => ({ ...row, cover: coverOf(row.artwork_assets) }));
+}
+
+export async function getArtwork(client: Db, id: string) {
+  return dbCall(() =>
+    client.one<ArtworksRow & { artwork_assets: ArtworkAssetsRow[] }>`
+      select a.*, coalesce((select json_agg(x) from public.artwork_assets x where x.artwork_id = a.id), '[]'::json) as artwork_assets
+      from public.artworks a where a.id = ${id}`,
+  );
 }
 
 async function replaceAssets(
-  client: SupabaseClient,
+  client: Db,
   table: 'artwork_assets' | 'gallery_assets',
   column: 'artwork_id' | 'gallery_item_id',
   id: string,
   rows: Record<string, unknown>[],
 ) {
-  const removed = await client.from(table).delete().eq(column, id);
-  if (removed.error) throw mapPgError(removed.error);
-  if (rows.length === 0) return;
-  const inserted = await client.from(table).insert(rows);
-  if (inserted.error) throw mapPgError(inserted.error);
+  await dbCall(async () => {
+    await client.run`delete from ${ident('public', table)} where ${ident(column)} = ${id}`;
+    if (rows.length > 0) await client.run`insert into ${ident('public', table)} ${insertValues(rows)}`;
+  });
 }
 
-export async function createArtwork(client: SupabaseClient, input: ArtworkInput) {
-  const { data, error } = await client
-    .from('artworks')
-    .insert({
-      legacy_id: input.legacyId || null,
-      slug_en: input.slugEn,
-      slug_es: input.slugEs,
-      category: input.category,
-      title_en: input.titleEn,
-      title_es: input.titleEs,
-      summary_en: input.summaryEn,
-      summary_es: input.summaryEs,
-      story_en: input.storyEn,
-      story_es: input.storyEs,
-      ...artworkSeo(input),
-      sort_order: input.sortOrder,
-      published: input.published,
-    })
-    .select('id')
-    .single();
-  if (error || !data) {
-    if (error) throw mapPgError(error);
-    throw new CommerceError('INTERNAL', 'Could not create the artwork', 500);
-  }
-  await replaceAssets(
-    client,
-    'artwork_assets',
-    'artwork_id',
-    data.id,
-    assetRows(input.assets, 'artwork', data.id),
+const artworkColumns = (input: ArtworkInput) => ({
+  slug_en: input.slugEn,
+  slug_es: input.slugEs,
+  category: input.category,
+  title_en: input.titleEn,
+  title_es: input.titleEs,
+  summary_en: input.summaryEn,
+  summary_es: input.summaryEs,
+  story_en: input.storyEn,
+  story_es: input.storyEs,
+  ...artworkSeo(input),
+  sort_order: input.sortOrder,
+  published: input.published,
+});
+
+export async function createArtwork(client: Db, input: ArtworkInput) {
+  const row = await dbCall(() =>
+    client.one<{ id: string }>`
+      insert into public.artworks ${insertValues({ legacy_id: input.legacyId || null, ...artworkColumns(input) })}
+      returning id`,
   );
-  return data.id as string;
+  if (!row) throw new CommerceError('INTERNAL', 'Could not create the artwork', 500);
+  await replaceAssets(client, 'artwork_assets', 'artwork_id', row.id, assetRows(input.assets, 'artwork', row.id));
+  return row.id;
 }
 
-export async function updateArtwork(client: SupabaseClient, id: string, input: ArtworkInput) {
-  const { error } = await client
-    .from('artworks')
-    .update({
-      slug_en: input.slugEn,
-      slug_es: input.slugEs,
-      category: input.category,
-      title_en: input.titleEn,
-      title_es: input.titleEs,
-      summary_en: input.summaryEn,
-      summary_es: input.summaryEs,
-      story_en: input.storyEn,
-      story_es: input.storyEs,
-      ...artworkSeo(input),
-      sort_order: input.sortOrder,
-      published: input.published,
-    })
-    .eq('id', id);
-  if (error) throw mapPgError(error);
-  await replaceAssets(
-    client,
-    'artwork_assets',
-    'artwork_id',
-    id,
-    assetRows(input.assets, 'artwork', id),
+export async function updateArtwork(client: Db, id: string, input: ArtworkInput) {
+  await dbCall(() => client.run`update public.artworks set ${setColumns(artworkColumns(input))} where id = ${id}`);
+  await replaceAssets(client, 'artwork_assets', 'artwork_id', id, assetRows(input.assets, 'artwork', id));
+}
+
+export async function listGallery(client: Db) {
+  const rows = await dbCall(() =>
+    client.rows<Omit<GalleryItemsRow, 'summary_en' | 'story_en' | 'created_at'> & { gallery_assets: AssetPreview[] }>`
+      select g.id, g.legacy_id, g.item_group, g.title_es, g.title_en, g.summary_es, g.story_es, g.sort_order,
+             g.published, g.updated_at,
+             coalesce((select json_agg(json_build_object('src', x.src, 'role', x.role, 'sort_order', x.sort_order))
+                       from public.gallery_assets x where x.gallery_item_id = g.id), '[]'::json) as gallery_assets
+      from public.gallery_items g order by g.sort_order`,
+  );
+  return rows.map((row) => ({ ...row, cover: coverOf(row.gallery_assets) }));
+}
+
+export async function getGalleryItem(client: Db, id: string) {
+  return dbCall(() =>
+    client.one<GalleryItemsRow & { gallery_assets: GalleryAssetsRow[] }>`
+      select g.*, coalesce((select json_agg(x) from public.gallery_assets x where x.gallery_item_id = g.id), '[]'::json) as gallery_assets
+      from public.gallery_items g where g.id = ${id}`,
   );
 }
 
-export async function listGallery(client: SupabaseClient) {
-  const { data, error } = await client
-    .from('gallery_items')
-    .select(
-      'id, legacy_id, item_group, title_es, title_en, summary_es, story_es, sort_order, published, updated_at, gallery_assets(src, role, sort_order)',
-    )
-    .order('sort_order');
-  if (error) throw mapPgError(error);
-  return (data ?? []).map((row) => ({
-    ...row,
-    cover: coverOf(row.gallery_assets as AssetPreview[] | null),
-  }));
-}
+const galleryColumns = (input: GalleryInput) => ({
+  item_group: input.group,
+  title_en: input.titleEn,
+  title_es: input.titleEs,
+  summary_en: input.summaryEn,
+  summary_es: input.summaryEs,
+  story_en: input.storyEn,
+  story_es: input.storyEs,
+  sort_order: input.sortOrder,
+  published: input.published,
+});
 
-export async function getGalleryItem(client: SupabaseClient, id: string) {
-  const { data, error } = await client
-    .from('gallery_items')
-    .select('*, gallery_assets(*)')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
-  return data;
-}
-
-export async function createGalleryItem(client: SupabaseClient, input: GalleryInput) {
-  const { data, error } = await client
-    .from('gallery_items')
-    .insert({
-      legacy_id: input.legacyId || null,
-      item_group: input.group,
-      title_en: input.titleEn,
-      title_es: input.titleEs,
-      summary_en: input.summaryEn,
-      summary_es: input.summaryEs,
-      story_en: input.storyEn,
-      story_es: input.storyEs,
-      sort_order: input.sortOrder,
-      published: input.published,
-    })
-    .select('id')
-    .single();
-  if (error || !data) {
-    if (error) throw mapPgError(error);
-    throw new CommerceError('INTERNAL', 'Could not create the gallery item', 500);
-  }
-  await replaceAssets(
-    client,
-    'gallery_assets',
-    'gallery_item_id',
-    data.id,
-    assetRows(input.assets, 'gallery', data.id),
+export async function createGalleryItem(client: Db, input: GalleryInput) {
+  const row = await dbCall(() =>
+    client.one<{ id: string }>`
+      insert into public.gallery_items ${insertValues({ legacy_id: input.legacyId || null, ...galleryColumns(input) })}
+      returning id`,
   );
-  return data.id as string;
+  if (!row) throw new CommerceError('INTERNAL', 'Could not create the gallery item', 500);
+  await replaceAssets(client, 'gallery_assets', 'gallery_item_id', row.id, assetRows(input.assets, 'gallery', row.id));
+  return row.id;
 }
 
-export async function updateGalleryItem(
-  client: SupabaseClient,
-  id: string,
-  input: GalleryInput,
-) {
-  const { error } = await client
-    .from('gallery_items')
-    .update({
-      item_group: input.group,
-      title_en: input.titleEn,
-      title_es: input.titleEs,
-      summary_en: input.summaryEn,
-      summary_es: input.summaryEs,
-      story_en: input.storyEn,
-      story_es: input.storyEs,
-      sort_order: input.sortOrder,
-      published: input.published,
-    })
-    .eq('id', id);
-  if (error) throw mapPgError(error);
-  await replaceAssets(
-    client,
-    'gallery_assets',
-    'gallery_item_id',
-    id,
-    assetRows(input.assets, 'gallery', id),
-  );
+export async function updateGalleryItem(client: Db, id: string, input: GalleryInput) {
+  await dbCall(() => client.run`update public.gallery_items set ${setColumns(galleryColumns(input))} where id = ${id}`);
+  await replaceAssets(client, 'gallery_assets', 'gallery_item_id', id, assetRows(input.assets, 'gallery', id));
 }

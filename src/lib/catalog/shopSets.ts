@@ -1,6 +1,6 @@
 import type { Locale } from '@/i18n/routes';
 import type { ProductPublic } from '@/lib/domain/types';
-import { hasSupabase } from '@/lib/server/env';
+import { anonDb, hasDatabase } from '@/lib/server/db';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
 import { DEFAULT_TYPES } from '@/lib/catalog/productTypes';
 
@@ -41,15 +41,10 @@ export const slugify = (value: string) =>
 
 /** Visible shop categories, in their order. Empty when they cannot be read. */
 export async function loadShopCollections(locale: Locale): Promise<ShopCollection[]> {
-  if (!hasSupabase()) return [];
+  if (!hasDatabase()) return [];
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const client = createClient(
-      import.meta.env.PUBLIC_SUPABASE_URL as string,
-      import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string,
-    );
-    const { data, error } = await client.from('catalog_collections_v').select('*').order('sort_order');
-    if (error || !data) return [];
+    const client = anonDb();
+    const data = await client.rows`select * from public.catalog_collections_v order by sort_order`;
     return data.map((row) => ({
       id: String(row.id),
       code: String(row.code),

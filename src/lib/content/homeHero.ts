@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { t, type Locale } from '@/i18n';
 import { localizedPath, workPath } from '@/i18n/routes';
 import type { WorkEntry } from '@/lib/content/editorial';
-import { hasSupabase } from '@/lib/server/env';
+import { anonDb, hasDatabase } from '@/lib/server/db';
 import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 /**
@@ -116,15 +116,11 @@ export function defaultHeroContent(): HeroContent {
 
 /** Saved content, or the defaults when there is none (or it cannot be read). */
 export async function loadHeroContent(): Promise<HeroContent> {
-  if (!hasSupabase()) return defaultHeroContent();
+  if (!hasDatabase()) return defaultHeroContent();
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const client = createClient(
-      import.meta.env.PUBLIC_SUPABASE_URL as string,
-      import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string,
-    );
-    const { data, error } = await client.from('site_home_hero').select('content').eq('id', 1).maybeSingle();
-    if (error || !data) return defaultHeroContent();
+    const client = anonDb();
+    const data = await client.one<{ content: unknown }>`select content from public.site_home_hero where id = 1`;
+    if (!data) return defaultHeroContent();
     const parsed = heroContentSchema.safeParse(data.content);
     return parsed.success ? parsed.data : defaultHeroContent();
   } catch {

@@ -65,13 +65,11 @@ function failure(err: unknown, fallback: string): Response {
 type Admin = NonNullable<Awaited<ReturnType<typeof requireAdmin>>>;
 
 async function audit(admin: Admin, operation: string, provider: PaymentProvider, change: Record<string, unknown>) {
-  await admin.client.from('admin_audit_log').insert({
-    actor_user_id: admin.user.id,
-    operation,
-    entity_type: 'payment_provider',
-    entity_id: provider,
-    change,
-  });
+  await admin.db
+    .run`
+      insert into public.admin_audit_log (actor_user_id, operation, entity_type, entity_id, change)
+      values (${admin.user.id}, ${operation}, 'payment_provider', ${provider}, ${JSON.stringify(change)})`
+    .catch(() => 0);
 }
 
 export const POST: APIRoute = async ({ params, request, cookies }) => {
@@ -81,8 +79,8 @@ export const POST: APIRoute = async ({ params, request, cookies }) => {
     const provider = providerOf(params.provider);
     const body = await request.json();
     const row = provider === 'stripe'
-      ? await connectStripe(admin.client, stripeConnectSchema.parse(body))
-      : await connectPaypal(admin.client, paypalConnectSchema.parse(body));
+      ? await connectStripe(admin.db, stripeConnectSchema.parse(body))
+      : await connectPaypal(admin.db, paypalConnectSchema.parse(body));
     await audit(admin, 'connect_payment_provider', provider, {
       mode: row?.mode,
       account: row?.account_label,
@@ -105,16 +103,16 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
       if (provider !== 'stripe') {
         throw new CommerceError('VALIDATION', 'Solo Stripe usa un secreto de webhook manual.', 400);
       }
-      await setStripeWebhookSecret(admin.client, body.webhookSecret);
+      await setStripeWebhookSecret(admin.db, body.webhookSecret);
     }
     if (body.webhookEvents) {
       if (provider !== 'stripe') {
         throw new CommerceError('VALIDATION', 'Solo el webhook de Stripe se actualiza así.', 400);
       }
-      await updateStripeWebhookEvents(admin.client);
+      await updateStripeWebhookEvents(admin.db);
     }
     if (typeof body.enabled === 'boolean') {
-      await setProviderEnabled(admin.client, provider, body.enabled);
+      await setProviderEnabled(admin.db, provider, body.enabled);
     }
     await audit(admin, 'update_payment_provider', provider, {
       enabled: body.enabled,
@@ -132,7 +130,7 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const provider = providerOf(params.provider);
-    await disconnectProvider(admin.client, provider);
+    await disconnectProvider(admin.db, provider);
     await audit(admin, 'disconnect_payment_provider', provider, {});
     return Response.json({ ok: true });
   } catch (err) {

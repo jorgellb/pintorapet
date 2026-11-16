@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 import { processOutboxBatch } from '@/lib/server/commerce/outbox';
-import { hasResend, hasServiceSupabase } from '@/lib/server/env';
-import { createServiceClient } from '@/lib/server/supabase';
+import { hasResend } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
+import { serviceDb } from '@/lib/server/db';
 import { syncOpenShipments } from '@/lib/server/shipping/trackingSync';
 
 export const prerender = false;
@@ -15,12 +16,12 @@ async function run(request: Request): Promise<Response> {
     return jsonError(new CommerceError('FORBIDDEN', 'Unauthorized cron', 401));
   }
 
-  await createServiceClient()?.rpc('release_expired_paypal_attempts');
+  await serviceDb()?.call('release_expired_paypal_attempts').catch((err: unknown) => console.error('paypal release cron', err));
   // Parcels on their way: their Correos state (nothing to do when Correos is not connected).
-  const tracker = createServiceClient();
+  const tracker = serviceDb();
   if (tracker) await syncOpenShipments(tracker).catch((err) => console.error('tracking cron', err));
 
-  if (!hasServiceSupabase() || !hasResend()) {
+  if (!hasDatabase() || !hasResend()) {
     return Response.json(
       {
         error: {
@@ -33,7 +34,7 @@ async function run(request: Request): Promise<Response> {
   }
 
   try {
-    const supabase = createServiceClient();
+    const supabase = serviceDb();
     if (!supabase) {
       throw new CommerceError(
         'NOT_CONFIGURED',

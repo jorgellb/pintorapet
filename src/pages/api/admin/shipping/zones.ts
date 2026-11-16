@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
 
 export const prerender = false;
@@ -49,11 +49,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const body = zoneSchema.parse(await request.json());
-    const { data, error } = await admin.client.rpc('admin_save_shipping_zone', {
-      p_zone: body.zone,
-      p_rates: body.rates,
-    });
-    if (error) throw mapPgError(error);
+    const data = await dbCall(() => admin.db.call<string>('admin_save_shipping_zone', { p_zone: body.zone, p_rates: body.rates }));
     const id = String(data);
     await audit(admin, body.zone.id ? 'update_shipping_zone' : 'create_shipping_zone', 'shipping_zones', id, body);
     return Response.json({ ok: true, id });

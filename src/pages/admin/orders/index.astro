@@ -2,22 +2,30 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
+import type { OrdersRow } from '@/lib/server/dbTypes';
 import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const { data, error } = await admin.client
-  .from('orders')
-  .select(
-    'id, reference, payment_status, payment_provider, fulfillment_status, total_cents, customer_name, customer_email, created_at, paid_at, archived_at, shipping_zone_name, shipping_country, tracking_code, tracking_status, shipping_destination_ok, order_items(product_title, quantity)',
-  )
-  .order('created_at', { ascending: false })
-  .limit(300);
+type ListedOrder = Pick<
+  OrdersRow,
+  | 'id' | 'reference' | 'payment_status' | 'payment_provider' | 'fulfillment_status' | 'total_cents' | 'customer_name'
+  | 'customer_email' | 'created_at' | 'paid_at' | 'archived_at' | 'shipping_zone_name' | 'shipping_country'
+  | 'tracking_code' | 'tracking_status' | 'shipping_destination_ok'
+> & { order_items: Array<{ product_title: string; quantity: number }> };
+
+const { data, error } = await settle(admin.db.rows<ListedOrder>`
+  select o.id, o.reference, o.payment_status, o.payment_provider, o.fulfillment_status, o.total_cents, o.customer_name,
+         o.customer_email, o.created_at, o.paid_at, o.archived_at, o.shipping_zone_name, o.shipping_country,
+         o.tracking_code, o.tracking_status, o.shipping_destination_ok,
+         coalesce((select json_agg(json_build_object('product_title', i.product_title, 'quantity', i.quantity))
+                   from public.order_items i where i.order_id = o.id), '[]'::json) as order_items
+  from public.orders o order by o.created_at desc limit 300`);
 
 type Order = NonNullable<typeof data>[number];
 const all = data ?? [];

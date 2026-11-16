@@ -2,18 +2,18 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import ProductTypeForm from '@/components/admin/ProductTypeForm.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { getProductType } from '@/lib/server/admin/productTypes';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 const id = Astro.params.id ?? '';
 if (!/^[0-9a-f-]{36}$/i.test(id)) return Astro.redirect('/admin/product-types/');
-const type = await getProductType(admin.client, id).catch(() => null);
+const type = await getProductType(admin.db, id).catch(() => null);
 if (!type) return Astro.redirect('/admin/product-types/');
 const isNew = Astro.url.searchParams.has('nuevo');
 ---

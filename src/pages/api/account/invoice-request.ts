@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { userDb } from '@/lib/server/db';
 import { localizedPath, type Locale } from '@/i18n/routes';
 import { invoiceCustomerSchema } from '@/lib/domain/checkoutCustomer';
 import { customerSession, loadProfile, saveProfile } from '@/lib/server/account';
@@ -30,12 +31,15 @@ export const POST: APIRoute = async ({ request, cookies, redirect }) => {
     return redirect(`${back}#invoice`, 303);
   }
 
-  const { data, error } = await session.client.rpc('request_full_invoice', {
-    p_reference: reference,
-    p_customer: parsed.data,
-  });
+  let data: unknown;
+  let error: unknown = null;
+  try {
+    data = await userDb(session.user.id).call('request_full_invoice', { p_reference: reference, p_customer: parsed.data });
+  } catch (err) {
+    error = err;
+  }
   if (error) {
-    const code = String(error.message ?? '');
+    const code = String((error as { message?: unknown }).message ?? '');
     setFlash(cookies, {
       error: code.includes('INVALID_TAX_ID')
         ? 'invoice_fields'

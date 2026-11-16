@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { quoteRequestSchema } from '@/lib/validation/checkout';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
-import { hasServiceSupabase, hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { normalizeCartItems } from '@/lib/domain/cart';
 import { loadManifestProducts } from '@/lib/catalog/loadProducts';
 import { asCents, mulCents, addCents, formatEur } from '@/lib/domain/money';
@@ -10,7 +10,7 @@ import {
   createPersistedQuote,
   quotePublicPayload,
 } from '@/lib/server/commerce/quotes';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -40,8 +40,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const items = normalizeCartItems(body.items);
     const { hash } = ensureCartOwnerHash(cookies);
 
-    if (hasServiceSupabase()) {
-      const supabase = createServiceClient();
+    if (hasDatabase()) {
+      const supabase = serviceDb();
       if (!supabase) {
         throw new CommerceError(
           'NOT_CONFIGURED',
@@ -62,7 +62,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     // Manifest-only quote (no persistence) until service role is configured.
     const catalog = await loadManifestProducts(body.locale);
-    if (catalog.length === 0 && !hasSupabase()) {
+    if (catalog.length === 0 && !hasDatabase()) {
       return Response.json(
         {
           error: {

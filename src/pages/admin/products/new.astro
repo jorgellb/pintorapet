@@ -1,18 +1,18 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 const [{ data: categories }, { data: skus }, { data: shopCategories }] = await Promise.all([
-  admin.client.from('categories').select('code, name_es').order('sort_order'),
-  admin.client.from('products').select('sku'),
-  admin.client.from('shop_collections').select('id, name_es, name_en').order('sort_order'),
+  settle(admin.db.rows<{ code: string; name_es: string }>`select code, name_es from public.categories order by sort_order`),
+  settle(admin.db.rows<{ sku: string }>`select sku from public.products`),
+  settle(admin.db.rows<{ id: string; name_es: string; name_en: string }>`select id, name_es, name_en from public.shop_collections order by sort_order`),
 ]);
 // Coming from a category's page ("Nuevo producto en esta categoría").
 const preselected = Astro.url.searchParams.get('categoria') ?? '';

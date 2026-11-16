@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { audit } from '@/lib/server/shipping/http';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { createAdminProduct, setProductCollection } from '@/lib/server/admin/products';
@@ -39,20 +40,18 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const body = createSchema.parse(await request.json());
     const { collectionId, ...product } = body;
-    const id = await createAdminProduct(admin.client, product);
+    const id = await createAdminProduct(admin.db, product);
     // Variations follow their product's shop category.
     if (body.parentId) {
-      const { data: parent } = await admin.client.from('products').select('collection_id').eq('id', body.parentId).maybeSingle();
-      if (parent?.collection_id) await setProductCollection(admin.client, id, parent.collection_id);
+      const parent = await admin.db.one<{ collection_id: string | null }>`
+        select collection_id from public.products where id = ${body.parentId}`;
+      if (parent?.collection_id) await setProductCollection(admin.db, id, parent.collection_id);
     } else if (collectionId) {
-      await setProductCollection(admin.client, id, collectionId);
+      await setProductCollection(admin.db, id, collectionId);
     }
-    await admin.client.from('admin_audit_log').insert({
-      actor_user_id: admin.user.id,
-      operation: body.parentId ? 'create_variant' : 'create_product',
-      entity_type: 'products',
-      entity_id: id,
-      change: { sku: body.sku, parentId: body.parentId ?? null },
+    await audit(admin, body.parentId ? 'create_variant' : 'create_product', 'products', id, {
+      sku: body.sku,
+      parentId: body.parentId ?? null,
     });
     return Response.json({ ok: true, id });
   } catch (err) {

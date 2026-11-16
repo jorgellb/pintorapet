@@ -1,8 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { db, insertValues, json, sql, type Db } from '@/lib/server/db';
 import { CommerceError } from '@/lib/server/commerce/errors';
 import { sendOrderEmails } from '@/lib/server/commerce/outbox';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
-import { createServiceClient } from '@/lib/server/supabase';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import {
   cancelShipment,
   clearCorreosConfigCache,
@@ -42,14 +41,12 @@ function asCommerce(err: unknown, fallback: string): CommerceError {
   return new CommerceError('INTERNAL', fallback, 500);
 }
 
-export async function carrierRow(client: SupabaseClient): Promise<CarrierRow | null> {
-  const { data, error } = await client.from('shipping_carriers').select('*').eq('carrier', 'correos').maybeSingle();
-  if (error) throw mapPgError(error);
-  return (data as CarrierRow | null) ?? null;
+export async function carrierRow(client: Db): Promise<CarrierRow | null> {
+  return dbCall(() => client.one<CarrierRow>`select * from public.shipping_carriers where carrier = 'correos'`);
 }
 
 export async function connectCorreos(
-  client: SupabaseClient,
+  client: Db,
   input: CorreosConfig,
 ): Promise<CarrierRow | null> {
   try {
@@ -57,9 +54,7 @@ export async function connectCorreos(
   } catch (err) {
     throw asCommerce(err, 'No se pudo comprobar la conexión con Correos.');
   }
-  const { error } = await client.rpc('admin_connect_carrier', {
-    p_carrier: 'correos',
-    p_settings: {
+  const settings = {
       mode: input.mode,
       contractNumber: input.contractNumber,
       clientNumber: input.clientNumber,
@@ -67,20 +62,20 @@ export async function connectCorreos(
       oauthClientId: input.oauthClientId,
       gatewayClientId: input.gatewayClientId,
       keyHint: hint(input.gatewayClientId),
-    },
-    p_secrets: {
-      oauth_client_secret: input.oauthClientSecret,
-      gateway_client_secret: input.gatewayClientSecret,
-    },
-  });
-  if (error) throw mapPgError(error);
+  };
+  const secrets = {
+    oauth_client_secret: input.oauthClientSecret,
+    gateway_client_secret: input.gatewayClientSecret,
+  };
+  // Secrets are sealed in the vault: that needs the key for this transaction.
+  await dbCall(() => client.withVaultKey(sql`
+    select public.admin_connect_carrier(p_carrier => 'correos', p_settings => ${json(settings)}, p_secrets => ${json(secrets)})`));
   clearCorreosConfigCache();
   return carrierRow(client);
 }
 
-export async function disconnectCorreos(client: SupabaseClient): Promise<void> {
-  const { error } = await client.rpc('admin_disconnect_carrier', { p_carrier: 'correos' });
-  if (error) throw mapPgError(error);
+export async function disconnectCorreos(client: Db): Promise<void> {
+  await dbCall(() => client.run`select public.admin_disconnect_carrier(p_carrier => 'correos')`);
   clearCorreosConfigCache();
 }
 
@@ -112,14 +107,14 @@ type OrderForShipment = {
   tracking_code: string | null;
 };
 
-const ORDER_COLUMNS =
-  'id, reference, locale, payment_status, fulfillment_status, customer_email, customer_name, subtotal_cents, shipping_address, shipping_country, shipping_weight_grams, shipping_zone_id, carrier, carrier_shipment_code, tracking_code';
 
-async function paidOrder(client: SupabaseClient, id: string): Promise<OrderForShipment> {
-  const { data, error } = await client.from('orders').select(ORDER_COLUMNS).eq('id', id).maybeSingle();
-  if (error) throw mapPgError(error);
-  if (!data) throw new CommerceError('UNAVAILABLE', 'Pedido no encontrado.', 404);
-  const order = data as OrderForShipment;
+async function paidOrder(client: Db, id: string): Promise<OrderForShipment> {
+  const order = await dbCall(() => client.one<OrderForShipment>`
+    select id, reference, locale, payment_status, fulfillment_status, customer_email, customer_name, subtotal_cents,
+           shipping_address, shipping_country, shipping_weight_grams, shipping_zone_id, carrier, carrier_shipment_code,
+           tracking_code
+    from public.orders where id = ${id}`);
+  if (!order) throw new CommerceError('UNAVAILABLE', 'Pedido no encontrado.', 404);
   // A partly refunded order still has pieces to send.
   if (order.payment_status !== 'paid' && order.payment_status !== 'partially_refunded') {
     throw new CommerceError('CONFLICT', 'Solo se envían pedidos pagados.', 409);
@@ -127,7 +122,7 @@ async function paidOrder(client: SupabaseClient, id: string): Promise<OrderForSh
   return order;
 }
 
-export async function createCorreosShipment(client: SupabaseClient, id: string) {
+export async function createCorreosShipment(client: Db, id: string) {
   const order = await paidOrder(client, id);
   if (order.carrier_shipment_code) {
     throw new CommerceError('CONFLICT', 'Este pedido ya tiene un envío en Correos.', 409);
@@ -139,24 +134,24 @@ export async function createCorreosShipment(client: SupabaseClient, id: string) 
   const cfg = await loadCorreosConfig();
   if (!cfg) throw new CommerceError('NOT_CONFIGURED', 'Conecta Correos en Envíos para crear envíos.', 409);
 
-  const [{ data: zone }, { data: items }, settings] = await Promise.all([
+  const [zone, items, settings] = await Promise.all([
     order.shipping_zone_id
-      ? client.from('shipping_zones').select('correos_product, customs, kind').eq('id', order.shipping_zone_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    client.from('order_items').select('product_title, quantity, unit_price_cents, products(weight_grams)').eq('order_id', id),
+      ? dbCall(() => client.one<{ correos_product: string | null; customs: boolean; kind: string }>`
+          select correos_product, customs, kind from public.shipping_zones where id = ${order.shipping_zone_id}`)
+      : Promise.resolve(null),
+    dbCall(() => client.rows<{ product_title: string; quantity: number; unit_price_cents: number; weight_grams: number | null }>`
+      select i.product_title, i.quantity, i.unit_price_cents, p.weight_grams
+      from public.order_items i left join public.products p on p.id = i.product_id
+      where i.order_id = ${id}`),
     loadShippingSettings(),
   ]);
 
-  const lines = (items ?? []).map((item) => {
-    const product = item.products as { weight_grams?: number } | { weight_grams?: number }[] | null;
-    const weight = Array.isArray(product) ? product[0]?.weight_grams : product?.weight_grams;
-    return {
-      title: String(item.product_title),
-      quantity: Number(item.quantity),
-      unitPriceCents: Number(item.unit_price_cents),
-      weightGrams: Number(weight ?? 100),
-    };
-  });
+  const lines = items.map((item) => ({
+    title: String(item.product_title),
+    quantity: Number(item.quantity),
+    unitPriceCents: Number(item.unit_price_cents),
+    weightGrams: Number(item.weight_grams ?? 100),
+  }));
   const weight =
     order.shipping_weight_grams ??
     lines.reduce((sum, l) => sum + l.weightGrams * l.quantity, 0) + settings.packagingGrams;
@@ -188,21 +183,16 @@ export async function createCorreosShipment(client: SupabaseClient, id: string) 
     throw asCommerce(err, 'No se pudo crear el envío en Correos.');
   }
 
-  const { error } = await client
-    .from('orders')
-    .update({
-      carrier: 'correos',
-      carrier_shipment_code: created.shipmentCode,
-      tracking_code: created.packageCode,
-      label_created_at: new Date().toISOString(),
-      fulfillment_status: order.fulfillment_status === 'unfulfilled' ? 'preparing' : order.fulfillment_status,
-    })
-    .eq('id', id);
-  if (error) throw mapPgError(error);
+  await dbCall(() => client.run`
+    update public.orders
+    set carrier = 'correos', carrier_shipment_code = ${created.shipmentCode}, tracking_code = ${created.packageCode},
+        label_created_at = now(),
+        fulfillment_status = ${order.fulfillment_status === 'unfulfilled' ? 'preparing' : order.fulfillment_status}::public.fulfillment_status
+    where id = ${id}`);
   return { ...created, product, customs: Boolean(zone?.customs) || international };
 }
 
-export async function correosLabel(client: SupabaseClient, id: string): Promise<{ pdf: Buffer; reference: string }> {
+export async function correosLabel(client: Db, id: string): Promise<{ pdf: Buffer; reference: string }> {
   const order = await paidOrder(client, id);
   if (order.carrier !== 'correos' || !order.carrier_shipment_code) {
     throw new CommerceError('CONFLICT', 'Este pedido no tiene envío en Correos.', 409);
@@ -217,13 +207,13 @@ export async function correosLabel(client: SupabaseClient, id: string): Promise<
   }
 }
 
-async function zoneNeedsCustoms(client: SupabaseClient, zoneId: string | null): Promise<boolean> {
+async function zoneNeedsCustoms(client: Db, zoneId: string | null): Promise<boolean> {
   if (!zoneId) return false;
-  const { data } = await client.from('shipping_zones').select('customs').eq('id', zoneId).maybeSingle();
-  return Boolean(data?.customs);
+  const row = await client.one<{ customs: boolean }>`select customs from public.shipping_zones where id = ${zoneId}`;
+  return Boolean(row?.customs);
 }
 
-export async function cancelCorreosShipment(client: SupabaseClient, id: string): Promise<void> {
+export async function cancelCorreosShipment(client: Db, id: string): Promise<void> {
   const order = await paidOrder(client, id);
   if (order.carrier !== 'correos' || !order.tracking_code) {
     throw new CommerceError('CONFLICT', 'Este pedido no tiene envío en Correos.', 409);
@@ -238,51 +228,43 @@ export async function cancelCorreosShipment(client: SupabaseClient, id: string):
   } catch (err) {
     throw asCommerce(err, 'Correos no pudo anular el envío.');
   }
-  const { error } = await client
-    .from('orders')
-    .update({ carrier: null, carrier_shipment_code: null, tracking_code: null, label_created_at: null })
-    .eq('id', id);
-  if (error) throw mapPgError(error);
+  await dbCall(() => client.run`
+    update public.orders set carrier = null, carrier_shipment_code = null, tracking_code = null, label_created_at = null
+    where id = ${id}`);
 }
 
 /** Saves the tracking number, marks the order shipped and emails the customer once. */
 export async function markShipped(
-  client: SupabaseClient,
+  client: Db,
   id: string,
   input: { carrier: string; trackingCode: string; notify: boolean },
 ) {
   const order = await paidOrder(client, id);
-  const { error } = await client
-    .from('orders')
-    .update({
-      carrier: input.carrier,
-      tracking_code: input.trackingCode,
-      fulfillment_status: 'shipped',
-      shipped_at: new Date().toISOString(),
-    })
-    .eq('id', id);
-  if (error) throw mapPgError(error);
+  await dbCall(() => client.run`
+    update public.orders
+    set carrier = ${input.carrier}, tracking_code = ${input.trackingCode}, fulfillment_status = 'shipped', shipped_at = now()
+    where id = ${id}`);
 
   if (input.notify && order.customer_email) {
-    const service = createServiceClient();
-    await service?.from('notification_outbox').upsert(
-      {
+    const service = db();
+    const payload = {
+      order_id: id,
+      reference: order.reference,
+      carrier: input.carrier,
+      tracking_code: input.trackingCode,
+      tracking_url: input.carrier === 'correos' ? trackingUrl(input.trackingCode, order.locale) : null,
+    };
+    await service.run`
+      insert into public.notification_outbox ${insertValues({
         dedupe_key: `order_shipped_customer:${id}:${input.trackingCode}`,
         recipient: order.customer_email,
         locale: order.locale,
         template_key: 'order_shipped_customer',
-        payload: {
-          order_id: id,
-          reference: order.reference,
-          carrier: input.carrier,
-          tracking_code: input.trackingCode,
-          tracking_url: input.carrier === 'correos' ? trackingUrl(input.trackingCode, order.locale) : null,
-        },
+        payload: JSON.stringify(payload),
         status: 'pending',
         next_run_at: new Date().toISOString(),
-      },
-      { onConflict: 'dedupe_key', ignoreDuplicates: true },
-    );
-    if (service) await sendOrderEmails(service, id);
+      })}
+      on conflict (dedupe_key) do nothing`;
+    await sendOrderEmails(service, id);
   }
 }

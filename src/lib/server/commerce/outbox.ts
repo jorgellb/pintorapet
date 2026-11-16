@@ -1,7 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { Resend } from 'resend';
 import { emailAdmin, emailFrom, hasResend, siteUrl } from '@/lib/server/env';
-import { mapPgError } from './pgErrors';
+import { dbCall } from './pgErrors';
 import { CommerceError } from './errors';
 
 type OutboxRow = {
@@ -108,7 +108,7 @@ function renderTemplate(
 
 /** Send rows already claimed by `owner`, marking each sent or failed (retried by the cron). */
 async function sendClaimed(
-  supabase: SupabaseClient,
+  supabase: Db,
   rows: OutboxRow[],
   owner: string,
 ): Promise<{ sent: number; failed: number }> {
@@ -132,37 +132,22 @@ async function sendClaimed(
       });
       if (sendErr) throw sendErr;
 
-      const { error: updErr } = await supabase
-        .from('notification_outbox')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          lease_until: null,
-          lease_owner: null,
-          last_error: null,
-        })
-        .eq('id', row.id)
-        .eq('lease_owner', owner);
-      if (updErr) throw updErr;
+      await supabase.run`
+        update public.notification_outbox
+        set status = 'sent', sent_at = now(), lease_until = null, lease_owner = null, last_error = null
+        where id = ${row.id} and lease_owner = ${owner}`;
       sent += 1;
     } catch (err) {
       failed += 1;
-      await supabase
-        .from('notification_outbox')
-        .update({
-          status: 'failed',
-          attempt_count: (row.attempt_count ?? 0) + 1,
-          next_run_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-          lease_until: null,
-          lease_owner: null,
-          last_error: String(
-            err && typeof err === 'object' && 'message' in err
-              ? (err as { message: unknown }).message
-              : err,
-          ).slice(0, 500),
-        })
-        .eq('id', row.id)
-        .eq('lease_owner', owner);
+      const lastError = String(
+        err && typeof err === 'object' && 'message' in err ? (err as { message: unknown }).message : err,
+      ).slice(0, 500);
+      await supabase.run`
+        update public.notification_outbox
+        set status = 'failed', attempt_count = ${(row.attempt_count ?? 0) + 1},
+            next_run_at = ${new Date(Date.now() + 5 * 60_000).toISOString()},
+            lease_until = null, lease_owner = null, last_error = ${lastError}
+        where id = ${row.id} and lease_owner = ${owner}`.catch(() => 0);
     }
   }
 
@@ -170,7 +155,7 @@ async function sendClaimed(
 }
 
 export async function processOutboxBatch(
-  supabase: SupabaseClient,
+  supabase: Db,
   limit = 20,
 ): Promise<{ claimed: number; sent: number; failed: number }> {
   if (!hasResend()) {
@@ -182,14 +167,8 @@ export async function processOutboxBatch(
   }
 
   const owner = `outbox:${process.pid}:${Date.now()}`;
-  const { data, error } = await supabase.rpc('claim_outbox', {
-    p_limit: limit,
-    p_lease_seconds: 60,
-    p_worker_id: owner,
-  });
-  if (error) throw mapPgError(error);
-
-  const rows = (data ?? []) as OutboxRow[];
+  const rows = await dbCall(() => supabase.rows<OutboxRow>`
+    select * from public.claim_outbox(p_limit => ${limit}, p_lease_seconds => 60, p_worker_id => ${owner})`);
   return { claimed: rows.length, ...(await sendClaimed(supabase, rows, owner)) };
 }
 
@@ -197,17 +176,13 @@ export async function processOutboxBatch(
  * Send an order's queued emails now (paid, shipped) instead of waiting for
  * the daily cron. Never throws: whatever fails stays queued for the cron.
  */
-export async function sendOrderEmails(supabase: SupabaseClient, orderId: string): Promise<void> {
+export async function sendOrderEmails(supabase: Db, orderId: string): Promise<void> {
   if (!hasResend()) return;
   try {
     const owner = `order:${orderId}:${Date.now()}`;
-    const { data, error } = await supabase.rpc('claim_outbox_for_order', {
-      p_order_id: orderId,
-      p_lease_seconds: 60,
-      p_worker_id: owner,
-    });
-    if (error) throw error;
-    await sendClaimed(supabase, (data ?? []) as OutboxRow[], owner);
+    const rows = await supabase.rows<OutboxRow>`
+      select * from public.claim_outbox_for_order(p_order_id => ${orderId}, p_lease_seconds => 60, p_worker_id => ${owner})`;
+    await sendClaimed(supabase, rows, owner);
   } catch (err) {
     console.error('order emails left for the outbox cron', orderId, err);
   }

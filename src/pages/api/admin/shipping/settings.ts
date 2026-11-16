@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
 
 export const prerender = false;
@@ -31,15 +31,10 @@ export const PUT: APIRoute = async ({ request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const body = settingsSchema.parse(await request.json());
-    const { data: current, error: readErr } = await admin.client
-      .from('shop_settings')
-      .select('shipping_config')
-      .eq('id', 1)
-      .maybeSingle();
-    if (readErr) throw mapPgError(readErr);
+    const current = await dbCall(() => admin.db.one<{ shipping_config: unknown }>`
+      select shipping_config from public.shop_settings where id = 1`);
     const next = { ...((current?.shipping_config as object | null) ?? {}), ...body };
-    const { error } = await admin.client.from('shop_settings').update({ shipping_config: next }).eq('id', 1);
-    if (error) throw mapPgError(error);
+    await dbCall(() => admin.db.run`update public.shop_settings set shipping_config = ${JSON.stringify(next)} where id = 1`);
     await audit(admin, 'update_shipping_settings', 'shop_settings', '1', { packagingGrams: body.packagingGrams });
     return Response.json({ ok: true });
   } catch (err) {

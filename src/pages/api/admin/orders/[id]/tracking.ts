@@ -12,7 +12,7 @@ export const POST: APIRoute = async ({ params, request, cookies }) => {
   if (!admin) return forbidden();
   try {
     const id = z.uuid().parse(params.id);
-    const result = await syncOrderTracking(admin.client, id);
+    const result = await syncOrderTracking(admin.db, id);
     if (result.changed) await audit(admin, 'tracking_update', 'orders', id, { status: result.status });
     return Response.json({ ok: true, ...result });
   } catch (err) {

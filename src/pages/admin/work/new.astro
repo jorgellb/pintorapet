@@ -3,17 +3,17 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import EntryEditor from '@/components/admin/EntryEditor.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { listMedia } from '@/lib/server/admin/editorial';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 let media: Awaited<ReturnType<typeof listMedia>> = [];
 try {
-  media = await listMedia(admin.client);
+  media = await listMedia(admin.db);
 } catch {
   media = [];
 }

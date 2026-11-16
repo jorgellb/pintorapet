@@ -4,9 +4,9 @@ import {
   constructStripeEvent,
   handleStripeEvent,
 } from '@/lib/server/commerce/webhook';
-import { hasServiceSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -24,7 +24,7 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  if (!hasServiceSupabase()) {
+  if (!hasDatabase()) {
     return Response.json(
       {
         error: {
@@ -46,7 +46,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const rawBody = await request.text();
     const event = await constructStripeEvent(rawBody, signature);
-    const supabase = createServiceClient();
+    const supabase = serviceDb();
     if (!supabase) {
       throw new CommerceError(
         'NOT_CONFIGURED',

@@ -1,6 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { CommerceError } from './errors';
-import { mapPgError } from './pgErrors';
+import { dbCall, mapPgError } from './pgErrors';
 
 /**
  * Cancelling and deleting orders that were never paid (Admin › Pedidos). The
@@ -22,19 +22,15 @@ type OrderRow = {
 
 const CANCELLABLE = ['pending_session', 'checkout_open', 'expired', 'cancelled'];
 
-async function load(client: SupabaseClient, id: string): Promise<OrderRow> {
-  const { data, error } = await client
-    .from('orders')
-    .select('id, payment_status, payment_provider, stripe_session_id')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
+async function load(client: Db, id: string): Promise<OrderRow> {
+  const data = await dbCall(() => client.one<OrderRow>`
+    select id, payment_status, payment_provider, stripe_session_id from public.orders where id = ${id}`);
   if (!data) throw new CommerceError('UNAVAILABLE', 'Ese pedido ya no existe.', 404);
   return data as OrderRow;
 }
 
-function explain(err: { message?: string } | null): CommerceError {
-  const message = err?.message ?? '';
+function explain(err: unknown): CommerceError {
+  const message = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : '';
   if (message.includes('ORDER_NOT_DELETABLE')) {
     return new CommerceError(
       'VALIDATION',
@@ -53,7 +49,7 @@ function explain(err: { message?: string } | null): CommerceError {
 }
 
 export async function cancelOrder(
-  client: SupabaseClient,
+  client: Db,
   id: string,
   closeStripe: CheckoutCloser = closeStripeCheckout,
 ): Promise<void> {
@@ -68,12 +64,13 @@ export async function cancelOrder(
       );
     }
   }
-  const { error } = await client.rpc('admin_cancel_order', { p_order_id: id });
-  if (error) throw explain(error);
+  await client.call('admin_cancel_order', { p_order_id: id }).catch((err: unknown) => {
+    throw explain(err);
+  });
 }
 
 export async function deleteOrder(
-  client: SupabaseClient,
+  client: Db,
   id: string,
   closeStripe: CheckoutCloser = closeStripeCheckout,
 ): Promise<void> {
@@ -81,14 +78,16 @@ export async function deleteOrder(
   if (order.payment_status === 'checkout_open' || order.payment_status === 'pending_session') {
     await cancelOrder(client, id, closeStripe);
   }
-  const { error } = await client.rpc('admin_delete_order', { p_order_id: id });
-  if (error) throw explain(error);
+  await client.call('admin_delete_order', { p_order_id: id }).catch((err: unknown) => {
+    throw explain(err);
+  });
 }
 
 /** Every order never paid and abandoned (closed over a day ago, or open over two). */
-export async function deleteAbandonedOrders(client: SupabaseClient): Promise<number> {
-  const { data, error } = await client.rpc('admin_delete_abandoned_orders');
-  if (error) throw explain(error);
+export async function deleteAbandonedOrders(client: Db): Promise<number> {
+  const data = await client.call<number>('admin_delete_abandoned_orders').catch((err: unknown) => {
+    throw explain(err);
+  });
   return Number(data ?? 0);
 }
 

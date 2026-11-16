@@ -2,20 +2,31 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { chipClass, commissionLabel, shortDate } from '@/lib/admin/labels';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const { data, error } = await admin.client
-  .from('commission_requests')
-  .select('id, reference, locale, contact_name, contact_email, size_hint, subjects, message, status, created_at')
-  .order('created_at', { ascending: false })
-  .limit(200);
+const { data, error } = await settle(
+  admin.db.rows<{
+    id: string;
+    reference: string;
+    locale: string;
+    contact_name: string;
+    contact_email: string;
+    size_hint: string | null;
+    subjects: string | null;
+    message: string;
+    status: string;
+    created_at: string;
+  }>`
+    select id, reference, locale, contact_name, contact_email, size_hint, subjects, message, status, created_at
+    from public.commission_requests order by created_at desc limit 200`,
+);
 
 const rows = data ?? [];
 const statuses = ['received', 'reviewing', 'quoted', 'accepted', 'declined', 'closed'];

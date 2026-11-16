@@ -21,11 +21,10 @@ export async function audit(
   entityId: string,
   change: Record<string, unknown>,
 ) {
-  await admin.client.from('admin_audit_log').insert({
-    actor_user_id: admin.user.id,
-    operation,
-    entity_type: entityType,
-    entity_id: entityId,
-    change,
-  });
+  // Like the Supabase insert it replaces, a failed audit line never blocks the change itself.
+  await admin.db
+    .run`
+      insert into public.admin_audit_log (actor_user_id, operation, entity_type, entity_id, change)
+      values (${admin.user.id}, ${operation}, ${entityType}, ${entityId}, ${JSON.stringify(change)})`
+    .catch((err: unknown) => console.error('[audit] not recorded', operation, err));
 }

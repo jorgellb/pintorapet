@@ -18,7 +18,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     const id = params.id;
     if (!id) return jsonError(new CommerceError('VALIDATION', 'Missing media id', 400));
     const body = patchSchema.parse(await request.json());
-    await saveMediaAlts(admin.client, id, body.altEn, body.altEs);
+    await saveMediaAlts(admin.db, id, body.altEn, body.altEs);
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
@@ -32,7 +32,7 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const id = params.id;
     if (!id) return jsonError(new CommerceError('VALIDATION', 'Missing media id', 400));
-    await deleteMedia(admin.client, id);
+    await deleteMedia(admin.db, id);
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);

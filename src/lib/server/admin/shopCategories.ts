@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { insertValues, setColumns, sql, type Db } from '@/lib/server/db';
 import { CommerceError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
 
 /**
@@ -57,8 +57,14 @@ type DbRow = {
   products: Array<{ count: number }>;
 };
 
-const SELECT =
-  'id, code, name_es, name_en, description_es, description_en, portrait_media_id, sort_order, published, media_assets(bucket, object_path), products(count)';
+/** The portrait's file and the number of products (options included), nested as PostgREST did. */
+const SELECT = sql`
+  select c.id, c.code, c.name_es, c.name_en, c.description_es, c.description_en, c.portrait_media_id, c.sort_order,
+         c.published,
+         (select json_build_object('bucket', m.bucket, 'object_path', m.object_path)
+          from public.media_assets m where m.id = c.portrait_media_id) as media_assets,
+         json_build_array(json_build_object('count', (select count(*) from public.products p where p.collection_id = c.id))) as products
+  from public.shop_collections c`;
 
 const fromDb = (row: DbRow): ShopCategoryRow => ({
   id: row.id,
@@ -84,50 +90,40 @@ const toDb = (input: ShopCategoryInput) => ({
   published: input.published,
 });
 
-export async function listShopCategories(client: SupabaseClient): Promise<ShopCategoryRow[]> {
-  const { data, error } = await client.from('shop_collections').select(SELECT).order('sort_order').order('name_es');
-  if (error) throw mapPgError(error);
-  return ((data ?? []) as unknown as DbRow[]).map(fromDb);
+export async function listShopCategories(client: Db): Promise<ShopCategoryRow[]> {
+  const rows = await dbCall(() => client.rows<DbRow>`${SELECT} order by c.sort_order, c.name_es`);
+  return rows.map(fromDb);
 }
 
-export async function getShopCategory(client: SupabaseClient, id: string): Promise<ShopCategoryRow | null> {
-  const { data, error } = await client.from('shop_collections').select(SELECT).eq('id', id).maybeSingle();
-  if (error) throw mapPgError(error);
-  return data ? fromDb(data as unknown as DbRow) : null;
+export async function getShopCategory(client: Db, id: string): Promise<ShopCategoryRow | null> {
+  const row = await dbCall(() => client.one<DbRow>`${SELECT} where c.id = ${id}`);
+  return row ? fromDb(row) : null;
 }
 
 /** New categories go to the end of the shop. */
-export async function createShopCategory(client: SupabaseClient, input: ShopCategoryInput): Promise<string> {
-  const { data: last } = await client
-    .from('shop_collections')
-    .select('sort_order')
-    .order('sort_order', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const { data, error } = await client
-    .from('shop_collections')
-    .insert({ ...toDb(input), sort_order: (last?.sort_order ?? 0) + 10 })
-    .select('id')
-    .single();
-  if (error) throw mapPgError(error);
-  return data.id as string;
+export async function createShopCategory(client: Db, input: ShopCategoryInput): Promise<string> {
+  const row = await dbCall(async () => {
+    const last = await client.one<{ sort_order: number }>`
+      select sort_order from public.shop_collections order by sort_order desc limit 1`;
+    return client.one<{ id: string }>`
+      insert into public.shop_collections ${insertValues({ ...toDb(input), sort_order: (last?.sort_order ?? 0) + 10 })}
+      returning id`;
+  });
+  return row!.id;
 }
 
-export async function updateShopCategory(client: SupabaseClient, id: string, input: ShopCategoryInput): Promise<void> {
-  const { data, error } = await client.from('shop_collections').update(toDb(input)).eq('id', id).select('id');
-  if (error) throw mapPgError(error);
-  if (!data?.length) throw new CommerceError('UNAVAILABLE', 'Esa categoría ya no existe.', 404);
+export async function updateShopCategory(client: Db, id: string, input: ShopCategoryInput): Promise<void> {
+  const changed = await dbCall(() => client.run`update public.shop_collections set ${setColumns(toDb(input))} where id = ${id}`);
+  if (!changed) throw new CommerceError('UNAVAILABLE', 'Esa categoría ya no existe.', 404);
 }
 
 /** Its products stay in the shop, without a category. */
-export async function deleteShopCategory(client: SupabaseClient, id: string): Promise<void> {
-  const { data, error } = await client.from('shop_collections').delete().eq('id', id).select('id');
-  if (error) throw mapPgError(error);
-  if (!data?.length) throw new CommerceError('UNAVAILABLE', 'Esa categoría ya no existe.', 404);
+export async function deleteShopCategory(client: Db, id: string): Promise<void> {
+  const deleted = await dbCall(() => client.run`delete from public.shop_collections where id = ${id}`);
+  if (!deleted) throw new CommerceError('UNAVAILABLE', 'Esa categoría ya no existe.', 404);
 }
 
 /** The shop shows categories in this order. */
-export async function reorderShopCategories(client: SupabaseClient, ids: string[]): Promise<void> {
-  const { error } = await client.rpc('admin_reorder_shop_collections', { p_ids: ids });
-  if (error) throw mapPgError(error);
+export async function reorderShopCategories(client: Db, ids: string[]): Promise<void> {
+  await dbCall(() => client.run`select public.admin_reorder_shop_collections(p_ids => ${ids}::uuid[])`);
 }

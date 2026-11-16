@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { fakeDb } from './helpers/fakeDb';
 import type Stripe from 'stripe';
 import { paypalRefundOf } from '../src/lib/server/commerce/refunds';
 import { handleStripeEvent } from '../src/lib/server/commerce/webhook';
@@ -25,12 +26,13 @@ describe('paypalRefundOf', () => {
   });
 });
 
-/** rpc() for record_provider_refund, upsert() for stripe_events, select() to find the order. */
+/** record_provider_refund / provider_refund_failed answer `result`; the order lookup finds order-1. */
 function fakeSupabase(result: string) {
-  const rpc = vi.fn(async () => ({ data: result, error: null }));
-  const upsert = vi.fn(async () => ({ error: null }));
-  const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: { id: 'order-1' }, error: null }) };
-  return { client: { rpc, from: () => ({ upsert, ...query }) } as never, rpc, upsert };
+  const { db, call, queries } = fakeDb({
+    answer: () => ({ data: result }),
+    query: (q) => (q.text.includes('from public.orders') ? { id: 'order-1' } : undefined),
+  });
+  return { client: db, rpc: call, queries };
 }
 
 const refundEvent = (status: string): Stripe.Event =>

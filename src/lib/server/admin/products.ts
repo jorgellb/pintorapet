@@ -1,6 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { insertValues, json, setColumns, sql, type Db } from '@/lib/server/db';
 import { CommerceError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 
 import { variantTitle } from '@/lib/admin/slug';
 
@@ -34,6 +34,11 @@ export type AdminVariantRow = {
   inventory: Inventory | null;
 };
 
+const inventoryJson = sql`(
+  select json_build_object('stock_on_hand', i.stock_on_hand, 'stock_reserved', i.stock_reserved,
+                           'inventory_mode', i.inventory_mode, 'verified_at', i.verified_at, 'version', i.version)
+  from public.inventory i where i.product_id = p.id)`;
+
 export type AdminProductRow = {
   id: string;
   sku: string;
@@ -54,38 +59,28 @@ export type AdminProductRow = {
   inventory: Inventory | null;
 };
 
-const productColumns = `
-  id, sku, motif, collection_id, status, price_cents, sale_enabled, price_version, weight_grams, updated_at,
-  parent_id, variant_label_en, variant_label_es, variant_order, categories ( code ),
-  product_translations ( locale, slug, title, summary, description, seo_title, seo_description ),
-  inventory ( stock_on_hand, stock_reserved, inventory_mode, verified_at, version )
-`;
+/** Columns of the admin product list, with category, translations and stock nested as PostgREST did. */
+const productSelect = sql`
+  select p.id, p.sku, p.motif, p.collection_id, p.status, p.price_cents, p.sale_enabled, p.price_version,
+         p.weight_grams, p.updated_at, p.parent_id, p.variant_label_en, p.variant_label_es, p.variant_order,
+         (select json_build_object('code', c.code) from public.categories c where c.id = p.category_id) as categories,
+         coalesce((
+           select json_agg(json_build_object('locale', t.locale, 'slug', t.slug, 'title', t.title, 'summary', t.summary,
+                                             'description', t.description, 'seo_title', t.seo_title,
+                                             'seo_description', t.seo_description))
+           from public.product_translations t where t.product_id = p.id), '[]'::json) as product_translations,
+         ${inventoryJson} as inventory
+  from public.products p`;
 
-export async function listAdminProducts(
-  client: SupabaseClient,
-): Promise<AdminProductRow[]> {
-  const { data, error } = await client
-    .from('products')
-    .select(productColumns)
-    .order('editorial_order', { ascending: true });
-
-  if (error) throw mapPgError(error);
-  return (data ?? []) as unknown as AdminProductRow[];
+export async function listAdminProducts(client: Db): Promise<AdminProductRow[]> {
+  return dbCall(() => client.rows<AdminProductRow>`${productSelect} order by p.editorial_order`);
 }
 
-export async function listVariants(
-  client: SupabaseClient,
-  parentId: string,
-): Promise<AdminVariantRow[]> {
-  const { data, error } = await client
-    .from('products')
-    .select(
-      'id, sku, status, price_cents, sale_enabled, variant_label_en, variant_label_es, variant_order, inventory ( stock_on_hand, stock_reserved, inventory_mode, verified_at, version )',
-    )
-    .eq('parent_id', parentId)
-    .order('variant_order');
-  if (error) throw mapPgError(error);
-  return (data ?? []) as unknown as AdminVariantRow[];
+export async function listVariants(client: Db, parentId: string): Promise<AdminVariantRow[]> {
+  return dbCall(() => client.rows<AdminVariantRow>`
+    select p.id, p.sku, p.status, p.price_cents, p.sale_enabled, p.variant_label_en, p.variant_label_es,
+           p.variant_order, ${inventoryJson} as inventory
+    from public.products p where p.parent_id = ${parentId} order by p.variant_order`);
 }
 
 export type ProductImageRow = {
@@ -96,65 +91,30 @@ export type ProductImageRow = {
   objectPath: string;
 };
 
-export async function listProductImages(
-  client: SupabaseClient,
-  productId: string,
-): Promise<ProductImageRow[]> {
-  const { data, error } = await client
-    .from('product_images')
-    .select('media_asset_id, position, is_cover, media_assets ( bucket, object_path )')
-    .eq('product_id', productId)
-    .order('position');
-  if (error) throw mapPgError(error);
-  type Raw = {
-    media_asset_id: string;
-    position: number;
-    is_cover: boolean;
-    media_assets: { bucket: string; object_path: string } | null;
-  };
-  return ((data ?? []) as unknown as Raw[])
-    .filter((row) => row.media_assets)
-    .map((row) => ({
-      mediaAssetId: row.media_asset_id,
-      position: row.position,
-      isCover: row.is_cover,
-      bucket: row.media_assets!.bucket,
-      objectPath: row.media_assets!.object_path,
-    }))
-    .sort((a, b) => Number(b.isCover) - Number(a.isCover) || a.position - b.position);
+export async function listProductImages(client: Db, productId: string): Promise<ProductImageRow[]> {
+  return dbCall(() => client.rows<ProductImageRow>`
+    select i.media_asset_id as "mediaAssetId", i.position, i.is_cover as "isCover",
+           m.bucket, m.object_path as "objectPath"
+    from public.product_images i join public.media_assets m on m.id = i.media_asset_id
+    where i.product_id = ${productId}
+    order by i.is_cover desc, i.position`);
 }
 
 /** Replaces the photo set. The first id is the main photo; the rest keep their order. */
-export async function setProductImages(
-  client: SupabaseClient,
-  productId: string,
-  mediaAssetIds: string[],
-): Promise<void> {
+export async function setProductImages(client: Db, productId: string, mediaAssetIds: string[]): Promise<void> {
   const unique = [...new Set(mediaAssetIds)];
-  const current = await client.from('product_images').select('media_asset_id').eq('product_id', productId);
-  if (current.error) throw mapPgError(current.error);
-  const stale = (current.data ?? [])
-    .map((row) => row.media_asset_id as string)
-    .filter((id) => !unique.includes(id));
-  if (stale.length > 0) {
-    const removed = await client
-      .from('product_images')
-      .delete()
-      .eq('product_id', productId)
-      .in('media_asset_id', stale);
-    if (removed.error) throw mapPgError(removed.error);
-  }
-  if (unique.length === 0) return;
-  const { error } = await client.from('product_images').upsert(
-    unique.map((id, position) => ({
-      product_id: productId,
-      media_asset_id: id,
-      position,
-      is_cover: position === 0,
-    })),
-    { onConflict: 'product_id,media_asset_id' },
-  );
-  if (error) throw mapPgError(error);
+  await dbCall(async () => {
+    await client.run`
+      delete from public.product_images
+      where product_id = ${productId} and not (media_asset_id = any(${unique}::uuid[]))`;
+    if (unique.length === 0) return;
+    await client.run`
+      insert into public.product_images ${insertValues(
+        unique.map((id, position) => ({ product_id: productId, media_asset_id: id, position, is_cover: position === 0 })),
+      )}
+      on conflict (product_id, media_asset_id) do update
+        set position = excluded.position, is_cover = excluded.is_cover`;
+  });
 }
 
 export type CreateProductInput = {
@@ -171,75 +131,53 @@ export type CreateProductInput = {
 };
 
 /** Put a product in a shop category (Admin › Tienda › Categorías), or take it out with null. */
-export async function setProductCollection(client: SupabaseClient, id: string, collectionId: string | null): Promise<void> {
-  const { error } = await client.from('products').update({ collection_id: collectionId }).eq('id', id);
-  if (error) throw mapPgError(error);
+export async function setProductCollection(client: Db, id: string, collectionId: string | null): Promise<void> {
+  await dbCall(() => client.run`update public.products set collection_id = ${collectionId} where id = ${id}`);
 }
 
 /**
  * The order of the pieces of one type (all the mugs…), as the shop shows them
  * when that type is picked. Options follow their product.
  */
-export async function reorderProducts(client: SupabaseClient, ids: string[]): Promise<void> {
-  const { error } = await client.rpc('admin_reorder_products', { p_ids: ids });
-  if (error) throw mapPgError(error);
+export async function reorderProducts(client: Db, ids: string[]): Promise<void> {
+  await dbCall(() => client.run`select public.admin_reorder_products(p_ids => ${ids}::uuid[])`);
 }
 
-export async function createAdminProduct(
-  client: SupabaseClient,
-  input: CreateProductInput,
-): Promise<string> {
-  const { data, error } = await client.rpc('admin_create_product', { p: input });
-  if (error) throw mapPgError(error);
-  return data as string;
+export async function createAdminProduct(client: Db, input: CreateProductInput): Promise<string> {
+  const row = await dbCall(() => client.one<{ id: string }>`select public.admin_create_product(p => ${json(input)}) as id`);
+  return row!.id;
 }
 
-export async function deleteAdminProduct(
-  client: SupabaseClient,
-  id: string,
-): Promise<'deleted' | 'archived'> {
-  const { data, error } = await client.rpc('admin_delete_product', { p_product_id: id });
-  if (error) throw mapPgError(error);
-  return data as 'deleted' | 'archived';
+export async function deleteAdminProduct(client: Db, id: string): Promise<'deleted' | 'archived'> {
+  const row = await dbCall(() =>
+    client.one<{ result: 'deleted' | 'archived' }>`select public.admin_delete_product(p_product_id => ${id}) as result`,
+  );
+  return row!.result;
 }
 
 /** Variation titles follow the parent title plus their own label. */
-export async function syncVariantTitles(client: SupabaseClient, parentId: string): Promise<void> {
-  const { data: parent, error } = await client
-    .from('product_translations')
-    .select('locale, title')
-    .eq('product_id', parentId);
-  if (error) throw mapPgError(error);
-  const variants = await listVariants(client, parentId);
-  for (const variant of variants) {
-    for (const row of parent ?? []) {
-      const label = row.locale === 'es' ? variant.variant_label_es : variant.variant_label_en;
-      const { error: updateError } = await client
-        .from('product_translations')
-        .update({ title: variantTitle(row.title as string, label) })
-        .eq('product_id', variant.id)
-        .eq('locale', row.locale);
-      if (updateError) throw mapPgError(updateError);
+export async function syncVariantTitles(client: Db, parentId: string): Promise<void> {
+  await dbCall(async () => {
+    const parent = await client.rows<{ locale: 'en' | 'es'; title: string }>`
+      select locale, title from public.product_translations where product_id = ${parentId}`;
+    const variants = await listVariants(client, parentId);
+    for (const variant of variants) {
+      for (const row of parent) {
+        const label = row.locale === 'es' ? variant.variant_label_es : variant.variant_label_en;
+        await client.run`
+          update public.product_translations set title = ${variantTitle(row.title, label)}
+          where product_id = ${variant.id} and locale = ${row.locale}`;
+      }
     }
-  }
+  });
 }
 
-export async function getAdminProduct(
-  client: SupabaseClient,
-  id: string,
-): Promise<AdminProductRow | null> {
-  const { data, error } = await client
-    .from('products')
-    .select(productColumns)
-    .eq('id', id)
-    .maybeSingle();
-
-  if (error) throw mapPgError(error);
-  return (data as unknown as AdminProductRow) ?? null;
+export async function getAdminProduct(client: Db, id: string): Promise<AdminProductRow | null> {
+  return dbCall(() => client.one<AdminProductRow>`${productSelect} where p.id = ${id}`);
 }
 
 export async function updateAdminProduct(
-  client: SupabaseClient,
+  client: Db,
   id: string,
   patch: {
     status?: 'draft' | 'published' | 'archived';
@@ -256,90 +194,68 @@ export async function updateAdminProduct(
     es?: TranslationPatch;
   },
 ): Promise<void> {
-  if (patch.expectedUpdatedAt) {
-    const { data: current, error: curErr } = await client
-      .from('products')
-      .select('updated_at')
-      .eq('id', id)
-      .maybeSingle();
-    if (curErr) throw mapPgError(curErr);
-    if (!current) {
-      throw new CommerceError('UNAVAILABLE', 'Product not found', 404);
+  await dbCall(async () => {
+    if (patch.expectedUpdatedAt) {
+      const current = await client.one<{ updated_at: string }>`select updated_at from public.products where id = ${id}`;
+      if (!current) {
+        throw new CommerceError('UNAVAILABLE', 'Product not found', 404);
+      }
+      if (current.updated_at !== patch.expectedUpdatedAt) {
+        throw new CommerceError('CONFLICT', 'Product was edited elsewhere — reload and try again', 409);
+      }
     }
-    if (current.updated_at !== patch.expectedUpdatedAt) {
-      throw new CommerceError(
-        'CONFLICT',
-        'Product was edited elsewhere — reload and try again',
-        409,
-      );
+
+    const productPatch: Record<string, unknown> = {};
+    if (patch.status) productPatch.status = patch.status;
+    if (typeof patch.priceCents === 'number') {
+      productPatch.price_cents = patch.priceCents;
+      // Bump price version when price changes so open quotes invalidate.
+      const current = await client.one<{ price_cents: number; price_version: number | null }>`
+        select price_cents, price_version from public.products where id = ${id}`;
+      if (current && current.price_cents !== patch.priceCents) {
+        productPatch.price_version = (current.price_version ?? 1) + 1;
+      }
     }
-  }
-
-  const productPatch: Record<string, unknown> = {};
-  if (patch.status) productPatch.status = patch.status;
-  if (typeof patch.priceCents === 'number') {
-    productPatch.price_cents = patch.priceCents;
-    // Bump price version when price changes so open quotes invalidate.
-    const { data: current } = await client
-      .from('products')
-      .select('price_cents, price_version')
-      .eq('id', id)
-      .maybeSingle();
-    if (current && current.price_cents !== patch.priceCents) {
-      productPatch.price_version = (current.price_version ?? 1) + 1;
+    if (typeof patch.saleEnabled === 'boolean') {
+      productPatch.sale_enabled = patch.saleEnabled;
     }
-  }
-  if (typeof patch.saleEnabled === 'boolean') {
-    productPatch.sale_enabled = patch.saleEnabled;
-  }
-  if (typeof patch.weightGrams === 'number') {
-    productPatch.weight_grams = patch.weightGrams;
-    const { error: variantsErr } = await client
-      .from('products')
-      .update({ weight_grams: patch.weightGrams })
-      .eq('parent_id', id);
-    if (variantsErr) throw mapPgError(variantsErr);
-  }
-  if (patch.motif) productPatch.motif = patch.motif;
-  if (patch.collectionId !== undefined) {
-    productPatch.collection_id = patch.collectionId;
-    // Variations belong to their product's shop category.
-    const { error: variantsErr } = await client
-      .from('products')
-      .update({ collection_id: patch.collectionId })
-      .eq('parent_id', id);
-    if (variantsErr) throw mapPgError(variantsErr);
-  }
-  if (patch.sku) productPatch.sku = patch.sku;
-  if (patch.variantLabelEn !== undefined) productPatch.variant_label_en = patch.variantLabelEn;
-  if (patch.variantLabelEs !== undefined) productPatch.variant_label_es = patch.variantLabelEs;
+    if (typeof patch.weightGrams === 'number') {
+      productPatch.weight_grams = patch.weightGrams;
+      await client.run`update public.products set weight_grams = ${patch.weightGrams} where parent_id = ${id}`;
+    }
+    if (patch.motif) productPatch.motif = patch.motif;
+    if (patch.collectionId !== undefined) {
+      productPatch.collection_id = patch.collectionId;
+      // Variations belong to their product's shop category.
+      await client.run`update public.products set collection_id = ${patch.collectionId} where parent_id = ${id}`;
+    }
+    if (patch.sku) productPatch.sku = patch.sku;
+    if (patch.variantLabelEn !== undefined) productPatch.variant_label_en = patch.variantLabelEn;
+    if (patch.variantLabelEs !== undefined) productPatch.variant_label_es = patch.variantLabelEs;
 
-  if (Object.keys(productPatch).length > 0) {
-    const { error } = await client.from('products').update(productPatch).eq('id', id);
-    if (error) throw mapPgError(error);
-  }
+    if (Object.keys(productPatch).length > 0) {
+      await client.run`update public.products set ${setColumns(productPatch)} where id = ${id}`;
+    }
 
-  for (const locale of ['en', 'es'] as const) {
-    const loc = patch[locale];
-    if (!loc) continue;
-    const trPatch: Record<string, unknown> = {};
-    if (loc.title !== undefined) trPatch.title = loc.title;
-    if (loc.summary !== undefined) trPatch.summary = loc.summary;
-    if (loc.description !== undefined) trPatch.description = loc.description;
-    if (loc.slug !== undefined) trPatch.slug = loc.slug;
-    if (loc.seoTitle !== undefined) trPatch.seo_title = loc.seoTitle.trim() || null;
-    if (loc.seoDescription !== undefined) trPatch.seo_description = loc.seoDescription.trim() || null;
-    if (Object.keys(trPatch).length === 0) continue;
-    const { error } = await client
-      .from('product_translations')
-      .update(trPatch)
-      .eq('product_id', id)
-      .eq('locale', locale);
-    if (error) throw mapPgError(error);
-  }
+    for (const locale of ['en', 'es'] as const) {
+      const loc = patch[locale];
+      if (!loc) continue;
+      const trPatch: Record<string, unknown> = {};
+      if (loc.title !== undefined) trPatch.title = loc.title;
+      if (loc.summary !== undefined) trPatch.summary = loc.summary;
+      if (loc.description !== undefined) trPatch.description = loc.description;
+      if (loc.slug !== undefined) trPatch.slug = loc.slug;
+      if (loc.seoTitle !== undefined) trPatch.seo_title = loc.seoTitle.trim() || null;
+      if (loc.seoDescription !== undefined) trPatch.seo_description = loc.seoDescription.trim() || null;
+      if (Object.keys(trPatch).length === 0) continue;
+      await client.run`
+        update public.product_translations set ${setColumns(trPatch)}
+        where product_id = ${id} and locale = ${locale}`;
+    }
 
-  const { data: row } = await client.from('products').select('parent_id').eq('id', id).maybeSingle();
-  await syncVariantTitles(client, (row?.parent_id as string | null) ?? id);
+    const row = await client.one<{ parent_id: string | null }>`select parent_id from public.products where id = ${id}`;
+    await syncVariantTitles(client, row?.parent_id ?? id);
+  });
 }
 
 type TranslationPatch = {
@@ -352,7 +268,7 @@ type TranslationPatch = {
 };
 
 export async function adjustProductInventory(
-  client: SupabaseClient,
+  client: Db,
   opts: {
     productId: string;
     stockOnHand: number;
@@ -361,13 +277,9 @@ export async function adjustProductInventory(
     note?: string;
   },
 ) {
-  const { data, error } = await client.rpc('adjust_inventory', {
-    p_product_id: opts.productId,
-    p_stock_on_hand: opts.stockOnHand,
-    p_inventory_mode: opts.inventoryMode,
-    p_admin_user_id: opts.adminUserId,
-    p_note: opts.note ?? null,
-  });
-  if (error) throw mapPgError(error);
-  return data;
+  return dbCall(() => client.one`
+    select * from public.adjust_inventory(
+      p_product_id => ${opts.productId}, p_stock_on_hand => ${opts.stockOnHand},
+      p_inventory_mode => ${opts.inventoryMode}::public.inventory_mode, p_admin_user_id => ${opts.adminUserId},
+      p_note => ${opts.note ?? null})`);
 }

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
 
 export const prerender = false;
@@ -14,8 +14,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     if (!admin) return forbidden();
     const id = z.uuid().parse(params.id);
     const body = patchSchema.parse(await request.json());
-    const { error } = await admin.client.from('shipping_zones').update({ active: body.active }).eq('id', id);
-    if (error) throw mapPgError(error);
+    await dbCall(() => admin.db.run`update public.shipping_zones set active = ${body.active} where id = ${id}`);
     await audit(admin, 'update_shipping_zone', 'shipping_zones', id, body);
     return Response.json({ ok: true });
   } catch (err) {
@@ -28,8 +27,7 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const id = z.uuid().parse(params.id);
-    const { error } = await admin.client.from('shipping_zones').delete().eq('id', id);
-    if (error) throw mapPgError(error);
+    await dbCall(() => admin.db.run`delete from public.shipping_zones where id = ${id}`);
     await audit(admin, 'delete_shipping_zone', 'shipping_zones', id, {});
     return Response.json({ ok: true });
   } catch (err) {

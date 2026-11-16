@@ -1,5 +1,5 @@
 ---
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { siteUrl } from '@/lib/server/env';
 import { loadPaymentConfig, type PaymentProvider } from '@/lib/server/payments/config';
 import {
@@ -10,7 +10,7 @@ import {
 } from '@/lib/server/payments/connect';
 
 interface Props {
-  client: SupabaseClient;
+  client: Db;
 }
 
 const rows = await listProviderRows(Astro.props.client).catch(() => []);

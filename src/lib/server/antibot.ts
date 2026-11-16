@@ -12,7 +12,7 @@ import {
   type Interaction,
   type Signal,
 } from '@/lib/domain/antibot';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 
 /**
  * Anti-bot gate for the public forms, in layers:
@@ -94,9 +94,9 @@ type TokenPayload = { f: AntibotForm; t: number; n: string; d: number; ip: strin
 export async function issueChallenge(form: AntibotForm, ip: string) {
   const ipHash = hashOf('ip', ip);
   let difficulty = BASE_DIFFICULTY;
-  const service = createServiceClient();
+  const service = serviceDb();
   if (service) {
-    const { data } = await service.rpc('antibot_pressure', { p_ip_hash: ipHash });
+    const data = await service.call<number>('antibot_pressure', { p_ip_hash: ipHash }).catch(() => 0);
     const stopped = Number(data ?? 0);
     if (stopped >= 3) difficulty = BASE_DIFFICULTY + 4;
     else if (stopped >= 1) difficulty = BASE_DIFFICULTY + 2;
@@ -226,21 +226,19 @@ export async function inspect(submission: Submission): Promise<Verdict> {
   const score = Math.min(1000, signals.points);
   const local: Verdict = { verdict: score >= BLOCK_SCORE ? 'block' : 'allow', score, reasons: signals.reasons };
 
-  const service = createServiceClient();
+  const service = serviceDb();
   if (!service) return local;
-  const { data, error } = await service.rpc('antibot_gate', {
-    p_form: form,
-    p_ip_hash: ipHash,
-    p_email_hash: email ? hashOf('email', canonicalEmail(email)) : null,
-    p_email_hint: email ? maskEmail(email) : null,
-    p_nonce: nonce,
-    p_verdict: local.verdict,
-    p_score: score,
-    p_reasons: local.reasons,
-  });
-  if (error) {
+  let data: unknown;
+  try {
+    data = await service.one`
+      select public.antibot_gate(
+        p_form => ${form}, p_ip_hash => ${ipHash},
+        p_email_hash => ${email ? hashOf('email', canonicalEmail(email)) : null},
+        p_email_hint => ${email ? maskEmail(email) : null}, p_nonce => ${nonce}, p_verdict => ${local.verdict},
+        p_score => ${score}, p_reasons => ${local.reasons}::text[]) as result`.then((row) => row?.result);
+  } catch (err) {
     // Without the database there are no rate limits, but the rest still holds.
-    console.error('antibot_gate failed', error.message);
+    console.error('antibot_gate failed', err instanceof Error ? err.message : err);
     return local;
   }
   const gate = data as { verdict: Verdict['verdict']; reasons: string[] };
@@ -250,10 +248,11 @@ export async function inspect(submission: Submission): Promise<Verdict> {
 /** Tell the gate a sign-in worked: it never counts against the owner (see antibot_signed_in). */
 export async function reportSignedIn(fields: Record<string, unknown>): Promise<void> {
   const payload = typeof fields._ab_token === 'string' ? readToken(fields._ab_token) : null;
-  const service = createServiceClient();
+  const service = serviceDb();
   if (!payload || !service) return;
-  const { error } = await service.rpc('antibot_signed_in', { p_nonce: payload.n });
-  if (error) console.error('antibot_signed_in failed', error.message);
+  await service.call('antibot_signed_in', { p_nonce: payload.n }).catch((err: unknown) => {
+    console.error('antibot_signed_in failed', err instanceof Error ? err.message : err);
+  });
 }
 
 /** The posted fields without the ones the gate added, for strict schemas. */

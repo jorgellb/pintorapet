@@ -1,6 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { json, sql, type Db } from '@/lib/server/db';
 import { CommerceError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { CorreosApiError, loadCorreosConfig, trackShipment } from './correos';
 import { nextFulfillment, parseCorreosTracking } from './tracking';
 
@@ -9,7 +9,7 @@ export type TrackingSync = { status: string; changed: boolean; summary: string |
 type TrackedOrder = { id: string; carrier: string | null; tracking_code: string | null; fulfillment_status: string };
 
 /** Ask Correos about one order's parcel and keep its events; the state only moves forward (or to trouble). */
-async function syncOne(client: SupabaseClient, order: TrackedOrder): Promise<TrackingSync> {
+async function syncOne(client: Db, order: TrackedOrder): Promise<TrackingSync> {
   if (order.carrier !== 'correos' || !order.tracking_code) {
     throw new CommerceError('VALIDATION', 'Este pedido no tiene un envío de Correos con número de seguimiento.', 409);
   }
@@ -26,42 +26,36 @@ async function syncOne(client: SupabaseClient, order: TrackedOrder): Promise<Tra
   }
   const parsed = parseCorreosTracking(payload);
   const status = nextFulfillment(order.fulfillment_status, parsed.status);
-  const { error } = await client
-    .from('orders')
-    .update({
-      tracking_events: parsed.events,
-      tracking_status: parsed.summary,
-      tracking_checked_at: new Date().toISOString(),
-      fulfillment_status: status,
-    })
-    .eq('id', order.id);
-  if (error) throw mapPgError(error);
+  await dbCall(() => client.run`
+    update public.orders
+    set tracking_events = ${json(parsed.events)}, tracking_status = ${parsed.summary}, tracking_checked_at = now(),
+        fulfillment_status = ${status}::public.fulfillment_status
+    where id = ${order.id}`);
   return { status, changed: status !== order.fulfillment_status, summary: parsed.summary, events: parsed.events.length };
 }
 
-const COLUMNS = 'id, carrier, tracking_code, fulfillment_status';
+const COLUMNS = sql`id, carrier, tracking_code, fulfillment_status`;
 
-export async function syncOrderTracking(client: SupabaseClient, orderId: string): Promise<TrackingSync> {
-  const { data, error } = await client.from('orders').select(COLUMNS).eq('id', orderId).maybeSingle();
-  if (error) throw mapPgError(error);
+export async function syncOrderTracking(client: Db, orderId: string): Promise<TrackingSync> {
+  const data = await dbCall(() => client.one<TrackedOrder>`select ${COLUMNS} from public.orders where id = ${orderId}`);
   if (!data) throw new CommerceError('UNAVAILABLE', 'Pedido no encontrado.', 404);
-  return syncOne(client, data as TrackedOrder);
+  return syncOne(client, data);
 }
 
 /** Every Correos parcel still on its way (daily cron). Quiet when Correos is not connected. */
-export async function syncOpenShipments(service: SupabaseClient, limit = 40): Promise<{ checked: number; changed: number }> {
+export async function syncOpenShipments(service: Db, limit = 40): Promise<{ checked: number; changed: number }> {
   if (!(await loadCorreosConfig())) return { checked: 0, changed: 0 };
-  const { data } = await service
-    .from('orders')
-    .select(COLUMNS)
-    .eq('carrier', 'correos')
-    .not('tracking_code', 'is', null)
-    .in('fulfillment_status', ['shipped', 'in_transit', 'out_for_delivery', 'incident'])
-    .order('tracking_checked_at', { ascending: true, nullsFirst: true })
-    .limit(limit);
+  const data = await service
+    .rows<TrackedOrder>`
+      select ${COLUMNS} from public.orders
+      where carrier = 'correos' and tracking_code is not null
+        and fulfillment_status in ('shipped', 'in_transit', 'out_for_delivery', 'incident')
+      order by tracking_checked_at asc nulls first
+      limit ${limit}`
+    .catch(() => []);
   let checked = 0;
   let changed = 0;
-  for (const order of (data ?? []) as TrackedOrder[]) {
+  for (const order of data) {
     try {
       const result = await syncOne(service, order);
       checked += 1;

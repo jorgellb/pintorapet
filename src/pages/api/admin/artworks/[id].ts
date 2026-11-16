@@ -13,7 +13,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     const id = params.id;
     if (!id) return jsonError(new CommerceError('VALIDATION', 'Missing artwork id', 400));
     const input = artworkSchema.parse(await request.json());
-    await updateArtwork(admin.client, id, input);
+    await updateArtwork(admin.db, id, input);
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);

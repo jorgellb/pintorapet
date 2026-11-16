@@ -2,8 +2,8 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 import { mapPgError } from '@/lib/server/commerce/pgErrors';
-import { hasServiceSupabase } from '@/lib/server/env';
-import { createServiceClient } from '@/lib/server/supabase';
+import { hasDatabase } from '@/lib/server/db';
+import { serviceDb } from '@/lib/server/db';
 import { formatEur } from '@/lib/domain/money';
 import { trackingUrl } from '@/lib/server/shipping/correos';
 
@@ -19,7 +19,7 @@ const bodySchema = z
 
 export const POST: APIRoute = async ({ request }) => {
   try {
-    if (!hasServiceSupabase()) {
+    if (!hasDatabase()) {
       return Response.json(
         {
           error: {
@@ -32,7 +32,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const body = bodySchema.parse(await request.json());
-    const supabase = createServiceClient();
+    const supabase = serviceDb();
     if (!supabase) {
       throw new CommerceError(
         'NOT_CONFIGURED',
@@ -41,12 +41,10 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    const { data, error } = await supabase.rpc('lookup_guest_order', {
-      p_reference: body.reference,
-      p_access_token: body.accessToken,
-    });
-
-    if (error) {
+    let data: unknown;
+    try {
+      data = await supabase.call('lookup_guest_order', { p_reference: body.reference, p_access_token: body.accessToken });
+    } catch (error) {
       const mapped = mapPgError(error);
       if (
         mapped.message.includes('ORDER_LOOKUP_DENIED') ||

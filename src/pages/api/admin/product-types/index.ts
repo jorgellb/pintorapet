@@ -11,7 +11,7 @@ export const POST: APIRoute = async ({ cookies, request }) => {
   if (!admin) return forbidden();
   try {
     const input = newProductTypeSchema.parse(await request.json());
-    const id = await createProductType(admin.client, input);
+    const id = await createProductType(admin.db, input);
     await audit(admin, 'create_product_type', 'categories', id, { code: input.code });
     return Response.json({ ok: true, id });
   } catch (err) {

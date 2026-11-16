@@ -84,3 +84,13 @@ export function mapPgError(err: unknown): CommerceError {
     pg: message,
   });
 }
+
+/** Runs database work, turning PostgreSQL errors into CommerceErrors (ones already mapped pass through). */
+export async function dbCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof CommerceError) throw err;
+    throw mapPgError(err);
+  }
+}

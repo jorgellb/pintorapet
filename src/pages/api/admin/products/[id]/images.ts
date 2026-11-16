@@ -14,7 +14,7 @@ export const PUT: APIRoute = async ({ params, request, cookies }) => {
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const id = z.string().uuid().parse(params.id);
     const body = bodySchema.parse(await request.json());
-    await setProductImages(admin.client, id, body.mediaAssetIds);
+    await setProductImages(admin.db, id, body.mediaAssetIds);
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);

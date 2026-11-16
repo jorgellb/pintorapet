@@ -25,7 +25,7 @@ export const POST: APIRoute = async ({ params, request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const id = z.uuid().parse(params.id);
-    const created = await createCorreosShipment(admin.client, id);
+    const created = await createCorreosShipment(admin.db, id);
     await audit(admin, 'create_shipment', 'orders', id, created);
     return Response.json({ ok: true, ...created });
   } catch (err) {
@@ -40,7 +40,7 @@ export const PUT: APIRoute = async ({ params, request, cookies }) => {
     if (!admin) return forbidden();
     const id = z.uuid().parse(params.id);
     const body = trackingSchema.parse(await request.json());
-    await markShipped(admin.client, id, body);
+    await markShipped(admin.db, id, body);
     await audit(admin, 'mark_order_shipped', 'orders', id, body);
     return Response.json({ ok: true });
   } catch (err) {
@@ -53,7 +53,7 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const id = z.uuid().parse(params.id);
-    await cancelCorreosShipment(admin.client, id);
+    await cancelCorreosShipment(admin.db, id);
     await audit(admin, 'cancel_shipment', 'orders', id, {});
     return Response.json({ ok: true });
   } catch (err) {
@@ -67,7 +67,7 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const id = z.uuid().parse(params.id);
-    const { pdf, reference } = await correosLabel(admin.client, id);
+    const { pdf, reference } = await correosLabel(admin.db, id);
     return new Response(new Uint8Array(pdf), {
       headers: {
         'Content-Type': 'application/pdf',

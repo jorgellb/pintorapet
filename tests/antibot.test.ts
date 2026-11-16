@@ -11,7 +11,8 @@ import {
   nameSignal,
 } from '../src/lib/domain/antibot';
 
-vi.mock('@/lib/server/supabase', () => ({ createServiceClient: () => null }));
+// No database: the gate runs on its own, as in a fresh checkout.
+vi.mock('@/lib/server/db', async (original) => ({ ...(await original<typeof import('@/lib/server/db')>()), serviceDb: () => null }));
 
 describe('nameSignal', () => {
   it('flags the random strings bots paste as names', () => {

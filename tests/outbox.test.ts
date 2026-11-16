@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fakeDb } from './helpers/fakeDb';
 
 const send = vi.fn();
 vi.mock('resend', () => ({
@@ -15,23 +16,25 @@ vi.mock('@/lib/server/env', () => ({
 
 const { sendOrderEmails } = await import('../src/lib/server/commerce/outbox');
 
-/** Just enough of the Supabase client: one rpc and update().eq().eq(). */
-function fakeSupabase(rows: unknown[], rpcError: unknown = null) {
+/** The claim returns `rows`; each outbox update is recorded as { status, last_error, id }. */
+function fakeSupabase(rows: unknown[], claimError: unknown = null) {
   const updates: Array<{ values: Record<string, unknown>; id: unknown }> = [];
-  const client = {
-    rpc: vi.fn(async () => ({ data: rows, error: rpcError })),
-    from: () => ({
-      update: (values: Record<string, unknown>) => ({
-        eq: (_col: string, id: unknown) => ({
-          eq: async () => {
-            updates.push({ values, id });
-            return { error: null };
-          },
-        }),
-      }),
-    }),
-  };
-  return { client: client as never, updates, rpc: client.rpc };
+  const { db, queries } = fakeDb({
+    query: (q) => {
+      if (q.text.includes('claim_outbox_for_order')) {
+        if (claimError) throw claimError;
+        return rows;
+      }
+      if (q.text.includes('update public.notification_outbox')) {
+        const [owner, id, lastError] = [q.values.at(-1), q.values.at(-2), q.values.at(-3)];
+        const sent = q.text.includes("status = 'sent'");
+        updates.push({ values: sent ? { status: 'sent' } : { status: 'failed', last_error: lastError }, id });
+        return owner ? 1 : 0;
+      }
+      return undefined;
+    },
+  });
+  return { client: db, updates, queries };
 }
 
 const paid = (id: string, template: string, recipient: string) => ({
@@ -48,13 +51,14 @@ describe('sendOrderEmails', () => {
 
   it("claims only that order's emails and sends them now", async () => {
     send.mockResolvedValue({ error: null });
-    const { client, updates, rpc } = fakeSupabase([
+    const { client, updates, queries } = fakeSupabase([
       paid('r1', 'order_paid_customer', 'ana@example.com'),
       paid('r2', 'order_paid_admin', 'admin'),
     ]);
     await sendOrderEmails(client, 'order-1');
 
-    expect(rpc).toHaveBeenCalledWith('claim_outbox_for_order', expect.objectContaining({ p_order_id: 'order-1' }));
+    expect(queries[0]?.text).toContain('claim_outbox_for_order(p_order_id => $1');
+    expect(queries[0]?.values[0]).toBe('order-1');
     expect(send.mock.calls.map(([mail]) => mail.to)).toEqual(['ana@example.com', 'info@petsdrawings.com']);
     const studio = send.mock.calls[1][0];
     expect(studio.subject).toBe('Pedido nuevo PD-ABC123');

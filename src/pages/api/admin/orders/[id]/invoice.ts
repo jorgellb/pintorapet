@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { adminCurrentInvoice, invoicePdfResponse } from '@/lib/server/invoices/serve';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
 
@@ -14,9 +14,9 @@ export const GET: APIRoute = async ({ params, cookies, request, url }) => {
   try {
     const wanted = url.searchParams.get('factura');
     const invoiceId = wanted && /^[0-9a-f-]{36}$/i.test(wanted) ? wanted : null;
-    const invoice = await adminCurrentInvoice(admin.client, String(params.id), invoiceId);
+    const invoice = await adminCurrentInvoice(admin.db, String(params.id), invoiceId);
     if (!invoice) return jsonError(new CommerceError('UNAVAILABLE', 'Este pedido no tiene factura.', 404));
-    return invoicePdfResponse(invoice, admin.client);
+    return invoicePdfResponse(invoice, admin.db);
   } catch (err) {
     return failure(err, 'No se pudo abrir la factura.');
   }
@@ -30,8 +30,7 @@ export const POST: APIRoute = async ({ params, cookies, request }) => {
   const admin = await requireAdmin(cookies, request);
   if (!admin) return forbidden();
   try {
-    const { data, error } = await admin.client.rpc('admin_issue_pending_invoices');
-    if (error) throw mapPgError(error);
+    const data = await dbCall(() => admin.db.call<number>('admin_issue_pending_invoices'));
     await audit(admin, 'issue_invoice', 'orders', String(params.id), {});
     return Response.json({ ok: true, id: data });
   } catch (err) {

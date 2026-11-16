@@ -1,22 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { insertValues, upsert, type Db } from '@/lib/server/db';
 import { Resend } from 'resend';
-import {
-  emailAdmin,
-  emailFrom,
-  hasResend,
-  hasServiceSupabase,
-} from '@/lib/server/env';
-import { createServiceClient } from '@/lib/server/supabase';
+import { emailAdmin, emailFrom, hasResend } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
+import { serviceDb } from '@/lib/server/db';
 import { CommerceError } from './errors';
-import { mapPgError } from './pgErrors';
+import { dbCall } from './pgErrors';
 
-function requireService(): SupabaseClient {
-  const client = createServiceClient();
-  if (!client || !hasServiceSupabase()) {
+function requireService(): Db {
+  const client = serviceDb();
+  if (!client || !hasDatabase()) {
     throw new CommerceError(
       'NOT_CONFIGURED',
-      'Supabase service role required to persist form submissions',
+      'A database is required to persist form submissions',
       503,
     );
   }
@@ -24,7 +20,7 @@ function requireService(): SupabaseClient {
 }
 
 async function enqueueOutbox(
-  supabase: SupabaseClient,
+  supabase: Db,
   row: {
     dedupeKey: string;
     recipient: string;
@@ -33,19 +29,16 @@ async function enqueueOutbox(
     payload: Record<string, unknown>;
   },
 ) {
-  const { error } = await supabase.from('notification_outbox').upsert(
-    {
-      dedupe_key: row.dedupeKey,
-      recipient: row.recipient,
-      locale: row.locale,
-      template_key: row.templateKey,
-      payload: row.payload,
-      status: 'pending',
-      next_run_at: new Date().toISOString(),
-    },
-    { onConflict: 'dedupe_key', ignoreDuplicates: true },
-  );
-  if (error) throw mapPgError(error);
+  const outboxRow = {
+    dedupe_key: row.dedupeKey,
+    recipient: row.recipient,
+    locale: row.locale,
+    template_key: row.templateKey,
+    payload: JSON.stringify(row.payload),
+    status: 'pending',
+    next_run_at: new Date().toISOString(),
+  };
+  await dbCall(() => supabase.run(upsert('notification_outbox', outboxRow, ['dedupe_key'], { ignoreDuplicates: true })));
 }
 
 async function sendNow(opts: {
@@ -84,19 +77,19 @@ const MAX_DEFERRED = 50;
  * for the day: the message is saved either way, nothing is dropped silently.
  */
 async function notifyStudio(
-  supabase: SupabaseClient,
+  supabase: Db,
   emailNow: boolean,
   form: 'contact' | 'commission',
   row: Parameters<typeof enqueueOutbox>[1],
 ): Promise<void> {
   if (!emailNow) {
-    const { count, error } = await supabase
-      .from('notification_outbox')
-      .select('id', { count: 'exact', head: true })
-      .in('template_key', ['contact_admin', 'commission_admin'])
-      // Everything not sent yet: failed rows are retried, leased ones in flight.
-      .in('status', ['pending', 'failed', 'leased']);
-    if (error || (count ?? 0) >= MAX_DEFERRED) {
+    // Everything not sent yet: failed rows are retried, leased ones in flight.
+    const count = await supabase
+      .one<{ n: number }>`
+        select count(*) as n from public.notification_outbox
+        where template_key in ('contact_admin', 'commission_admin') and status in ('pending', 'failed', 'leased')`
+      .then((row) => row?.n ?? 0, () => null);
+    if (count === null || count >= MAX_DEFERRED) {
       const day = new Date().toISOString().slice(0, 10);
       console.warn('anti-bot mail cap: message saved, studio gets one digest', form, day);
       await enqueueOutbox(supabase, {
@@ -127,21 +120,16 @@ export async function submitContact(
     ? `[${body.reason}]\n\n${body.message}`
     : body.message;
 
-  const { data, error } = await supabase
-    .from('contact_messages')
-    .insert({
+  const inserted = await dbCall(() => supabase.one<{ id: string }>`
+    insert into public.contact_messages ${insertValues({
       locale: body.locale,
       contact_name: body.name,
       contact_email: body.email,
       message,
       status: 'received',
-    })
-    .select('id')
-    .single();
-
-  if (error) throw mapPgError(error);
-
-  const id = data.id as string;
+    })}
+    returning id`);
+  const id = inserted!.id;
   await notifyStudio(supabase, emailNow, 'contact', {
     dedupeKey: `contact:${id}:admin`,
     recipient: emailAdmin(),
@@ -167,13 +155,9 @@ export async function submitContact(
             : `Website contact — ${body.name}`,
         text: `From: ${body.name} <${body.email}>\n\n${message}`,
       });
-      await supabase
-        .from('notification_outbox')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-        })
-        .eq('dedupe_key', `contact:${id}:admin`);
+      await supabase.run`
+        update public.notification_outbox set status = 'sent', sent_at = now()
+        where dedupe_key = ${`contact:${id}:admin`}`;
     } catch {
       // Leave pending for cron.
     }
@@ -196,9 +180,8 @@ export async function submitCommission(
   const supabase = requireService();
   const reference = `CR-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
 
-  const { data, error } = await supabase
-    .from('commission_requests')
-    .insert({
+  const inserted = await dbCall(() => supabase.one<{ id: string }>`
+    insert into public.commission_requests ${insertValues({
       reference,
       locale: body.locale,
       contact_name: body.name,
@@ -207,12 +190,9 @@ export async function submitCommission(
       subjects: String(body.subjects),
       message: body.message,
       status: 'received',
-    })
-    .select('id')
-    .single();
-
-  if (error) throw mapPgError(error);
-  const id = data.id as string;
+    })}
+    returning id`);
+  const id = inserted!.id;
 
   await notifyStudio(supabase, emailNow, 'commission', {
     dedupeKey: `commission:${id}:admin`,
@@ -240,13 +220,9 @@ export async function submitCommission(
             : `Commission ${reference} — ${body.name}`,
         text: `Reference: ${reference}\nFrom: ${body.name} <${body.email}>\nSize: ${body.size}\nSubjects: ${body.subjects}\n\n${body.message}`,
       });
-      await supabase
-        .from('notification_outbox')
-        .update({
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-        })
-        .eq('dedupe_key', `commission:${id}:admin`);
+      await supabase.run`
+        update public.notification_outbox set status = 'sent', sent_at = now()
+        where dedupe_key = ${`commission:${id}:admin`}`;
     } catch {
       // Cron will retry.
     }

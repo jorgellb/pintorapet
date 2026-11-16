@@ -1,7 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { json, upsert, type Db } from '@/lib/server/db';
 import type Stripe from 'stripe';
 import { CommerceError } from './errors';
-import { mapPgError } from './pgErrors';
+import { dbCall } from './pgErrors';
 import { sendOrderEmails } from './outbox';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
 import { stripeFor } from './stripeClient';
@@ -34,7 +34,7 @@ export async function constructStripeEvent(
 }
 
 export async function handleStripeEvent(
-  supabase: SupabaseClient,
+  supabase: Db,
   event: Stripe.Event,
 ): Promise<{ handled: boolean; detail?: unknown }> {
   switch (event.type) {
@@ -43,8 +43,7 @@ export async function handleStripeEvent(
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
         // Record and wait for a later paid event
-        await supabase.from('stripe_events').upsert(
-          {
+        await recordEvent(supabase, {
             event_id: event.id,
             event_type: event.type,
             related_object_id: session.id,
@@ -52,9 +51,7 @@ export async function handleStripeEvent(
             payload_summary: {
               payment_status: session.payment_status,
             },
-          },
-          { onConflict: 'event_id' },
-        );
+          });
         return { handled: true, detail: { ignored: 'not_paid' } };
       }
 
@@ -68,22 +65,19 @@ export async function handleStripeEvent(
         );
       }
 
-      const { data, error } = await supabase.rpc('apply_payment', {
-        p_order_id: orderId,
-        p_stripe_event_id: event.id,
-        p_stripe_session_id: session.id,
-        p_stripe_payment_intent_id:
-          typeof session.payment_intent === 'string'
-            ? session.payment_intent
-            : session.payment_intent?.id ?? null,
-        p_amount_total_cents: session.amount_total ?? 0,
-        p_currency: (session.currency ?? 'eur').toUpperCase(),
-        p_customer_email: session.customer_details?.email ?? null,
-        p_customer_name: session.customer_details?.name ?? null,
-        p_shipping_address: stripeShippingAddress(session),
-      });
-
-      if (error) throw mapPgError(error);
+      const paymentIntent =
+        typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
+      const shipping = stripeShippingAddress(session);
+      const data = (
+        await dbCall(() => supabase.one<{ result: unknown }>`
+          select public.apply_payment(
+            p_order_id => ${orderId}, p_stripe_event_id => ${event.id}, p_stripe_session_id => ${session.id},
+            p_stripe_payment_intent_id => ${paymentIntent}, p_amount_total_cents => ${session.amount_total ?? 0},
+            p_currency => ${(session.currency ?? 'eur').toUpperCase()},
+            p_customer_email => ${session.customer_details?.email ?? null},
+            p_customer_name => ${session.customer_details?.name ?? null},
+            p_shipping_address => ${shipping === null ? null : json(shipping)}) as result`)
+      )?.result;
       await sendOrderEmails(supabase, orderId);
       return { handled: true, detail: data };
     }
@@ -92,36 +86,29 @@ export async function handleStripeEvent(
       const session = event.data.object as Stripe.Checkout.Session;
       const attemptId = session.metadata?.attempt_id;
       if (!attemptId) {
-        await supabase.from('stripe_events').upsert(
-          {
+        await recordEvent(supabase, {
             event_id: event.id,
             event_type: event.type,
             related_object_id: session.id,
             status: 'ignored',
             payload_summary: { reason: 'no_attempt_id' },
-          },
-          { onConflict: 'event_id' },
-        );
+          });
         return { handled: true, detail: { ignored: true } };
       }
 
-      const { data, error } = await supabase.rpc('release_reservations', {
-        p_attempt_id: attemptId,
-        p_reason: 'stripe_session_expired',
-      });
-      if (error) throw mapPgError(error);
+      const data = (
+        await dbCall(() => supabase.one<{ result: unknown }>`
+          select public.release_reservations(p_attempt_id => ${attemptId}, p_reason => 'stripe_session_expired') as result`)
+      )?.result;
 
-      await supabase.from('stripe_events').upsert(
-        {
+      await recordEvent(supabase, {
           event_id: event.id,
           event_type: event.type,
           related_object_id: session.id,
           status: 'processed',
           processed_at: new Date().toISOString(),
           payload_summary: { attempt_id: attemptId, result: data },
-        },
-        { onConflict: 'event_id' },
-      );
+        });
 
       return { handled: true, detail: data };
     }
@@ -140,34 +127,44 @@ export async function handleStripeEvent(
           : refund.status === 'failed' || refund.status === 'canceled'
             ? await recordProviderRefundFailed(supabase, refund.id, refund.failure_reason ?? refund.status)
             : 'ignored';
-      await supabase.from('stripe_events').upsert(
-        {
+      await recordEvent(supabase, {
           event_id: event.id,
           event_type: event.type,
           related_object_id: refund.id,
           status: result === 'ignored' ? 'ignored' : 'processed',
           processed_at: new Date().toISOString(),
           payload_summary: { refund_status: refund.status, result },
-        },
-        { onConflict: 'event_id' },
-      );
+        });
       return { handled: true, detail: result };
     }
 
     default: {
-      await supabase.from('stripe_events').upsert(
-        {
+      await recordEvent(supabase, {
           event_id: event.id,
           event_type: event.type,
           related_object_id: null,
           status: 'ignored',
           payload_summary: { type: event.type },
-        },
-        { onConflict: 'event_id' },
-      );
+        });
       return { handled: true, detail: { ignored: event.type } };
     }
   }
+}
+
+/** Logs a Stripe event once (event_id); a later event with the same id updates what it brings. */
+async function recordEvent(
+  db: Db,
+  row: {
+    event_id: string;
+    event_type: string;
+    related_object_id: string | null;
+    status: string;
+    processed_at?: string;
+    payload_summary: Record<string, unknown>;
+  },
+): Promise<void> {
+  // Like the Supabase upsert it replaces, a failure to log never stops the webhook.
+  await db.run(upsert('stripe_events', { ...row, payload_summary: JSON.stringify(row.payload_summary) }, ['event_id'])).catch(() => 0);
 }
 
 type StripeShipping = { name?: string | null; address?: Record<string, unknown> | null };

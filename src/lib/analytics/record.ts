@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createServiceClient } from '@/lib/server/supabase';
+import { insertValues, serviceDb } from '@/lib/server/db';
 
 const uuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -66,7 +66,7 @@ export function isBot(userAgent: string): boolean {
 
 /** Stores one anonymous page view. Returns false when analytics storage is not configured. */
 export async function recordVisit(request: Request, body: VisitPayload): Promise<boolean> {
-  const service = createServiceClient();
+  const service = serviceDb();
   if (!service) return false;
 
   const sessionId = text(body.sessionId, 40);
@@ -83,7 +83,7 @@ export async function recordVisit(request: Request, body: VisitPayload): Promise
     text(request.headers.get('cf-ipcountry'), 8);
   const region = text(request.headers.get('x-vercel-ip-country-region'), 40);
 
-  const { error } = await service.from('page_views').insert({
+  const row = {
     session_hash: createHash('sha256').update(sessionId).digest('hex'),
     path,
     locale: text(body.locale, 8),
@@ -98,7 +98,7 @@ export async function recordVisit(request: Request, body: VisitPayload): Promise
     os: osOf(userAgent),
     language: text(body.language, 12),
     viewport,
-  });
-  if (error) throw error;
+  };
+  await service.run`insert into public.page_views ${insertValues(row)}`;
   return true;
 }

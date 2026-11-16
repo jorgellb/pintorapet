@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import { shippingEstimateSchema } from '@/lib/validation/checkout';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { normalizeCartItems } from '@/lib/domain/cart';
 import { isShippingCountry } from '@/lib/domain/countries';
 import { formatEur } from '@/lib/domain/money';
-import { createServiceClient } from '@/lib/server/supabase';
+import { json, serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -28,18 +28,17 @@ export const POST: APIRoute = async ({ request }) => {
     if (!isShippingCountry(body.country)) {
       return Response.json({ available: false, reason: 'NO_ZONE' });
     }
-    const supabase = createServiceClient();
+    const supabase = serviceDb();
     if (!supabase) throw new CommerceError('NOT_CONFIGURED', 'Shipping unavailable', 503);
 
     const items = normalizeCartItems(body.items);
-    const { data, error } = await supabase.rpc('shipping_quote', {
-      p_lines: items.map((i) => ({ product_id: i.productId, quantity: i.quantity })),
-      p_country: body.country.toUpperCase(),
-      p_postal_code: body.postalCode || null,
-    });
-    if (error) throw mapPgError(error);
-
-    const q = data as ShippingQuote;
+    const lines = items.map((i) => ({ product_id: i.productId, quantity: i.quantity }));
+    const q = (
+      await dbCall(() => supabase.one<{ result: ShippingQuote }>`
+        select public.shipping_quote(
+          p_lines => array(select l from jsonb_populate_recordset(null::public.cart_line_input, ${json(lines)}) l),
+          p_country => ${body.country.toUpperCase()}, p_postal_code => ${body.postalCode || null}) as result`)
+    )!.result;
     if (!q.available) return Response.json({ available: false, reason: q.reason ?? 'NO_ZONE' });
 
     const es = body.locale === 'es';

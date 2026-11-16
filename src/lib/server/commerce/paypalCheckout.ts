@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { json, type Db } from '@/lib/server/db';
 import type { PaypalConfig } from '@/lib/server/payments/config';
 import {
   capturePaypalOrder,
@@ -9,7 +9,7 @@ import {
   shippingOf,
   type PaypalOrder,
 } from '@/lib/server/payments/paypal';
-import { mapPgError } from './pgErrors';
+import { dbCall } from './pgErrors';
 import { sendOrderEmails } from './outbox';
 
 export type PaypalOutcome = {
@@ -31,17 +31,15 @@ type AttemptRow = {
  * An attempt whose reservation already lapsed is never captured.
  */
 export async function finalizePaypalOrder(
-  supabase: SupabaseClient,
+  supabase: Db,
   creds: PaypalConfig,
   paypalOrderId: string,
 ): Promise<PaypalOutcome> {
-  const { data, error } = await supabase
-    .from('checkout_attempts')
-    .select('id, status, order_id, orders(reference, locale, payment_status)')
-    .eq('paypal_order_id', paypalOrderId)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
-  const attempt = data as unknown as AttemptRow | null;
+  const attempt = await dbCall(() => supabase.one<AttemptRow>`
+    select a.id, a.status, a.order_id,
+           (select json_build_object('reference', o.reference, 'locale', o.locale, 'payment_status', o.payment_status)
+            from public.orders o where o.id = a.order_id) as orders
+    from public.checkout_attempts a where a.paypal_order_id = ${paypalOrderId}`);
   if (!attempt?.orders) return { status: 'not_found' };
 
   const base = { reference: attempt.orders.reference, locale: attempt.orders.locale };
@@ -60,24 +58,23 @@ export async function finalizePaypalOrder(
   }
 
   // Details typed on our checkout form (with phone and note) win over PayPal's copy.
-  const { data: saved } = await supabase
-    .from('orders')
-    .select('shipping_address')
-    .eq('id', attempt.order_id)
-    .maybeSingle();
+  const saved = await supabase.one<{ shipping_address: unknown }>`
+    select shipping_address from public.orders where id = ${attempt.order_id}`;
   const fromForm = Boolean(saved?.shipping_address);
 
-  const { data: applied, error: applyErr } = await supabase.rpc('apply_paypal_payment', {
-    p_order_id: attempt.order_id,
-    p_paypal_order_id: paypalOrderId,
-    p_capture_id: capture.id,
-    p_amount_total_cents: centsOf(capture.amount?.value),
-    p_currency: (capture.amount?.currency_code ?? 'EUR').toUpperCase(),
-    p_customer_email: fromForm ? null : (order.payer?.email_address ?? null),
-    p_customer_name: fromForm ? null : payerNameOf(order),
-    p_shipping_address: fromForm ? null : shippingOf(order),
-  });
-  if (applyErr) throw mapPgError(applyErr);
+  const shipping = fromForm ? null : shippingOf(order);
+  const applied = await dbCall(() =>
+    supabase.call('apply_paypal_payment', {
+      p_order_id: attempt.order_id,
+      p_paypal_order_id: paypalOrderId,
+      p_capture_id: capture.id,
+      p_amount_total_cents: centsOf(capture.amount?.value),
+      p_currency: (capture.amount?.currency_code ?? 'EUR').toUpperCase(),
+      p_customer_email: fromForm ? null : (order.payer?.email_address ?? null),
+      p_customer_name: fromForm ? null : payerNameOf(order),
+      p_shipping_address: shipping === null ? null : json(shipping),
+    }),
+  );
   await sendOrderEmails(supabase, attempt.order_id);
 
   const status = (applied as { status?: string } | null)?.status === 'review' ? 'review' : 'paid';
@@ -86,22 +83,15 @@ export async function finalizePaypalOrder(
 
 /** Frees the stock of an attempt the buyer cancelled on PayPal. */
 export async function cancelPaypalOrder(
-  supabase: SupabaseClient,
+  supabase: Db,
   paypalOrderId: string,
 ): Promise<{ locale?: 'en' | 'es' }> {
-  const { data } = await supabase
-    .from('checkout_attempts')
-    .select('id, status, orders(locale)')
-    .eq('paypal_order_id', paypalOrderId)
-    .maybeSingle();
-  const attempt = data as unknown as { id: string; status: string; orders: { locale: 'en' | 'es' } | null } | null;
+  const attempt = await supabase.one<{ id: string; status: string; orders: { locale: 'en' | 'es' } | null }>`
+    select a.id, a.status, (select json_build_object('locale', o.locale) from public.orders o where o.id = a.order_id) as orders
+    from public.checkout_attempts a where a.paypal_order_id = ${paypalOrderId}`;
   if (!attempt) return {};
   if (attempt.status === 'session_open' || attempt.status === 'creating_session') {
-    const { error } = await supabase.rpc('release_reservations', {
-      p_attempt_id: attempt.id,
-      p_reason: 'cancelled',
-    });
-    if (error) throw mapPgError(error);
+    await dbCall(() => supabase.call('release_reservations', { p_attempt_id: attempt.id, p_reason: 'cancelled' }));
   }
   return { locale: attempt.orders?.locale };
 }

@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { checkoutPaths } from '@/lib/server/commerce/checkout';
 import { finalizePaypalOrder } from '@/lib/server/commerce/paypalCheckout';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -10,7 +10,7 @@ export const prerender = false;
 export const GET: APIRoute = async ({ url, redirect }) => {
   const token = url.searchParams.get('token');
   const { paypal } = await loadPaymentConfig();
-  const supabase = createServiceClient();
+  const supabase = serviceDb();
   if (!token || !paypal || !supabase) return redirect(checkoutPaths('es').cancel, 303);
 
   try {

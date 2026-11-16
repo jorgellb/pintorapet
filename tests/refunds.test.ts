@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { fakeDb } from './helpers/fakeDb';
 import {
   ProviderUnreachable,
   refundRequestSchema,
@@ -14,18 +15,10 @@ const REFUND = '33333333-3333-4333-8333-333333333333';
 
 type Rpc = (name: string, args: Record<string, unknown>) => { data?: unknown; error?: { message: string } | null };
 
-/** A Supabase client that answers rpc() from a script and one refund row for retries. */
+/** A database that answers function calls from a script and one refund row for retries. */
 function fakeClient(answer: Rpc, row: Record<string, unknown> | null = null) {
-  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
-    const out = answer(name, args);
-    return { data: out.data ?? null, error: out.error ?? null };
-  });
-  const query = {
-    select: () => query,
-    eq: () => query,
-    maybeSingle: async () => ({ data: row, error: null }),
-  };
-  return { client: { rpc, from: () => query } as never, rpc };
+  const { db, call } = fakeDb({ answer, query: () => row });
+  return { client: db, rpc: call };
 }
 
 const begun = (provider: 'stripe' | 'paypal' = 'stripe') => ({

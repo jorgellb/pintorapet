@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
+import { audit } from '@/lib/server/shipping/http';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 
 export const prerender = false;
 
@@ -19,21 +20,11 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     const id = z.string().uuid().parse(params.id);
     const body = patchSchema.parse(await request.json());
 
-    const { data, error } = await admin.client
-      .from('commission_requests')
-      .update({ status: body.status })
-      .eq('id', id)
-      .select('id, status')
-      .single();
-    if (error) throw mapPgError(error);
+    const data = await dbCall(() => admin.db.one`
+      update public.commission_requests set status = ${body.status} where id = ${id} returning id, status`);
+    if (!data) throw new CommerceError('UNAVAILABLE', 'Commission request not found', 404);
 
-    await admin.client.from('admin_audit_log').insert({
-      actor_user_id: admin.user.id,
-      operation: 'update_commission_status',
-      entity_type: 'commission_requests',
-      entity_id: id,
-      change: body,
-    });
+    await audit(admin, 'update_commission_status', 'commission_requests', id, body);
 
     return Response.json({ ok: true, commission: data });
   } catch (err) {

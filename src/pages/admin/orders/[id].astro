@@ -1,7 +1,8 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
+import type { OrdersRow } from '@/lib/server/dbTypes';
 import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate, type Tone } from '@/lib/admin/labels';
 import { countryOptions } from '@/lib/domain/countries';
 import { trackingUrl } from '@/lib/server/shipping/correos';
@@ -10,21 +11,48 @@ import { loadShippingSettings } from '@/lib/server/shipping/correos';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const { data: order } = await admin.client
-  .from('orders')
-  .select(
-    '*, order_items(id, product_title, product_sku, quantity, unit_price_cents, line_subtotal_cents, created_at), invoices(id, kind, full_number, issued_at, replaces_invoice_id, rectifies_invoice_id, total_cents)',
-  )
-  .eq('id', Astro.params.id ?? '')
-  .maybeSingle();
+const { data: order } = await settle(
+  admin.db.one<
+    OrdersRow & {
+      order_items: Array<{
+        id: string;
+        product_title: string;
+        product_sku: string;
+        quantity: number;
+        unit_price_cents: number;
+        line_subtotal_cents: number;
+        created_at: string;
+      }>;
+      invoices: Array<{
+        id: string;
+        kind: 'simplified' | 'full' | 'rectifying';
+        full_number: string;
+        issued_at: string;
+        replaces_invoice_id: string | null;
+        rectifies_invoice_id: string | null;
+        total_cents: number;
+      }>;
+    }
+  >`
+    select o.*,
+           coalesce((select json_agg(json_build_object('id', i.id, 'product_title', i.product_title, 'product_sku', i.product_sku,
+                                                       'quantity', i.quantity, 'unit_price_cents', i.unit_price_cents,
+                                                       'line_subtotal_cents', i.line_subtotal_cents, 'created_at', i.created_at))
+                     from public.order_items i where i.order_id = o.id), '[]'::json) as order_items,
+           coalesce((select json_agg(json_build_object('id', v.id, 'kind', v.kind, 'full_number', v.full_number,
+                                                       'issued_at', v.issued_at, 'replaces_invoice_id', v.replaces_invoice_id,
+                                                       'rectifies_invoice_id', v.rectifies_invoice_id, 'total_cents', v.total_cents))
+                     from public.invoices v where v.order_id = o.id), '[]'::json) as invoices
+    from public.orders o where o.id = ${Astro.params.id ?? ''}`,
+);
 if (!order) return Astro.redirect('/admin/orders/');
 
 const [correos, shippingSettings] = await Promise.all([
-  carrierRow(admin.client).catch(() => null),
+  carrierRow(admin.db).catch(() => null),
   loadShippingSettings().catch(() => ({ sender: {} as Record<string, string> })),
 ]);
 const sender = shippingSettings.sender as Record<string, string | undefined>;
@@ -72,8 +100,8 @@ const items = ((order.order_items ?? []) as OrderItem[]).sort(
 );
 const itemTitle = new Map(items.map((i) => [i.id, i.product_title]));
 const [{ data: refundData }, { data: leftData }] = await Promise.all([
-  admin.client.from('order_refunds').select('*').eq('order_id', order.id).order('created_at'),
-  admin.client.rpc('admin_refund_left', { p_order_id: order.id }),
+  settle(admin.db.rows`select * from public.order_refunds where order_id = ${order.id} order by created_at`),
+  settle(admin.db.call('admin_refund_left', { p_order_id: order.id })),
 ]);
 const refunds = (refundData ?? []) as RefundRow[];
 const left = (leftData ?? { items: [], shipping_cents: 0, refunded_cents: 0, unassigned_cents: 0 }) as RefundLeft;
@@ -137,12 +165,11 @@ const eventTime = (at: string | null) =>
     : '';
 
 // ——— History: what happened to the order, from the admin's log ———
-const { data: logRows } = await admin.client
-  .from('admin_audit_log')
-  .select('operation, change, created_at')
-  .eq('entity_id', order.id)
-  .order('created_at', { ascending: false })
-  .limit(50);
+const { data: logRows } = await settle(
+  admin.db.rows<{ operation: string; change: Record<string, unknown> | null; created_at: string }>`
+    select operation, change, created_at from public.admin_audit_log
+    where entity_id = ${order.id} order by created_at desc limit 50`,
+);
 const money = (cents: unknown) => euros(Number(cents ?? 0));
 const historyText = (operation: string, change: Record<string, unknown>) => {
   switch (operation) {

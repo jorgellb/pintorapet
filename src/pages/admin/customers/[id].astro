@@ -2,17 +2,17 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import CustomerForm from '@/components/admin/CustomerForm.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
 import { getCustomer } from '@/lib/server/admin/customers';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const customer = await getCustomer(admin.client, Astro.params.id ?? '');
+const customer = await getCustomer(admin.db, Astro.params.id ?? '');
 if (!customer) return Astro.redirect('/admin/customers/');
 
 const paidOrders = customer.orders.filter((o) => ['paid', 'review', 'partially_refunded', 'refunded'].includes(o.payment_status));

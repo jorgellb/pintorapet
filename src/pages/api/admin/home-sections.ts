@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { upsert } from '@/lib/server/db';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { CommerceError } from '@/lib/server/commerce/errors';
 import { homeSectionsSchema } from '@/lib/content/homeSections';
@@ -12,13 +13,11 @@ export const PUT: APIRoute = async ({ cookies, request }) => {
   if (!admin) return forbidden();
   try {
     const content = homeSectionsSchema.parse(await request.json());
-    const { error } = await admin.client.from('site_home_sections').upsert({
-      id: 1,
-      content,
-      updated_at: new Date().toISOString(),
-      updated_by: admin.user.id,
-    });
-    if (error) throw new CommerceError('INTERNAL', 'No se pudieron guardar los bloques.', 500);
+    await admin.db
+      .run(upsert('site_home_sections', { id: 1, content: JSON.stringify(content), updated_at: new Date().toISOString(), updated_by: admin.user.id }, ['id']))
+      .catch(() => {
+        throw new CommerceError('INTERNAL', 'No se pudieron guardar los bloques.', 500);
+      });
     const hidden = Object.entries(content)
       .filter(([, block]) => !block.visible)
       .map(([name]) => name);

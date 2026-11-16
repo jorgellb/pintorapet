@@ -4,7 +4,7 @@ import { localizedPath, workPath } from '@/i18n/routes';
 import type { WorkEntry } from '@/lib/content/editorial';
 import { imageSchema, type HeroImage } from '@/lib/content/homeHero';
 import type { ProductPublic } from '@/lib/domain/types';
-import { hasSupabase } from '@/lib/server/env';
+import { anonDb, hasDatabase } from '@/lib/server/db';
 
 /**
  * The blocks of the home page below the hero, edited in Admin › Portada ›
@@ -125,15 +125,11 @@ export function defaultHomeSections(): HomeSectionsContent {
 
 /** Saved blocks, or the defaults when there are none (or they cannot be read). */
 export async function loadHomeSections(): Promise<HomeSectionsContent> {
-  if (!hasSupabase()) return defaultHomeSections();
+  if (!hasDatabase()) return defaultHomeSections();
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const client = createClient(
-      import.meta.env.PUBLIC_SUPABASE_URL as string,
-      import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string,
-    );
-    const { data, error } = await client.from('site_home_sections').select('content').eq('id', 1).maybeSingle();
-    if (error || !data) return defaultHomeSections();
+    const client = anonDb();
+    const data = await client.one<{ content: unknown }>`select content from public.site_home_sections where id = 1`;
+    if (!data) return defaultHomeSections();
     const parsed = homeSectionsSchema.safeParse(data.content);
     return parsed.success ? parsed.data : defaultHomeSections();
   } catch {

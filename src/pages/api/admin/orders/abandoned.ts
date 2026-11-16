@@ -10,7 +10,7 @@ export const DELETE: APIRoute = async ({ request, cookies }) => {
   const admin = await requireAdmin(cookies, request);
   if (!admin) return forbidden();
   try {
-    const deleted = await deleteAbandonedOrders(admin.client);
+    const deleted = await deleteAbandonedOrders(admin.db);
     await audit(admin, 'delete_abandoned_orders', 'orders', '', { deleted });
     return Response.json({ ok: true, deleted });
   } catch (err) {

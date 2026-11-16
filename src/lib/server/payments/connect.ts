@@ -1,7 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { json, sql, type Db } from '@/lib/server/db';
 import Stripe from 'stripe';
 import { CommerceError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { stripeFor } from '@/lib/server/commerce/stripeClient';
 import { siteUrl } from '@/lib/server/env';
 import {
@@ -64,35 +64,27 @@ function hint(value: string): string {
   return value.length <= 12 ? '••••' : `${value.slice(0, 8)}…${value.slice(-4)}`;
 }
 
-async function currentRow(client: SupabaseClient, provider: PaymentProvider): Promise<ProviderRow | null> {
-  const { data, error } = await client
-    .from('payment_providers')
-    .select('*')
-    .eq('provider', provider)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
-  return data as ProviderRow | null;
+async function currentRow(client: Db, provider: PaymentProvider): Promise<ProviderRow | null> {
+  return dbCall(() => client.one<ProviderRow>`select * from public.payment_providers where provider = ${provider}`);
 }
 
 async function save(
-  client: SupabaseClient,
+  client: Db,
   provider: PaymentProvider,
   settings: Record<string, unknown>,
   secrets: Record<string, string | null>,
 ) {
-  const { error } = await client.rpc('admin_connect_payment_provider', {
-    p_provider: provider,
-    p_settings: settings,
-    p_secrets: secrets,
-  });
-  if (error) throw mapPgError(error);
+  // Secrets are sealed in the vault: that needs the key for this transaction.
+  await dbCall(() =>
+    client.withVaultKey(sql`
+      select public.admin_connect_payment_provider(
+        p_provider => ${provider}, p_settings => ${json(settings)}, p_secrets => ${json(secrets)})`),
+  );
   clearPaymentConfigCache();
 }
 
-export async function listProviderRows(client: SupabaseClient): Promise<ProviderRow[]> {
-  const { data, error } = await client.from('payment_providers').select('*');
-  if (error) throw mapPgError(error);
-  return (data ?? []) as ProviderRow[];
+export async function listProviderRows(client: Db): Promise<ProviderRow[]> {
+  return dbCall(() => client.rows<ProviderRow>`select * from public.payment_providers`);
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +132,7 @@ async function replaceStripeWebhook(stripe: Stripe, previousId: string | null): 
 }
 
 export async function connectStripe(
-  client: SupabaseClient,
+  client: Db,
   input: { secretKey: string; webhookSecret?: string },
 ): Promise<ProviderRow | null> {
   const secretKey = input.secretKey.trim();
@@ -201,7 +193,7 @@ export async function connectStripe(
  * (refunds were added later). null when it cannot tell: no webhook of ours,
  * Stripe unreachable, or a key that cannot read webhooks.
  */
-export async function stripeWebhookMissingEvents(client: SupabaseClient): Promise<boolean | null> {
+export async function stripeWebhookMissingEvents(client: Db): Promise<boolean | null> {
   try {
     const row = await currentRow(client, 'stripe');
     const { stripe: config } = await loadPaymentConfig();
@@ -216,7 +208,7 @@ export async function stripeWebhookMissingEvents(client: SupabaseClient): Promis
 }
 
 /** Add the missing events to the webhook this site created in Stripe (same address, same secret). */
-export async function updateStripeWebhookEvents(client: SupabaseClient): Promise<void> {
+export async function updateStripeWebhookEvents(client: Db): Promise<void> {
   const row = await currentRow(client, 'stripe');
   const { stripe: config } = await loadPaymentConfig();
   if (!row?.webhook_id || !config) {
@@ -230,7 +222,7 @@ export async function updateStripeWebhookEvents(client: SupabaseClient): Promise
 }
 
 /** Manual webhook secret, for sites without a public address yet (e.g. `stripe listen`). */
-export async function setStripeWebhookSecret(client: SupabaseClient, webhookSecret: string): Promise<void> {
+export async function setStripeWebhookSecret(client: Db, webhookSecret: string): Promise<void> {
   const secret = webhookSecret.trim();
   if (!/^whsec_[A-Za-z0-9]+$/.test(secret)) {
     throw new CommerceError('VALIDATION', 'El secreto del webhook empieza por whsec_.', 400);
@@ -266,7 +258,7 @@ async function replacePaypalWebhook(creds: PaypalCredentials, previousId: string
 }
 
 export async function connectPaypal(
-  client: SupabaseClient,
+  client: Db,
   input: { mode: PaymentMode; clientId: string; clientSecret: string },
 ): Promise<ProviderRow | null> {
   const creds: PaypalCredentials = {
@@ -322,17 +314,13 @@ export async function connectPaypal(
 // Shared
 // ---------------------------------------------------------------------------
 
-export async function setProviderEnabled(client: SupabaseClient, provider: PaymentProvider, enabled: boolean): Promise<void> {
-  const { error, count } = await client
-    .from('payment_providers')
-    .update({ enabled }, { count: 'exact' })
-    .eq('provider', provider);
-  if (error) throw mapPgError(error);
+export async function setProviderEnabled(client: Db, provider: PaymentProvider, enabled: boolean): Promise<void> {
+  const count = await dbCall(() => client.run`update public.payment_providers set enabled = ${enabled} where provider = ${provider}`);
   if (!count) throw new CommerceError('VALIDATION', 'Ese método de pago no está conectado.', 400);
   clearPaymentConfigCache();
 }
 
-export async function disconnectProvider(client: SupabaseClient, provider: PaymentProvider): Promise<void> {
+export async function disconnectProvider(client: Db, provider: PaymentProvider): Promise<void> {
   clearPaymentConfigCache();
   const config = await loadPaymentConfig();
   const row = await currentRow(client, provider);
@@ -344,8 +332,7 @@ export async function disconnectProvider(client: SupabaseClient, provider: Payme
       await deletePaypalWebhook(config.paypal, row.webhook_id).catch(() => undefined);
     }
   }
-  const { error } = await client.rpc('admin_disconnect_payment_provider', { p_provider: provider });
-  if (error) throw mapPgError(error);
+  await dbCall(() => client.run`select public.admin_disconnect_payment_provider(p_provider => ${provider})`);
   clearPaymentConfigCache();
 }
 

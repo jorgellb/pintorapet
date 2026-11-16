@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { json, setColumns, type Db } from '@/lib/server/db';
 import type Stripe from 'stripe';
 import type { CartItem } from '@/lib/domain/cart';
 import {
@@ -11,7 +11,7 @@ import { siteUrl } from '@/lib/server/env';
 import { loadPaymentConfig, type PaymentProvider } from '@/lib/server/payments/config';
 import { approveUrl, createPaypalOrder } from '@/lib/server/payments/paypal';
 import { CommerceError } from './errors';
-import { mapPgError } from './pgErrors';
+import { dbCall } from './pgErrors';
 import { stripeFor } from './stripeClient';
 
 function requestHash(input: {
@@ -70,7 +70,7 @@ export function checkoutPaths(locale: 'en' | 'es') {
 }
 
 export async function createCheckout(
-  supabase: SupabaseClient,
+  supabase: Db,
   opts: {
     provider: PaymentProvider;
     quoteId: string;
@@ -98,20 +98,16 @@ export async function createCheckout(
   }
 
   if (paypal) {
-    await supabase.rpc('release_expired_paypal_attempts');
+    await supabase.run`select public.release_expired_paypal_attempts()`.catch(() => 0);
   }
 
-  const { data: quoteRow, error: quoteErr } = await supabase
-    .from('checkout_quotes')
-    .select('lines, subtotal_cents, shipping_cents, tax_cents, total_cents, shipping_country, shipping_postal_code, shipping_zone_name')
-    .eq('id', opts.quoteId)
-    .maybeSingle();
-
-  if (quoteErr) throw mapPgError(quoteErr);
-  if (!quoteRow) {
+  const quote = await dbCall(() => supabase.one<Quote>`
+    select lines, subtotal_cents, shipping_cents, tax_cents, total_cents, shipping_country, shipping_postal_code,
+           shipping_zone_name
+    from public.checkout_quotes where id = ${opts.quoteId}`);
+  if (!quote) {
     throw new CommerceError('UNAVAILABLE', 'QUOTE_NOT_FOUND', 404);
   }
-  const quote = quoteRow as Quote;
 
   // The address must sit in the destination the shipping price was quoted for.
   if (
@@ -127,19 +123,12 @@ export async function createCheckout(
   const hash = requestHash(opts);
   const idempotencyKey = `checkout:${opts.attemptId}`;
 
-  const { data: reserveRaw, error: reserveErr } = await supabase.rpc(
-    'reserve_checkout',
-    {
-      p_attempt_id: opts.attemptId,
-      p_cart_owner_hash: opts.cartOwnerHash,
-      p_quote_id: opts.quoteId,
-      p_request_hash: hash,
-      p_idempotency_key: idempotencyKey,
-    },
-  );
-
-  if (reserveErr) throw mapPgError(reserveErr);
-  const reserve = reserveRaw as ReserveResult;
+  const reserve = (
+    await dbCall(() => supabase.one<{ result: ReserveResult }>`
+      select public.reserve_checkout(
+        p_attempt_id => ${opts.attemptId}, p_cart_owner_hash => ${opts.cartOwnerHash}, p_quote_id => ${opts.quoteId},
+        p_request_hash => ${hash}, p_idempotency_key => ${idempotencyKey}) as result`)
+  )?.result;
   if (!reserve?.order_id) {
     throw new CommerceError('INTERNAL', 'Reserve returned no order', 500);
   }
@@ -148,21 +137,19 @@ export async function createCheckout(
 
   if (opts.customer || opts.customerId) {
     // Saved before payment; apply_payment keeps it unless the provider sends its own.
-    const { error: customerErr } = await supabase
-      .from('orders')
-      .update({
-        ...(opts.customer
-          ? {
-              customer_email: opts.customer.email,
-              customer_name: opts.customer.name,
-              shipping_address: shippingAddressFrom(opts.customer),
-            }
-          : {}),
-        ...(opts.customerId ? { customer_id: opts.customerId } : {}),
-      })
-      .eq('id', reserve.order_id)
-      .in('payment_status', ['pending_session', 'checkout_open']);
-    if (customerErr) throw mapPgError(customerErr);
+    const patch = {
+      ...(opts.customer
+        ? {
+            customer_email: opts.customer.email,
+            customer_name: opts.customer.name,
+            shipping_address: JSON.stringify(shippingAddressFrom(opts.customer)),
+          }
+        : {}),
+      ...(opts.customerId ? { customer_id: opts.customerId } : {}),
+    };
+    await dbCall(() => supabase.run`
+      update public.orders set ${setColumns(patch)}
+      where id = ${reserve.order_id} and payment_status in ('pending_session', 'checkout_open')`);
   }
 
   const opened = stripe
@@ -172,11 +159,8 @@ export async function createCheckout(
   // Guest order token (plaintext once). Client should store before the redirect.
   const accessToken = randomBytes(24).toString('base64url');
   if (!reserve.replay) {
-    const { error: tokenErr } = await supabase.rpc('set_order_access_token', {
-      p_order_id: reserve.order_id,
-      p_access_token: accessToken,
-    });
-    if (tokenErr) throw mapPgError(tokenErr);
+    await dbCall(() => supabase.run`
+      select public.set_order_access_token(p_order_id => ${reserve.order_id}, p_access_token => ${accessToken})`);
   }
 
   return {
@@ -188,13 +172,13 @@ export async function createCheckout(
   };
 }
 
-async function orderReference(supabase: SupabaseClient, orderId: string): Promise<string> {
-  const { data } = await supabase.from('orders').select('reference').eq('id', orderId).maybeSingle();
-  return String(data?.reference ?? '');
+async function orderReference(supabase: Db, orderId: string): Promise<string> {
+  const row = await supabase.one<{ reference: string }>`select reference from public.orders where id = ${orderId}`;
+  return String(row?.reference ?? '');
 }
 
 async function openStripe(
-  supabase: SupabaseClient,
+  supabase: Db,
   secretKey: string,
   opts: { attemptId: string; quoteId: string; locale: 'en' | 'es'; customer?: CheckoutCustomer },
   reserve: ReserveResult,
@@ -298,24 +282,17 @@ async function openStripe(
     ? new Date(session.expires_at * 1000).toISOString()
     : reserve.expires_at ?? new Date(Date.now() + 35 * 60_000).toISOString();
 
-  const { error: attachErr } = await supabase.rpc('attach_stripe_session', {
-    p_attempt_id: opts.attemptId,
-    p_stripe_session_id: session.id,
-    p_stripe_payload: {
-      id: session.id,
-      url: session.url,
-      status: session.status,
-      amount_total: session.amount_total,
-    },
-    p_session_expires_at: expiresAt,
-  });
-  if (attachErr) throw mapPgError(attachErr);
+  const payload = { id: session.id, url: session.url, status: session.status, amount_total: session.amount_total };
+  await dbCall(() => supabase.run`
+    select * from public.attach_stripe_session(
+      p_attempt_id => ${opts.attemptId}, p_stripe_session_id => ${session.id},
+      p_stripe_payload => ${json(payload)}, p_session_expires_at => ${expiresAt}::timestamptz)`);
 
   return { url: session.url, id: session.id };
 }
 
 async function openPaypal(
-  supabase: SupabaseClient,
+  supabase: Db,
   creds: { mode: 'test' | 'live'; clientId: string; clientSecret: string },
   opts: { attemptId: string; locale: 'en' | 'es'; customer?: CheckoutCustomer },
   orderId: string,
@@ -324,11 +301,8 @@ async function openPaypal(
   idempotencyKey: string,
 ): Promise<{ url: string; id: string }> {
   const origin = siteUrl();
-  const { data: settings } = await supabase
-    .from('shop_settings')
-    .select('public_name')
-    .eq('id', 1)
-    .maybeSingle();
+  const settings = await supabase.one<{ public_name: string | null }>`
+    select public_name from public.shop_settings where id = 1`;
 
   const order = await createPaypalOrder(
     creds,
@@ -367,12 +341,10 @@ async function openPaypal(
     throw new CommerceError('INTERNAL', 'PayPal order missing approval link', 500);
   }
 
-  const { error: attachErr } = await supabase.rpc('attach_paypal_order', {
-    p_attempt_id: opts.attemptId,
-    p_paypal_order_id: order.id,
-    p_payload: { id: order.id, status: order.status, url },
-  });
-  if (attachErr) throw mapPgError(attachErr);
+  await dbCall(() => supabase.run`
+    select * from public.attach_paypal_order(
+      p_attempt_id => ${opts.attemptId}, p_paypal_order_id => ${order.id},
+      p_payload => ${json({ id: order.id, status: order.status, url })})`);
 
   return { url, id: order.id };
 }

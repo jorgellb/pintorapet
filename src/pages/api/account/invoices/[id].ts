@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { customerSession } from '@/lib/server/account';
 import { customerInvoice, invoicePdfResponse } from '@/lib/server/invoices/serve';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb, userDb } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -9,11 +9,11 @@ export const prerender = false;
 export const GET: APIRoute = async ({ params, cookies, request, url }) => {
   const session = await customerSession(cookies, request);
   if (!session) return new Response('Sign in first', { status: 401 });
-  const invoice = await customerInvoice(session.client, String(params.id ?? ''));
+  const invoice = await customerInvoice(userDb(session.user.id), String(params.id ?? ''));
   if (!invoice) return new Response('Not found', { status: 404 });
   return invoicePdfResponse(
     invoice,
-    createServiceClient(),
+    serviceDb(),
     url.searchParams.get('download') === '1' ? 'attachment' : 'inline',
   );
 };

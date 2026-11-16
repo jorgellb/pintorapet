@@ -3,22 +3,22 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import EntryEditor from '@/components/admin/EntryEditor.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { getArtwork, listMedia } from '@/lib/server/admin/editorial';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 const id = Astro.params.id;
 if (!id) return Astro.redirect('/admin/work/');
-const row = await getArtwork(admin.client, id);
+const row = await getArtwork(admin.db, id);
 if (!row) return new Response('Ficha no encontrada', { status: 404 });
 
 let media: Awaited<ReturnType<typeof listMedia>> = [];
 try {
-  media = await listMedia(admin.client);
+  media = await listMedia(admin.db);
 } catch {
   media = [];
 }

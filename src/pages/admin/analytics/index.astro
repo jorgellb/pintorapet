@@ -2,11 +2,11 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import CountTable from '@/components/admin/CountTable.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
@@ -35,14 +35,12 @@ type Row = {
 let rows: Row[] = [];
 let loadError: string | null = null;
 try {
-  const { data, error } = await admin.client
-    .from('page_views')
-    .select(
-      'viewed_at, session_hash, path, locale, referrer_host, utm_source, utm_medium, utm_campaign, country, region, device, browser, os, language',
-    )
-    .gte('viewed_at', since)
-    .order('viewed_at', { ascending: false })
-    .limit(20000);
+  const { data, error } = await settle(
+    admin.db.rows<Row>`
+      select viewed_at, session_hash, path, locale, referrer_host, utm_source, utm_medium, utm_campaign, country, region,
+             device, browser, os, language
+      from public.page_views where viewed_at >= ${since} order by viewed_at desc limit 20000`,
+  );
   if (error) throw error;
   rows = (data ?? []) as Row[];
 } catch (err) {

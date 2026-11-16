@@ -3,7 +3,7 @@ import { productTypeNames } from '@/lib/server/admin/productTypes';
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
 import {
   chipClass,
@@ -14,7 +14,7 @@ import {
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
@@ -37,14 +37,24 @@ type Row = {
   }>;
 };
 
-const { data, error } = await admin.client
-  .from('products')
-  .select(
-    'id, sku, motif, status, price_cents, sale_enabled, parent_id, categories(code), shop_collections(name_es), product_translations(locale, title), inventory(inventory_mode, stock_on_hand, stock_reserved), product_images(position, is_cover, media_assets(bucket, object_path))',
-  )
-  .order('editorial_order');
+const { data, error } = await settle(
+  admin.db.rows<Row>`
+    select p.id, p.sku, p.motif, p.status, p.price_cents, p.sale_enabled, p.parent_id,
+           (select json_build_object('code', c.code) from public.categories c where c.id = p.category_id) as categories,
+           (select json_build_object('name_es', sc.name_es) from public.shop_collections sc where sc.id = p.collection_id) as shop_collections,
+           coalesce((select json_agg(json_build_object('locale', t.locale, 'title', t.title))
+                     from public.product_translations t where t.product_id = p.id), '[]'::json) as product_translations,
+           (select json_build_object('inventory_mode', i.inventory_mode, 'stock_on_hand', i.stock_on_hand,
+                                     'stock_reserved', i.stock_reserved)
+            from public.inventory i where i.product_id = p.id) as inventory,
+           coalesce((select json_agg(json_build_object('position', pi.position, 'is_cover', pi.is_cover, 'media_assets',
+                       (select json_build_object('bucket', m.bucket, 'object_path', m.object_path)
+                        from public.media_assets m where m.id = pi.media_asset_id)))
+                     from public.product_images pi where pi.product_id = p.id), '[]'::json) as product_images
+    from public.products p order by p.editorial_order`,
+);
 // Types in the shop's order (Admin › Tienda › Tipos de producto): one tab each.
-const typeNames = await productTypeNames(admin.client);
+const typeNames = await productTypeNames(admin.db);
 const typeLabel = (code: string) => typeNames.get(code) ?? code;
 
 const all = (data ?? []) as unknown as Row[];

@@ -2,14 +2,14 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import CorreosConnection from '@/components/admin/CorreosConnection.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { euros } from '@/lib/admin/labels';
 import { countryOptions } from '@/lib/domain/countries';
 import { CORREOS_PRODUCTS } from '@/lib/server/shipping/correos';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
@@ -31,11 +31,13 @@ type Zone = {
 };
 
 const [{ data: zoneRows, error }, { data: settingsRow }] = await Promise.all([
-  admin.client
-    .from('shipping_zones')
-    .select('*, shipping_rates(max_grams, price_cents)')
-    .order('position'),
-  admin.client.from('shop_settings').select('shipping_config').eq('id', 1).maybeSingle(),
+  settle(
+    admin.db.rows<Zone>`
+      select z.*, coalesce((select json_agg(json_build_object('max_grams', r.max_grams, 'price_cents', r.price_cents))
+                            from public.shipping_rates r where r.zone_id = z.id), '[]'::json) as shipping_rates
+      from public.shipping_zones z order by z.position`,
+  ),
+  settle(admin.db.one<{ shipping_config: unknown }>`select shipping_config from public.shop_settings where id = 1`),
 ]);
 
 const zones = ((zoneRows ?? []) as Zone[]).map((z) => ({
@@ -339,7 +341,7 @@ const blankZone: Zone = {
     </form>
   </section>
 
-  <CorreosConnection client={admin.client} />
+  <CorreosConnection client={admin.db} />
 
   <template data-zone-template>
     <details class="zone" data-zone="" open>

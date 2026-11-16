@@ -4,7 +4,7 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import MediaPicker from '@/components/admin/MediaPicker.astro';
 import ShopCategoryForm from '@/components/admin/ShopCategoryForm.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { listMedia } from '@/lib/server/admin/editorial';
 import { mediaDisplayName } from '@/lib/admin/mediaPicker';
 import { getShopCategory } from '@/lib/server/admin/shopCategories';
@@ -13,13 +13,13 @@ import { storagePublicUrl } from '@/lib/server/storageUrl';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 const id = Astro.params.id ?? '';
 if (!/^[0-9a-f-]{36}$/i.test(id)) return Astro.redirect('/admin/shop-categories/');
-const category = await getShopCategory(admin.client, id).catch(() => null);
+const category = await getShopCategory(admin.db, id).catch(() => null);
 if (!category) return Astro.redirect('/admin/shop-categories/');
 
 type ProductRow = {
@@ -32,14 +32,22 @@ type ProductRow = {
   product_images: Array<{ is_cover: boolean; position: number; media_assets: { bucket: string; object_path: string } | null }>;
 };
 const [{ data: productData }, media, typeNames] = await Promise.all([
-  admin.client
-    .from('products')
-    .select('id, sku, status, price_cents, categories(code), product_translations(locale, title), product_images(is_cover, position, media_assets(bucket, object_path))')
-    .eq('collection_id', id)
-    .is('parent_id', null)
-    .order('editorial_order'),
-  listMedia(admin.client).catch(() => []),
-  productTypeNames(admin.client),
+  settle(
+    admin.db.rows<ProductRow>`
+      select p.id, p.sku, p.status, p.price_cents,
+             (select json_build_object('code', c.code) from public.categories c where c.id = p.category_id) as categories,
+             coalesce((select json_agg(json_build_object('locale', t.locale, 'title', t.title))
+                       from public.product_translations t where t.product_id = p.id), '[]'::json) as product_translations,
+             coalesce((select json_agg(json_build_object('position', pi.position, 'is_cover', pi.is_cover, 'media_assets',
+                       (select json_build_object('bucket', m.bucket, 'object_path', m.object_path)
+                        from public.media_assets m where m.id = pi.media_asset_id)))
+                     from public.product_images pi where pi.product_id = p.id), '[]'::json) as product_images
+      from public.products p
+      where p.collection_id = ${id} and p.parent_id is null
+      order by p.editorial_order`,
+  ),
+  listMedia(admin.db).catch(() => []),
+  productTypeNames(admin.db),
 ]);
 const products = ((productData ?? []) as unknown as ProductRow[]).map((row) => {
   const cover = [...row.product_images].sort((a, b) => Number(b.is_cover) - Number(a.is_cover) || a.position - b.position)[0]

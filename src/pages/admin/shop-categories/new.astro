@@ -3,17 +3,17 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import MediaPicker from '@/components/admin/MediaPicker.astro';
 import ShopCategoryForm from '@/components/admin/ShopCategoryForm.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { listMedia } from '@/lib/server/admin/editorial';
 import { mediaDisplayName } from '@/lib/admin/mediaPicker';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const media = await listMedia(admin.client).catch(() => []);
+const media = await listMedia(admin.db).catch(() => []);
 const pickerItems = media.map((item) => ({
   id: item.id,
   url: item.publicUrl,

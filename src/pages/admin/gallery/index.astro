@@ -3,20 +3,20 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import EntryList, { type EntryRow } from '@/components/admin/EntryList.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { listGallery } from '@/lib/server/admin/editorial';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { galleryGroupLabel } from '@/lib/admin/labels';
 import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 let rows: EntryRow[] = [];
 let loadError: string | null = null;
 try {
-  rows = (await listGallery(admin.client)).map((row) => ({
+  rows = (await listGallery(admin.db)).map((row) => ({
     id: row.id,
     title: row.title_es || row.title_en,
     type: row.item_group,

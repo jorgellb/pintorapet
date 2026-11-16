@@ -1,17 +1,16 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { z } from 'zod';
 import { isValidSpanishTaxId } from '@/lib/domain/taxId';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { renderInvoicePdf } from './pdf';
 import type { InvoiceRow } from './types';
 
 /** Shop name and Veri*factu switch, read with whatever client can see shop_settings. */
-async function pdfOptions(client: SupabaseClient) {
-  const { data } = await client
-    .from('shop_settings')
-    .select('public_name, invoice_config')
-    .eq('id', 1)
-    .maybeSingle();
+async function pdfOptions(client: Db) {
+  const data = await client
+    .one<{ public_name: string | null; invoice_config: unknown }>`
+      select public_name, invoice_config from public.shop_settings where id = 1`
+    .catch(() => null);
   return {
     brand: String(data?.public_name ?? 'Pets Drawings'),
     verifactuEnabled: Boolean((data?.invoice_config as { verifactuEnabled?: boolean } | null)?.verifactuEnabled),
@@ -20,7 +19,7 @@ async function pdfOptions(client: SupabaseClient) {
 
 export async function invoicePdfResponse(
   invoice: InvoiceRow,
-  settingsClient: SupabaseClient | null,
+  settingsClient: Db | null,
   disposition: 'inline' | 'attachment' = 'inline',
 ): Promise<Response> {
   const opts = settingsClient ? await pdfOptions(settingsClient) : { brand: 'Pets Drawings', verifactuEnabled: false };
@@ -36,10 +35,8 @@ export async function invoicePdfResponse(
 }
 
 /** The customer's own invoice (ownership is checked in SQL). */
-export async function customerInvoice(client: SupabaseClient, id: string): Promise<InvoiceRow | null> {
-  const { data, error } = await client.rpc('customer_invoice', { p_invoice_id: id });
-  if (error) return null;
-  return data as InvoiceRow;
+export async function customerInvoice(client: Db, id: string): Promise<InvoiceRow | null> {
+  return client.call<InvoiceRow | null>('customer_invoice', { p_invoice_id: id }).catch(() => null);
 }
 
 /**
@@ -47,17 +44,12 @@ export async function customerInvoice(client: SupabaseClient, id: string): Promi
  * one, say), else the one that counts (the replacement when there is one).
  */
 export async function adminCurrentInvoice(
-  client: SupabaseClient,
+  client: Db,
   orderId: string,
   invoiceId?: string | null,
 ): Promise<InvoiceRow | null> {
-  const { data, error } = await client
-    .from('invoices')
-    .select('*')
-    .eq('order_id', orderId)
-    .order('issued_at', { ascending: false });
-  if (error) throw mapPgError(error);
-  const rows = (data ?? []) as InvoiceRow[];
+  const rows = await dbCall(() => client.rows<InvoiceRow>`
+    select * from public.invoices where order_id = ${orderId} order by issued_at desc`);
   const originals = rows.filter((r) => !r.rectifies_invoice_id);
   const current = invoiceId
     ? (rows.find((r) => r.id === invoiceId) ?? null)

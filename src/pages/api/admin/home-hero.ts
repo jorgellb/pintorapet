@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { upsert } from '@/lib/server/db';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { CommerceError } from '@/lib/server/commerce/errors';
 import { heroContentSchema } from '@/lib/content/homeHero';
@@ -12,13 +13,11 @@ export const PUT: APIRoute = async ({ cookies, request }) => {
   if (!admin) return forbidden();
   try {
     const content = heroContentSchema.parse(await request.json());
-    const { error } = await admin.client.from('site_home_hero').upsert({
-      id: 1,
-      content,
-      updated_at: new Date().toISOString(),
-      updated_by: admin.user.id,
-    });
-    if (error) throw new CommerceError('INTERNAL', 'No se pudo guardar la portada.', 500);
+    await admin.db
+      .run(upsert('site_home_hero', { id: 1, content: JSON.stringify(content), updated_at: new Date().toISOString(), updated_by: admin.user.id }, ['id']))
+      .catch(() => {
+        throw new CommerceError('INTERNAL', 'No se pudo guardar la portada.', 500);
+      });
     await audit(admin, 'update_home_hero', 'site_home_hero', '1', { design: content.design });
     return Response.json({ ok: true });
   } catch (err) {

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { sendOrderEmails } from '@/lib/server/commerce/outbox';
 import { refundRequestSchema, retryRefund, startRefund, type RefundOutcome } from '@/lib/server/commerce/refunds';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
 
 export const prerender = false;
@@ -11,7 +11,7 @@ export const prerender = false;
 /** The customer's email goes out now, like the other order emails (the cron is the safety net). */
 async function tellCustomer(orderId: string, outcome: RefundOutcome) {
   if (outcome.status !== 'succeeded') return;
-  const service = createServiceClient();
+  const service = serviceDb();
   if (service) await sendOrderEmails(service, orderId);
 }
 
@@ -22,7 +22,7 @@ export const POST: APIRoute = async ({ params, request, cookies }) => {
   try {
     const id = z.uuid().parse(params.id);
     const input = refundRequestSchema.parse(await request.json());
-    const outcome = await startRefund(admin.client, id, input);
+    const outcome = await startRefund(admin.db, id, input);
     await audit(admin, input.manual ? 'record_refund' : 'refund_order', 'orders', id, {
       refundId: outcome.refundId,
       amountCents: outcome.amountCents,
@@ -45,7 +45,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
   try {
     const id = z.uuid().parse(params.id);
     const { refundId } = retrySchema.parse(await request.json());
-    const outcome = await retryRefund(admin.client, refundId);
+    const outcome = await retryRefund(admin.db, refundId);
     await audit(admin, 'retry_refund', 'orders', id, { refundId, status: outcome.status });
     await tellCustomer(id, outcome);
     return Response.json({ ok: outcome.status !== 'failed', ...outcome }, { status: outcome.status === 'failed' ? 502 : 200 });

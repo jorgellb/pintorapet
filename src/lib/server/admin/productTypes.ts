@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { insertValues, setColumns, type Db } from '@/lib/server/db';
 import { CommerceError } from '@/lib/server/commerce/errors';
-import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { TYPE_ICONS } from '@/lib/catalog/productTypes';
 
 /**
@@ -66,8 +66,6 @@ type DbRow = {
   sort_order: number;
 };
 
-const SELECT =
-  'id, code, name_es, name_en, singular_es, singular_en, phrase_es, phrase_en, icon, default_weight_grams, vat_rate, google_category, published, sort_order';
 
 const fromDb = (row: DbRow, productCount: number): AdminProductType => ({
   id: row.id,
@@ -88,12 +86,10 @@ const fromDb = (row: DbRow, productCount: number): AdminProductType => ({
 });
 
 /** Products per type (id → count), options left out: Llaveros has 9, not 18. */
-async function productCounts(client: SupabaseClient): Promise<Map<string, number>> {
-  const { data, error } = await client.from('products').select('category_id').is('parent_id', null);
-  if (error) throw mapPgError(error);
-  const counts = new Map<string, number>();
-  for (const row of data ?? []) counts.set(String(row.category_id), (counts.get(String(row.category_id)) ?? 0) + 1);
-  return counts;
+async function productCounts(client: Db): Promise<Map<string, number>> {
+  const rows = await dbCall(() => client.rows<{ category_id: string; n: number }>`
+    select category_id, count(*) as n from public.products where parent_id is null group by category_id`);
+  return new Map(rows.map((row) => [String(row.category_id), row.n]));
 }
 
 const toDb = (input: ProductTypeInput) => ({
@@ -111,61 +107,60 @@ const toDb = (input: ProductTypeInput) => ({
 });
 
 /** Every type, hidden ones too, in the shop's order. */
-export async function listProductTypes(client: SupabaseClient): Promise<AdminProductType[]> {
-  const [{ data, error }, counts] = await Promise.all([
-    client.from('categories').select(SELECT).order('sort_order').order('name_es'),
+export async function listProductTypes(client: Db): Promise<AdminProductType[]> {
+  const [rows, counts] = await Promise.all([
+    dbCall(() => client.rows<DbRow>`select * from public.categories order by sort_order, name_es`),
     productCounts(client),
   ]);
-  if (error) throw mapPgError(error);
-  return ((data ?? []) as unknown as DbRow[]).map((row) => fromDb(row, counts.get(row.id) ?? 0));
+  return rows.map((row) => fromDb(row, counts.get(row.id) ?? 0));
 }
 
 /** code → Spanish plural ("mugs" → "Tazas"), in the shop's order: for the admin's lists and tabs. */
-export async function productTypeNames(client: SupabaseClient): Promise<Map<string, string>> {
-  const { data } = await client.from('categories').select('code, name_es').order('sort_order');
-  return new Map((data ?? []).map((row) => [String(row.code), String(row.name_es)]));
+export async function productTypeNames(client: Db): Promise<Map<string, string>> {
+  const rows = await client
+    .rows<{ code: string; name_es: string }>`select code, name_es from public.categories order by sort_order`
+    .catch(() => []);
+  return new Map(rows.map((row) => [String(row.code), String(row.name_es)]));
 }
 
-export async function getProductType(client: SupabaseClient, id: string): Promise<AdminProductType | null> {
-  const [{ data, error }, counts] = await Promise.all([
-    client.from('categories').select(SELECT).eq('id', id).maybeSingle(),
+export async function getProductType(client: Db, id: string): Promise<AdminProductType | null> {
+  const [row, counts] = await Promise.all([
+    dbCall(() => client.one<DbRow>`select * from public.categories where id = ${id}`),
     productCounts(client),
   ]);
-  if (error) throw mapPgError(error);
-  return data ? fromDb(data as unknown as DbRow, counts.get(id) ?? 0) : null;
+  return row ? fromDb(row, counts.get(id) ?? 0) : null;
 }
 
 /** New types go to the end of the shop's filters. */
-export async function createProductType(client: SupabaseClient, input: NewProductTypeInput): Promise<string> {
-  const { data: last } = await client
-    .from('categories')
-    .select('sort_order')
-    .order('sort_order', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+export async function createProductType(client: Db, input: NewProductTypeInput): Promise<string> {
   const { code, ...rest } = input;
-  const { data, error } = await client
-    .from('categories')
-    .insert({ ...toDb(rest), code, slug_es: code, slug_en: code, sort_order: (last?.sort_order ?? 0) + 10 })
-    .select('id')
-    .single();
-  if (error) throw mapPgError(error);
-  return data.id as string;
+  const row = await dbCall(async () => {
+    const last = await client.one<{ sort_order: number }>`
+      select sort_order from public.categories order by sort_order desc limit 1`;
+    return client.one<{ id: string }>`
+      insert into public.categories ${insertValues({
+        ...toDb(rest),
+        code,
+        slug_es: code,
+        slug_en: code,
+        sort_order: (last?.sort_order ?? 0) + 10,
+      })}
+      returning id`;
+  });
+  return row!.id;
 }
 
-export async function updateProductType(client: SupabaseClient, id: string, input: ProductTypeInput): Promise<void> {
-  const { data, error } = await client.from('categories').update(toDb(input)).eq('id', id).select('id');
-  if (error) throw mapPgError(error);
-  if (!data?.length) throw new CommerceError('UNAVAILABLE', 'Ese tipo de producto ya no existe.', 404);
+export async function updateProductType(client: Db, id: string, input: ProductTypeInput): Promise<void> {
+  const changed = await dbCall(() => client.run`update public.categories set ${setColumns(toDb(input))} where id = ${id}`);
+  if (!changed) throw new CommerceError('UNAVAILABLE', 'Ese tipo de producto ya no existe.', 404);
 }
 
 /** Only a type without products: their VAT and weight come from it. */
-export async function deleteProductType(client: SupabaseClient, id: string): Promise<void> {
-  const { count } = await client
-    .from('products')
-    .select('id', { count: 'exact', head: true })
-    .eq('category_id', id)
-    .is('parent_id', null);
+export async function deleteProductType(client: Db, id: string): Promise<void> {
+  const count = (
+    await dbCall(() => client.one<{ n: number }>`
+      select count(*) as n from public.products where category_id = ${id} and parent_id is null`)
+  )?.n;
   if (count) {
     throw new CommerceError(
       'CONFLICT',
@@ -173,13 +168,11 @@ export async function deleteProductType(client: SupabaseClient, id: string): Pro
       409,
     );
   }
-  const { data, error } = await client.from('categories').delete().eq('id', id).select('id');
-  if (error) throw mapPgError(error);
-  if (!data?.length) throw new CommerceError('UNAVAILABLE', 'Ese tipo de producto ya no existe.', 404);
+  const deleted = await dbCall(() => client.run`delete from public.categories where id = ${id}`);
+  if (!deleted) throw new CommerceError('UNAVAILABLE', 'Ese tipo de producto ya no existe.', 404);
 }
 
 /** The shop shows its filters, and each portrait's pieces, in this order. */
-export async function reorderProductTypes(client: SupabaseClient, ids: string[]): Promise<void> {
-  const { error } = await client.rpc('admin_reorder_product_types', { p_ids: ids });
-  if (error) throw mapPgError(error);
+export async function reorderProductTypes(client: Db, ids: string[]): Promise<void> {
+  await dbCall(() => client.run`select public.admin_reorder_product_types(p_ids => ${ids}::uuid[])`);
 }

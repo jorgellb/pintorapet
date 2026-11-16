@@ -1,5 +1,5 @@
 import { getCollection } from 'astro:content';
-import { hasSupabase } from '@/lib/server/env';
+import { anonDb, hasDatabase, ident } from '@/lib/server/db';
 import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 export type WorkCategory = 'dog' | 'cat' | 'horse' | 'other' | 'people';
@@ -178,15 +178,10 @@ async function fromView<T>(
   view: 'editorial_artworks_v' | 'editorial_gallery_v',
   map: (row: Record<string, unknown>) => T | null,
 ): Promise<T[] | null> {
-  if (!hasSupabase()) return null;
+  if (!hasDatabase()) return null;
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const client = createClient(
-      import.meta.env.PUBLIC_SUPABASE_URL as string,
-      import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string,
-    );
-    const { data, error } = await client.from(view).select('*').order('sort_order');
-    if (error || !data) return null;
+    const client = anonDb();
+    const data = await client.rows<Record<string, unknown>>`select * from ${ident('public', view)} order by sort_order`;
     return data.flatMap((row) => {
       const mapped = map(row as Record<string, unknown>);
       return mapped ? [mapped] : [];

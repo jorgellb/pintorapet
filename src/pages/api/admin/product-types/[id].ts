@@ -15,7 +15,7 @@ export const PATCH: APIRoute = async ({ params, cookies, request }) => {
   try {
     const id = idSchema.parse(params.id);
     const input = productTypeSchema.parse(await request.json());
-    await updateProductType(admin.client, id, input);
+    await updateProductType(admin.db, id, input);
     await audit(admin, 'update_product_type', 'categories', id, { published: input.published, vatRate: input.vatRate });
     return Response.json({ ok: true });
   } catch (err) {
@@ -29,7 +29,7 @@ export const DELETE: APIRoute = async ({ params, cookies, request }) => {
   if (!admin) return forbidden();
   try {
     const id = idSchema.parse(params.id);
-    await deleteProductType(admin.client, id);
+    await deleteProductType(admin.db, id);
     await audit(admin, 'delete_product_type', 'categories', id, {});
     return Response.json({ ok: true });
   } catch (err) {

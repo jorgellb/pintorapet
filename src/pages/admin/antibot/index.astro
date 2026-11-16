@@ -1,12 +1,12 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { shortDate } from '@/lib/admin/labels';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
@@ -32,7 +32,7 @@ const param = Astro.url.searchParams.get('dias');
 const days: Period = param && param in periods ? (param as Period) : '7';
 
 let summary: Summary | null = null;
-const { data, error } = await admin.client.rpc('admin_antibot_summary', { p_days: Number(days) });
+const { data, error } = await settle(admin.db.call('admin_antibot_summary', { p_days: Number(days) }));
 if (!error) summary = data as Summary;
 
 const FORMS: Record<string, string> = {

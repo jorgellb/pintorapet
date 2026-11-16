@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb, sql } from '@/lib/server/db';
 
 export type PaymentProvider = 'stripe' | 'paypal';
 export type PaymentMode = 'test' | 'live';
@@ -67,17 +67,21 @@ function fromEnv(): PaymentConfig {
 }
 
 async function fromDashboard(): Promise<PaymentConfig> {
-  const client = createServiceClient();
+  const client = serviceDb();
   if (!client) return { stripe: null, paypal: null };
-  const { data, error } = await client
-    .from('payment_providers')
-    .select('provider, enabled, mode, public_key, webhook_id');
-  if (error || !data) return { stripe: null, paypal: null };
+  const rows = await client
+    .rows<ProviderRow>`select provider, enabled, mode, public_key, webhook_id from public.payment_providers`
+    .catch(() => null);
+  if (!rows) return { stripe: null, paypal: null };
 
-  const rows = data as ProviderRow[];
+  // Decrypting needs the vault key; without it (or on any error) the provider counts as not connected.
   const secretsOf = async (provider: PaymentProvider) => {
-    const res = await client.rpc('payment_provider_secrets', { p_provider: provider });
-    return (res.data ?? {}) as Record<string, string>;
+    const res = await client
+      .withVaultKey<{ secrets: Record<string, string> | null }>(
+        sql`select public.payment_provider_secrets(p_provider => ${provider}) as secrets`,
+      )
+      .catch(() => []);
+    return res[0]?.secrets ?? {};
   };
 
   const config: PaymentConfig = { stripe: null, paypal: null };

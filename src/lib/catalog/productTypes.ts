@@ -1,5 +1,5 @@
 import type { Locale } from '@/i18n/routes';
-import { hasSupabase } from '@/lib/server/env';
+import { anonDb, hasDatabase } from '@/lib/server/db';
 
 /**
  * Product types (cards, coasters, mugs…), edited in Admin › Tienda › Tipos de
@@ -122,16 +122,11 @@ export const DEFAULT_TYPES: ProductTypeRow[] = [
 /** The visible types, in their order. The built-in ones when the database cannot be read. */
 export async function loadProductTypes(locale: Locale): Promise<ProductType[]> {
   const fallback = DEFAULT_TYPES.map((row) => fromRow(row, locale));
-  if (!hasSupabase()) return fallback;
+  if (!hasDatabase()) return fallback;
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const client = createClient(
-      import.meta.env.PUBLIC_SUPABASE_URL as string,
-      import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string,
-    );
-    const { data, error } = await client.from('catalog_categories_v').select('*').order('sort_order');
-    if (error || !data) return fallback;
-    return (data as ProductTypeRow[]).map((row) => fromRow(row, locale));
+    const client = anonDb();
+    const data = await client.rows<ProductTypeRow>`select * from public.catalog_categories_v order by sort_order`;
+    return data.map((row) => fromRow(row, locale));
   } catch {
     return fallback;
   }

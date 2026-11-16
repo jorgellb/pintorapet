@@ -47,7 +47,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
       return jsonError(new CommerceError('VALIDATION', 'Missing product id', 400));
     }
     const body = patchSchema.parse(await request.json());
-    await updateAdminProduct(admin.client, id, body);
+    await updateAdminProduct(admin.db, id, body);
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
@@ -65,13 +65,12 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const id = z.string().uuid().parse(params.id);
-    const result = await deleteAdminProduct(admin.client, id);
-    await admin.client.from('admin_audit_log').insert({
-      actor_user_id: admin.user.id,
-      operation: result === 'deleted' ? 'delete_product' : 'archive_product',
-      entity_type: 'products',
-      entity_id: id,
-    });
+    const result = await deleteAdminProduct(admin.db, id);
+    await admin.db
+      .run`
+        insert into public.admin_audit_log (actor_user_id, operation, entity_type, entity_id)
+        values (${admin.user.id}, ${result === 'deleted' ? 'delete_product' : 'archive_product'}, 'products', ${id})`
+      .catch(() => 0);
     return Response.json({ ok: true, result });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);

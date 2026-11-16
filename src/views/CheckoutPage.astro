@@ -3,7 +3,7 @@ import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { countryOptions } from '@/lib/domain/countries';
-import { hasServiceSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { checkoutProviders } from '@/lib/server/payments/config';
 import { loadProfile } from '@/lib/server/account';
 
@@ -14,7 +14,7 @@ interface Props {
 const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const providers = hasServiceSupabase() ? await checkoutProviders() : [];
+const providers = hasDatabase() ? await checkoutProviders() : [];
 // In development the form can be tried without a payment provider connected.
 const preview = providers.length === 0 && import.meta.env.DEV;
 const ready = providers.length > 0 || preview;

@@ -2,13 +2,14 @@
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import PaymentProviders from '@/components/admin/PaymentProviders.astro';
-import { hasSupabase, hasResend, hasServiceSupabase, siteUrl } from '@/lib/server/env';
+import { hasResend, siteUrl } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { checkoutProviders } from '@/lib/server/payments/config';
 import { googleMerchantConfig, metaCatalogConfig } from '@/lib/catalog/syncCatalog';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
@@ -16,27 +17,39 @@ const origin = siteUrl();
 const providers = await checkoutProviders();
 const providerNames = providers.map((p) => (p === 'stripe' ? 'Stripe' : 'PayPal')).join(' y ');
 
-const { data: settings, error } = await admin.client
-  .from('shop_settings')
-  .select(
-    'public_name, sales_enabled, payments_enabled, tax_policy, config_version, cart_max_qty_per_line, cart_max_lines, cart_max_units, quote_ttl_seconds, reservation_minutes',
-  )
-  .eq('id', 1)
-  .maybeSingle();
+const { data: settings, error } = await settle(
+  admin.db.one<{
+    public_name: string;
+    sales_enabled: boolean;
+    payments_enabled: boolean;
+    tax_policy: string;
+    config_version: number;
+    cart_max_qty_per_line: number;
+    cart_max_lines: number;
+    cart_max_units: number;
+    quote_ttl_seconds: number;
+    reservation_minutes: number;
+  }>`
+    select public_name, sales_enabled, payments_enabled, tax_policy, config_version, cart_max_qty_per_line,
+           cart_max_lines, cart_max_units, quote_ttl_seconds, reservation_minutes
+    from public.shop_settings where id = 1`,
+);
 
 // Fiscal details printed on every invoice.
-const { data: invoiceSettings } = await admin.client
-  .from('shop_settings')
-  .select('invoice_config')
-  .eq('id', 1)
-  .maybeSingle();
+const { data: invoiceSettings } = await settle(
+  admin.db.one<{ invoice_config: unknown }>`select invoice_config from public.shop_settings where id = 1`,
+);
 const fiscal = (invoiceSettings?.invoice_config ?? {}) as Record<string, string | number | boolean | undefined>;
-const { data: fiscalComplete } = await admin.client.rpc('invoice_config_complete');
-const { data: paidOrders } = await admin.client.from('orders').select('id, invoices(id)').eq('payment_status', 'paid');
+const { data: fiscalComplete } = await settle(admin.db.call<boolean>('invoice_config_complete'));
+const { data: paidOrders } = await settle(
+  admin.db.rows<{ id: string; invoices: unknown[] }>`
+    select o.id, coalesce((select json_agg(json_build_object('id', i.id)) from public.invoices i where i.order_id = o.id), '[]'::json) as invoices
+    from public.orders o where o.payment_status = 'paid'`,
+);
 const pendingInvoices = (paidOrders ?? []).filter((o) => !(o.invoices as unknown[] | null)?.length).length;
 
 const services = [
-  { name: 'Base de datos con permisos de servidor', ok: hasServiceSupabase(), note: 'Necesaria para pedidos y subidas.' },
+  { name: 'Base de datos con permisos de servidor', ok: hasDatabase(), note: 'Necesaria para pedidos y subidas.' },
   { name: 'Cobros', ok: providers.length > 0, note: providers.length ? `Se cobra con ${providerNames}.` : 'Conecta Stripe o PayPal más arriba.' },
   { name: 'Resend', ok: hasResend(), note: 'Envía los correos de pedidos y encargos.' },
   { name: 'Google Merchant Center', ok: Boolean(googleMerchantConfig()), note: 'Recibe el catálogo al sincronizar.' },
@@ -60,7 +73,7 @@ const feeds = [
     </div>
   </header>
 
-  <PaymentProviders client={admin.client} />
+  <PaymentProviders client={admin.db} />
 
   <div class="layout">
     {

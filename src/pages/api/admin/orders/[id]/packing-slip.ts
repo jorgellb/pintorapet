@@ -12,7 +12,7 @@ export const GET: APIRoute = async ({ params, cookies, request }) => {
   const admin = await requireAdmin(cookies, request);
   if (!admin) return forbidden();
   try {
-    const { order, brand } = await printableOrder(admin.client, z.uuid().parse(params.id));
+    const { order, brand } = await printableOrder(admin.db, z.uuid().parse(params.id));
     return pdfResponse(await renderPackingSlip(order, brand), `albaran-${order.reference}.pdf`);
   } catch (err) {
     return failure(err, 'No se pudo preparar el albarán.');

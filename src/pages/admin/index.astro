@@ -1,8 +1,8 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
-import { hasSupabase } from '@/lib/server/env';
+import { hasDatabase, userDb } from '@/lib/server/db';
 import { getSessionUser, isActiveAdmin } from '@/lib/server/adminAuth';
-import { createUserServerClient } from '@/lib/server/supabase';
+import { signOut } from '@/lib/server/auth';
 import { loadOverview } from '@/lib/server/admin/overview';
 import { listCustomers } from '@/lib/server/admin/customers';
 import {
@@ -17,24 +17,23 @@ import {
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 
 const session = await getSessionUser(Astro.cookies, Astro.request);
 
 if (Astro.request.method === 'POST' && session) {
   const form = await Astro.request.formData();
   if (form.get('action') === 'signout') {
-    const client = createUserServerClient(Astro.cookies, Astro.request);
-    await client?.auth.signOut();
+    await signOut(Astro.cookies, Astro.request);
     return Astro.redirect('/admin/login/');
   }
 }
 
 if (!session) return Astro.redirect('/admin/login/');
-const adminOk = await isActiveAdmin(session.client, session.user.id);
+const adminOk = await isActiveAdmin(session.id);
 
-const overview = adminOk ? await loadOverview(session.client) : null;
-const customerRows = adminOk ? await listCustomers(session.client).catch(() => []) : [];
+const overview = adminOk ? await loadOverview(userDb(session.id)) : null;
+const customerRows = adminOk ? await listCustomers(userDb(session.id)).catch(() => []) : [];
 const customerAccounts = customerRows.filter((c) => c.kind === 'account' && !c.is_admin).length;
 const guestBuyers = customerRows.filter((c) => c.kind === 'guest').length;
 
@@ -58,13 +57,13 @@ const trend = overview
 const setupDone = overview?.setup.filter((s) => s.ok).length ?? 0;
 ---
 
-<AdminLayout title="Inicio" email={adminOk ? session.user.email : null}>
+<AdminLayout title="Inicio" email={adminOk ? session.email : null}>
   {
     !adminOk || !overview ? (
       <div class="panel">
         <h1>Sin acceso al panel</h1>
         <p class="hint">
-          Has entrado como <strong>{session.user.email}</strong>. Esta cuenta todavía
+          Has entrado como <strong>{session.email}</strong>. Esta cuenta todavía
           no figura como administradora del estudio.
         </p>
         <form method="post">

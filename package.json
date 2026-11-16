@@ -41,8 +41,10 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "astro": "^7.4.2",
+    "better-auth": "1.7.15",
     "nanoid": "^6.0.2",
     "pdf-lib": "^1.17.1",
+    "pg": "8.23.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "resend": "^6.34.1",
@@ -55,6 +57,7 @@
     "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
+    "@types/pg": "8.15.6",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"
   }

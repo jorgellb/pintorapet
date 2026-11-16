@@ -22,7 +22,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     }
     const body = bodySchema.parse(await request.json());
-    const inventory = await adjustProductInventory(admin.client, {
+    const inventory = await adjustProductInventory(admin.db, {
       productId: body.productId,
       stockOnHand: body.stockOnHand,
       inventoryMode: body.inventoryMode,

@@ -74,13 +74,16 @@ describe('safeNext', () => {
 
 describe('authErrorKey', async () => {
   const { authErrorKey } = await import('../src/lib/server/account');
-  it('turns Supabase messages into friendly keys', () => {
-    expect(authErrorKey('Invalid login credentials')).toBe('credentials');
-    expect(authErrorKey('Email not confirmed')).toBe('unconfirmed');
-    expect(authErrorKey('User already registered')).toBe('exists');
-    expect(authErrorKey('Email address "a@b.c" is invalid')).toBe('email');
-    expect(authErrorKey('Error sending confirmation email')).toBe('mail');
-    expect(authErrorKey('For security purposes, you can only request this after 30 seconds.')).toBe('rate');
-    expect(authErrorKey('Something else')).toBe('generic');
+  const apiError = (code: string, statusCode = 400) => ({ statusCode, body: { code, message: code } });
+  it('turns Better Auth errors into friendly keys', () => {
+    expect(authErrorKey(apiError('INVALID_EMAIL_OR_PASSWORD', 401))).toBe('credentials');
+    expect(authErrorKey(apiError('EMAIL_NOT_VERIFIED', 403))).toBe('unconfirmed');
+    expect(authErrorKey(apiError('USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL', 422))).toBe('exists');
+    expect(authErrorKey(apiError('INVALID_EMAIL'))).toBe('email');
+    expect(authErrorKey(apiError('PASSWORD_TOO_SHORT'))).toBe('weak');
+    expect(authErrorKey(apiError('ANYTHING', 429))).toBe('rate');
+    expect(authErrorKey(new Error('MAIL_FAILED: Resend refused'))).toBe('mail');
+    expect(authErrorKey(new Error('Something else'))).toBe('generic');
+    expect(authErrorKey(null)).toBe('generic');
   });
 });

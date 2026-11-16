@@ -46,3 +46,6 @@ certs/
 
 # local database dumps (contain customer data)
 backups/
+
+# Python bytecode
+__pycache__/

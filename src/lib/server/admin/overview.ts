@@ -1,6 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { googleMerchantConfig, metaCatalogConfig } from '@/lib/catalog/syncCatalog';
-import { hasResend, hasServiceSupabase } from '@/lib/server/env';
+import { hasResend } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { checkoutProviders } from '@/lib/server/payments/config';
 import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
@@ -65,7 +66,11 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export async function loadOverview(client: SupabaseClient): Promise<Overview> {
+// Same shapes the Supabase calls returned, so the summary below reads them unchanged.
+const asData = (data: unknown[]) => ({ data });
+const asCount = (row: { count: number } | null) => ({ count: row?.count ?? 0 });
+
+export async function loadOverview(client: Db): Promise<Overview> {
   const now = Date.now();
   const since = new Date(now - 14 * DAY).toISOString();
 
@@ -81,45 +86,33 @@ export async function loadOverview(client: SupabaseClient): Promise<Overview> {
     views,
     settings,
   ] = await Promise.all([
-    client
-      .from('artworks')
-      .select(
-        'id, title_es, title_en, category, published, summary_es, story_es, sort_order, updated_at, artwork_assets(src, role, sort_order)',
-      )
-      .order('updated_at', { ascending: false })
-      .order('sort_order', { ascending: true }),
-    client.from('gallery_items').select('id, published'),
-    client
-      .from('products')
-      .select('id, status, sale_enabled, inventory(inventory_mode)'),
-    client.from('media_assets').select('id, media_translations(locale, alt_text)'),
-    client
-      .from('commission_requests')
-      .select('id, reference, contact_name, subjects, status, created_at')
-      .order('created_at', { ascending: false })
-      .limit(5),
-    client
-      .from('commission_requests')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'received'),
-    client
-      .from('orders')
-      .select(
-        'id, reference, payment_status, fulfillment_status, total_cents, customer_email, created_at',
-      )
-      .order('created_at', { ascending: false })
-      .limit(5),
-    client
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('payment_status', 'paid')
-      .in('fulfillment_status', ['unfulfilled', 'preparing']),
-    client
-      .from('page_views')
-      .select('viewed_at, session_hash')
-      .gte('viewed_at', since)
-      .limit(50000),
-    client.from('shop_settings').select('sales_enabled, payments_enabled').eq('id', 1).maybeSingle(),
+    client.rows`
+      select a.id, a.title_es, a.title_en, a.category, a.published, a.summary_es, a.story_es, a.sort_order, a.updated_at,
+             coalesce((select json_agg(json_build_object('src', x.src, 'role', x.role, 'sort_order', x.sort_order))
+                       from public.artwork_assets x where x.artwork_id = a.id), '[]'::json) as artwork_assets
+      from public.artworks a order by a.updated_at desc, a.sort_order asc`.then(asData),
+    client.rows`select id, published from public.gallery_items`.then(asData),
+    client.rows`
+      select p.id, p.status, p.sale_enabled,
+             (select json_build_object('inventory_mode', i.inventory_mode) from public.inventory i where i.product_id = p.id) as inventory
+      from public.products p`.then(asData),
+    client.rows`
+      select m.id, coalesce((select json_agg(json_build_object('locale', t.locale, 'alt_text', t.alt_text))
+                             from public.media_translations t where t.media_asset_id = m.id), '[]'::json) as media_translations
+      from public.media_assets m`.then(asData),
+    client.rows`
+      select id, reference, contact_name, subjects, status, created_at from public.commission_requests
+      order by created_at desc limit 5`.then(asData),
+    client.one<{ count: number }>`select count(*) as count from public.commission_requests where status = 'received'`.then(asCount),
+    client.rows`
+      select id, reference, payment_status, fulfillment_status, total_cents, customer_email, created_at
+      from public.orders order by created_at desc limit 5`.then(asData),
+    client.one<{ count: number }>`
+      select count(*) as count from public.orders
+      where payment_status = 'paid' and fulfillment_status in ('unfulfilled', 'preparing')`.then(asCount),
+    client.rows`select viewed_at, session_hash from public.page_views where viewed_at >= ${since} limit 50000`.then(asData),
+    client.one<{ sales_enabled: boolean; payments_enabled: boolean }>`
+      select sales_enabled, payments_enabled from public.shop_settings where id = 1`.then((data) => ({ data })),
   ]);
 
   type ArtworkRow = {
@@ -242,7 +235,7 @@ export async function loadOverview(client: SupabaseClient): Promise<Overview> {
   }
 
   const setup = [
-    { label: 'Base de datos y fotos', ok: hasServiceSupabase(), href: '/admin/settings/' },
+    { label: 'Base de datos y fotos', ok: hasDatabase(), href: '/admin/settings/' },
     { label: 'Cobros con Stripe o PayPal', ok: (await checkoutProviders()).length > 0, href: '/admin/settings/#cobros' },
     { label: 'Correo de avisos', ok: hasResend(), href: '/admin/settings/' },
     { label: 'Google Merchant Center', ok: Boolean(googleMerchantConfig()), href: '/admin/settings/' },

@@ -1,0 +1,30 @@
+# Daily encrypted database backup to Cloudinary (private). See scripts/aiven/backup.py.
+# Secrets (repository settings › Secrets and variables › Actions):
+#   DATABASE_URL, DATABASE_CA_CERT, BACKUP_PASSPHRASE, CLOUDINARY_URL
+name: Database backup
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Dump, encrypt and upload
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_CA_CERT: ${{ secrets.DATABASE_CA_CERT }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          CLOUDINARY_URL: ${{ secrets.CLOUDINARY_URL }}
+        run: python3 scripts/aiven/backup.py

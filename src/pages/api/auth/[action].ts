@@ -4,7 +4,9 @@ import { passwordSchema, safeNext } from '@/lib/domain/accountProfile';
 import { authErrorKey } from '@/lib/server/account';
 import { clientIp, formFields, inspect, reportSignedIn, type AntibotForm } from '@/lib/server/antibot';
 import { setFlash } from '@/lib/server/flash';
-import { createUserServerClient } from '@/lib/server/supabase';
+import { auth, hasAuth, sessionUser, setOwnPassword, signInWithPassword } from '@/lib/server/auth';
+import { forwardCookies } from '@/lib/server/auth/cookies';
+import { db } from '@/lib/server/db';
 
 export const prerender = false;
 
@@ -26,7 +28,7 @@ const GATED: Partial<Record<keyof typeof PAGES, AntibotForm>> = {
  * posts here; the answer is a redirect, with any message in a one-time cookie.
  */
 export const POST: APIRoute = async (context) => {
-  const { params, request, cookies, redirect, url } = context;
+  const { params, request, cookies, redirect } = context;
   const action = params.action as keyof typeof PAGES;
   if (!(action in PAGES)) return new Response(null, { status: 404 });
 
@@ -38,12 +40,16 @@ export const POST: APIRoute = async (context) => {
   const email = String(form.get('email') ?? '').trim().toLowerCase();
   const fullName = String(form.get('full_name') ?? '').trim().slice(0, 120);
   const password = String(form.get('password') ?? '');
+  const token = action === 'reset' ? String(form.get('token') ?? '') : '';
   const back = (error: string) => {
     setFlash(cookies, { error, email, fullName });
-    const query = next !== account ? `?next=${encodeURIComponent(next)}` : '';
-    return redirect(`${page}${query}`, 303);
+    const query = new URLSearchParams();
+    if (next !== account) query.set('next', next);
+    // A new-password form keeps its link while the customer fixes a typo.
+    if (token && error !== 'link') query.set('token', token);
+    const search = query.toString();
+    return redirect(`${page}${search ? `?${search}` : ''}`, 303);
   };
-  const callback = (to: string) => `${url.origin}/api/auth/callback/?next=${encodeURIComponent(to)}`;
 
   // Typos do not count towards the limits: check the fields first.
   if (action === 'register') {
@@ -65,43 +71,73 @@ export const POST: APIRoute = async (context) => {
     }
   }
 
-  const client = createUserServerClient(cookies, request);
-  if (!client) return back('generic');
+  if (!hasAuth()) return back('generic');
 
   if (action === 'sign-in') {
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) return back(authErrorKey(error.message));
+    try {
+      await signInWithPassword(cookies, request, email, password);
+    } catch (err) {
+      return back(authErrorKey(err));
+    }
     await reportSignedIn(formFields(form));
     return redirect(next, 303);
   }
 
   if (action === 'register') {
-    const { data, error } = await client.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName }, emailRedirectTo: callback(account) },
-    });
-    if (error) return back(authErrorKey(error.message));
-    if (data.session) return redirect(next, 303);
+    try {
+      // The confirmation link comes back to the account page, signed in.
+      const { headers, response } = await auth().api.signUpEmail({
+        body: { email, password, name: fullName, callbackURL: account },
+        headers: request.headers,
+        returnHeaders: true,
+      });
+      if (response.token) {
+        forwardCookies(headers, cookies);
+        return redirect(next, 303);
+      }
+    } catch (err) {
+      return back(authErrorKey(err));
+    }
     setFlash(cookies, { sent: 'register', email });
     return redirect(page, 303);
   }
 
   if (action === 'forgot') {
     // The same answer whether or not the account exists.
-    const { error } = await client.auth.resetPasswordForEmail(email, {
-      redirectTo: callback(localizedPath(locale, 'accountReset')),
-    });
-    if (error && authErrorKey(error.message) === 'rate') return back('rate');
+    try {
+      await auth().api.requestPasswordReset({ body: { email, redirectTo: localizedPath(locale, 'accountReset') } });
+    } catch (err) {
+      if (authErrorKey(err) === 'rate') return back('rate');
+    }
     setFlash(cookies, { sent: 'forgot', email });
     return redirect(page, 303);
   }
 
-  // reset: needs the session the password link opened
-  const { data: who } = await client.auth.getUser();
-  if (!who.user) return back('link');
+  // reset: from the emailed link (token) or from the account page while signed in
   if (password !== String(form.get('password_repeat') ?? '')) return back('mismatch');
   if (!passwordSchema.safeParse(password).success) return back('weak');
-  const { error } = await client.auth.updateUser({ password });
-  return error ? back(authErrorKey(error.message)) : redirect(`${account}?password=1`, 303);
+  if (token) {
+    const owner = await db()
+      .one<{ email: string }>`
+        select u.email from auth.verification v join auth.users u on u.id::text = v.value
+        where v.identifier = ${`reset-password:${token}`} and v.expires_at > now()`
+      .catch(() => null);
+    if (!owner) return back('link');
+    try {
+      await auth().api.resetPassword({ body: { newPassword: password, token } });
+      // Signed in straight away, as the Supabase link did.
+      await signInWithPassword(cookies, request, owner.email, password);
+    } catch (err) {
+      return back(authErrorKey(err) === 'weak' ? 'weak' : 'link');
+    }
+    return redirect(`${account}?password=1`, 303);
+  }
+  const who = await sessionUser(cookies, request);
+  if (!who) return back('link');
+  try {
+    await setOwnPassword(who.id, password);
+  } catch (err) {
+    return back(authErrorKey(err));
+  }
+  return redirect(`${account}?password=1`, 303);
 };

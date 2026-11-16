@@ -2,10 +2,15 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Locale } from '@/i18n/routes';
 import type { ProductPublic } from '@/lib/domain/types';
-import { hasSupabase } from '@/lib/server/env';
+import { anonDb, hasDatabase } from '@/lib/server/db';
 import { resolveMediaUrl, storagePublicUrl } from '@/lib/server/storageUrl';
 
 export type CatalogSource = 'supabase' | 'migration' | 'empty';
+
+// The { data, error } pairs the code below was written against.
+type Rows = Record<string, unknown>[];
+const asData = (data: Rows) => ({ data, error: null as unknown });
+const asError = (error: unknown) => ({ data: null as Rows | null, error });
 
 export interface ManifestProduct {
   id?: string;
@@ -117,16 +122,13 @@ async function loadFromMigration(locale: Locale): Promise<ProductPublic[]> {
 }
 
 async function loadFromSupabase(locale: Locale): Promise<ProductPublic[] | null> {
-  if (!hasSupabase()) return null;
+  if (!hasDatabase()) return null;
   try {
-    const { createClient } = await import('@supabase/supabase-js');
-    const url = import.meta.env.PUBLIC_SUPABASE_URL as string;
-    const key = import.meta.env.PUBLIC_SUPABASE_ANON_KEY as string;
-    const client = createClient(url, key);
+    const client = anonDb();
     const [products, translations, images] = await Promise.all([
-      client.from('catalog_products_v').select('*').order('editorial_order'),
-      client.from('catalog_product_translations_v').select('*').eq('locale', locale),
-      client.from('catalog_product_images_v').select('*').order('position'),
+      client.rows`select * from public.catalog_products_v order by editorial_order`.then(asData, asError),
+      client.rows`select * from public.catalog_product_translations_v where locale = ${locale}`.then(asData, asError),
+      client.rows`select * from public.catalog_product_images_v order by position`.then(asData, asError),
     ]);
     if (products.error || !products.data) return null;
 
@@ -199,7 +201,7 @@ export async function loadPublicCatalog(locale: Locale): Promise<{
   products: ProductPublic[];
   source: CatalogSource;
 }> {
-  if (hasSupabase()) {
+  if (hasDatabase()) {
     const fromDb = await loadFromSupabase(locale);
     if (fromDb !== null) {
       return { products: fromDb, source: 'supabase' };

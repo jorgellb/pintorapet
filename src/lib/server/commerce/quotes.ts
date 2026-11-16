@@ -1,8 +1,8 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { json, type Db } from '@/lib/server/db';
 import type { CartItem } from '@/lib/domain/cart';
 import type { InvoiceCustomer } from '@/lib/domain/checkoutCustomer';
 import { formatEur } from '@/lib/domain/money';
-import { mapPgError } from './pgErrors';
+import { dbCall } from './pgErrors';
 import { CommerceError } from './errors';
 
 export interface QuoteLine {
@@ -70,7 +70,7 @@ type QuoteRow = {
 };
 
 export async function createPersistedQuote(
-  supabase: SupabaseClient,
+  supabase: Db,
   opts: {
     cartOwnerHash: string;
     locale: 'en' | 'es';
@@ -85,16 +85,14 @@ export async function createPersistedQuote(
     quantity: item.quantity,
   }));
 
-  const { data, error } = await supabase.rpc('create_checkout_quote', {
-    p_cart_owner_hash: opts.cartOwnerHash,
-    p_locale: opts.locale,
-    p_lines,
-    p_country: opts.country?.toUpperCase() ?? null,
-    p_postal_code: opts.postalCode || null,
-    p_invoice_customer: opts.invoice ?? null,
-  });
-
-  if (error) throw mapPgError(error);
+  const data = await dbCall(() => supabase.one<QuoteRow>`
+    select * from public.create_checkout_quote(
+      p_cart_owner_hash => ${opts.cartOwnerHash},
+      p_locale => ${opts.locale}::public.locale_code,
+      p_lines => array(select l from jsonb_populate_recordset(null::public.cart_line_input, ${json(p_lines)}) l),
+      p_country => ${opts.country?.toUpperCase() ?? null},
+      p_postal_code => ${opts.postalCode || null},
+      p_invoice_customer => ${opts.invoice ? json(opts.invoice) : null})`);
   if (!data) {
     throw new CommerceError('INTERNAL', 'Quote RPC returned empty', 500);
   }

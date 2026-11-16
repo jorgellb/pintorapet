@@ -1,0 +1,144 @@
+# Plan: Supabase → Aiven + Better Auth
+
+Diseño: `docs/superpowers/specs/2026-11-16-migracion-aiven-design.md`.
+
+## Hecho
+- [x] Preludio `supabase/aiven/00_prelude.sql` (roles, auth, storage, vault, ops)
+- [x] `scripts/aiven/apply-schema.py` — 32 migraciones en PostgreSQL 18 local
+- [x] `scripts/aiven/compare-schema.py` — paridad total con Supabase
+- [x] `scripts/aiven/copy-data.py` — 38 tablas idénticas, 1 usuario, 3 secretos
+- [x] `src/lib/server/db.ts` (+ tests unitarios e integración)
+- [x] Better Auth: `src/lib/server/auth/{index,cookies,emails}.ts` (+ tests)
+- [x] `src/lib/server/account.ts`, `src/lib/server/adminAuth.ts`
+
+## Archivos que usan Supabase (convertir a db / Better Auth)
+Regla: `admin.client` → `admin.db` (userDb: authenticated + auth.uid()); `createServiceClient()` → `db()`;
+cliente anon → `anonDb()`; `.rpc('fn', {p})` → `select fn(p => ...)` (o `select * from fn()` si devuelve fila/conjunto).
+
+- [x] src/components/admin/CorreosConnection.astro
+- [x] src/components/admin/PaymentProviders.astro
+- [x] src/lib/analytics/record.ts
+- [x] src/lib/catalog/loadProducts.ts
+- [x] src/lib/catalog/productTypes.ts
+- [x] src/lib/catalog/shopSets.ts
+- [x] src/lib/content/editorial.ts
+- [x] src/lib/content/homeHero.ts
+- [x] src/lib/content/homeSections.ts
+- [x] src/lib/server/admin/customers.ts
+- [x] src/lib/server/admin/editorial.ts
+- [x] src/lib/server/admin/overview.ts
+- [x] src/lib/server/admin/products.ts
+- [x] src/lib/server/admin/productTypes.ts
+- [x] src/lib/server/admin/shopCategories.ts
+- [x] src/lib/server/antibot.ts
+- [x] src/lib/server/auth/index.ts
+- [x] src/lib/server/commerce/checkout.ts
+- [x] src/lib/server/commerce/forms.ts
+- [x] src/lib/server/commerce/orderAdmin.ts
+- [x] src/lib/server/commerce/outbox.ts
+- [x] src/lib/server/commerce/paypalCheckout.ts
+- [x] src/lib/server/commerce/quotes.ts
+- [x] src/lib/server/commerce/refunds.ts
+- [x] src/lib/server/commerce/webhook.ts
+- [x] src/lib/server/invoices/serve.ts
+- [x] src/lib/server/payments/config.ts
+- [x] src/lib/server/payments/connect.ts
+- [x] src/lib/server/shipping/admin.ts
+- [x] src/lib/server/shipping/correos.ts
+- [x] src/lib/server/shipping/http.ts
+- [x] src/lib/server/shipping/printOrder.ts
+- [x] src/lib/server/shipping/trackingSync.ts
+- [x] src/lib/server/storageUrl.ts
+- [x] src/pages/admin/analytics/index.astro
+- [x] src/pages/admin/antibot/index.astro
+- [x] src/pages/admin/commissions/index.astro
+- [x] src/pages/admin/customers/[id].astro
+- [x] src/pages/admin/customers/index.astro
+- [x] src/pages/admin/gallery/[id].astro
+- [x] src/pages/admin/gallery/index.astro
+- [x] src/pages/admin/gallery/new.astro
+- [x] src/pages/admin/home/blocks.astro
+- [x] src/pages/admin/home/index.astro
+- [x] src/pages/admin/index.astro
+- [x] src/pages/admin/login.astro
+- [x] src/pages/admin/media/index.astro
+- [x] src/pages/admin/orders/[id].astro
+- [x] src/pages/admin/orders/index.astro
+- [x] src/pages/admin/products/[id].astro
+- [x] src/pages/admin/products/index.astro
+- [x] src/pages/admin/products/new.astro
+- [x] src/pages/admin/product-types/[id].astro
+- [x] src/pages/admin/product-types/index.astro
+- [x] src/pages/admin/settings/index.astro
+- [x] src/pages/admin/shipping/index.astro
+- [x] src/pages/admin/shop-categories/[id].astro
+- [x] src/pages/admin/shop-categories/index.astro
+- [x] src/pages/admin/shop-categories/new.astro
+- [x] src/pages/admin/work/[id].astro
+- [x] src/pages/admin/work/index.astro
+- [x] src/pages/admin/work/new.astro
+- [x] src/pages/api/account/invoice-request.ts
+- [x] src/pages/api/account/invoices/[id].ts
+- [x] src/pages/api/admin/artworks/[id].ts
+- [x] src/pages/api/admin/artworks/index.ts
+- [x] src/pages/api/admin/commissions/[id].ts
+- [x] src/pages/api/admin/customers/[id]/index.ts
+- [x] src/pages/api/admin/customers/[id]/password-link.ts
+- [x] src/pages/api/admin/customers/index.ts
+- [x] src/pages/api/admin/gallery/[id].ts
+- [x] src/pages/api/admin/gallery/index.ts
+- [x] src/pages/api/admin/home-hero.ts
+- [x] src/pages/api/admin/home-sections.ts
+- [x] src/pages/api/admin/inventory.ts
+- [x] src/pages/api/admin/invoices/pending.ts
+- [x] src/pages/api/admin/invoices/settings.ts
+- [x] src/pages/api/admin/media/[id].ts
+- [x] src/pages/api/admin/media/index.ts
+- [x] src/pages/api/admin/orders/abandoned.ts
+- [x] src/pages/api/admin/orders/[id]/index.ts
+- [x] src/pages/api/admin/orders/[id]/invoice.ts
+- [x] src/pages/api/admin/orders/[id]/label.ts
+- [x] src/pages/api/admin/orders/[id]/packing-slip.ts
+- [x] src/pages/api/admin/orders/[id]/refund.ts
+- [x] src/pages/api/admin/orders/[id]/shipment.ts
+- [x] src/pages/api/admin/orders/[id]/tracking.ts
+- [x] src/pages/api/admin/payments/[provider].ts
+- [x] src/pages/api/admin/products/[id]/images.ts
+- [x] src/pages/api/admin/products/[id].ts
+- [x] src/pages/api/admin/products/index.ts
+- [x] src/pages/api/admin/products/order.ts
+- [x] src/pages/api/admin/product-types/[id].ts
+- [x] src/pages/api/admin/product-types/index.ts
+- [x] src/pages/api/admin/product-types/order.ts
+- [x] src/pages/api/admin/shipping/correos.ts
+- [x] src/pages/api/admin/shipping/settings.ts
+- [x] src/pages/api/admin/shipping/zones/[id].ts
+- [x] src/pages/api/admin/shipping/zones.ts
+- [x] src/pages/api/admin/shop-categories/[id].ts
+- [x] src/pages/api/admin/shop-categories/index.ts
+- [x] src/pages/api/admin/shop-categories/order.ts
+- [x] src/pages/api/admin/shop-settings.ts
+- [x] src/pages/api/auth/[action].ts
+- [x] src/pages/api/auth/callback.ts
+- [x] src/pages/api/auth/logout.ts
+- [x] src/pages/api/cart/quote.ts
+- [x] src/pages/api/checkout/create.ts
+- [x] src/pages/api/checkout/paypal/cancel.ts
+- [x] src/pages/api/checkout/paypal/return.ts
+- [x] src/pages/api/cron/outbox.ts
+- [x] src/pages/api/orders/lookup.ts
+- [x] src/pages/api/shipping/estimate.ts
+- [x] src/pages/api/webhooks/paypal.ts
+- [x] src/pages/api/webhooks/stripe.ts
+
+## Después
+- [x] Rutas de login: `/api/auth/[action]`, `callback`, `logout`, `/api/session/[...all]`, `admin/login`
+- [x] Cuenta admin: ADMIN_PASSWORD no es la contraseña de Supabase → entra con enlace por email y la cambia
+- [x] Tests unitarios que simulaban Supabase (`tests/helpers/fakeDb.ts`); 221 unit + 77 e2e en local con datos reales
+- [x] `vercel.json` regions `fra1`; borrado `src/lib/server/supabase.ts`
+- [x] Copias diarias: `scripts/aiven/backup.py` + `.github/workflows/db-backup.yml` (Cloudinary privado, gpg); primera copia restaurada y comprobada
+- [x] Aiven: apply-schema + compare (paridad total) + copy-data (38/38 tablas idénticas, 1 usuario, 3 secretos)
+- [ ] Variables en Vercel (Production y Preview): DATABASE_URL, DATABASE_CA_CERT, VAULT_KEY, BETTER_AUTH_SECRET
+- [ ] Secretos en GitHub: DATABASE_URL, DATABASE_CA_CERT, BACKUP_PASSPHRASE, CLOUDINARY_URL
+- [ ] Desplegar y probar en producción (tienda, carrito, pago sin completar, cuenta, admin con enlace)
+- [ ] Más adelante: quitar `@supabase/*`, los scripts antiguos de Supabase y las variables PUBLIC_SUPABASE_* / SUPABASE_*

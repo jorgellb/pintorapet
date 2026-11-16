@@ -1,9 +1,9 @@
 ---
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { carrierRow } from '@/lib/server/shipping/admin';
 
 interface Props {
-  client: SupabaseClient;
+  client: Db;
 }
 
 const row = await carrierRow(Astro.props.client).catch(() => null);

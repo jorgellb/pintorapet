@@ -126,12 +126,15 @@ const copy = es
 
 // Messages come back from /api/auth/* through a one-time cookie (see middleware).
 const flash = Astro.locals.flash ?? null;
-const errorKey = flash?.error ?? (Astro.url.searchParams.get('error') === 'link' ? 'link' : null);
+const linkError = ['link', 'INVALID_TOKEN'].includes(Astro.url.searchParams.get('error') ?? '');
+const errorKey = flash?.error ?? (linkError ? 'link' : null);
 const error = errorKey ? (copy.errors[errorKey as keyof typeof copy.errors] ?? copy.errors.generic) : null;
 const sentTo = flash?.sent === (mode === 'register' ? 'register' : 'forgot') ? (flash.email ?? '') : null;
 const email = flash?.email ?? '';
 const fullName = flash?.fullName ?? '';
-const resetReady = mode !== 'reset' || Boolean(Astro.locals.customer);
+// The emailed link brings ?token=…; signed-in customers change it from their account.
+const resetToken = mode === 'reset' ? (Astro.url.searchParams.get('token') ?? '') : '';
+const resetReady = mode !== 'reset' || Boolean(Astro.locals.customer) || Boolean(resetToken);
 
 const [titleTop, titleItalic] = copy.titles[mode];
 const [privacyBefore, privacyAfter] = copy.privacy.split('{link}');
@@ -184,6 +187,7 @@ const nextQuery = next !== accountPath ? `?next=${encodeURIComponent(next)}` : '
             <form class="paper__fields" method="post" action={`/api/auth/${endpoint}/`}>
               <input type="hidden" name="locale" value={locale} />
               <input type="hidden" name="next" value={next} />
+              {resetToken && <input type="hidden" name="token" value={resetToken} />}
               {error && (
                 <p class="paper__status" data-tone="error" role="alert">
                   {error}

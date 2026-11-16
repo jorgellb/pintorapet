@@ -1,7 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from '@/lib/server/db';
 import { z } from 'zod';
 import { CommerceError } from './errors';
-import { mapPgError } from './pgErrors';
+import { dbCall, mapPgError } from './pgErrors';
 
 /**
  * Refunds (Admin › Pedidos › Devolver dinero). The database decides what can be
@@ -83,15 +83,17 @@ function explain(err: unknown): CommerceError {
   return hit ? new CommerceError('VALIDATION', hit[1], hit[2]) : mapPgError(err);
 }
 
-async function rpc<T>(client: SupabaseClient, name: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await client.rpc(name, args);
-  if (error) throw explain(error);
-  return data as T;
+async function rpc<T>(client: Db, name: string, args: Record<string, unknown>): Promise<T> {
+  try {
+    return await client.call<T>(name, args);
+  } catch (err) {
+    throw explain(err);
+  }
 }
 
 /** Ask Stripe/PayPal, then close the refund as done or failed; a lost answer leaves it pending. */
 async function payBack(
-  client: SupabaseClient,
+  client: Db,
   refund: { refundId: string; amountCents: number; orderId: string; provider: string; paymentRef: string },
   providers: RefundProviders,
 ): Promise<RefundOutcome> {
@@ -131,7 +133,7 @@ async function payBack(
 }
 
 export async function startRefund(
-  client: SupabaseClient,
+  client: Db,
   orderId: string,
   input: RefundRequest,
   providers: RefundProviders = defaultProviders,
@@ -170,16 +172,16 @@ export async function startRefund(
 
 /** A refund left pending (lost answer): ask again with the same key. */
 export async function retryRefund(
-  client: SupabaseClient,
+  client: Db,
   refundId: string,
   providers: RefundProviders = defaultProviders,
 ): Promise<RefundOutcome> {
-  const { data, error } = await client
-    .from('order_refunds')
-    .select('id, order_id, status, channel, provider, amount_cents, orders(stripe_payment_intent_id, paypal_capture_id)')
-    .eq('id', refundId)
-    .maybeSingle();
-  if (error) throw mapPgError(error);
+  const data = await dbCall(() => client.one`
+    select r.id, r.order_id, r.status, r.channel, r.provider, r.amount_cents,
+           (select json_build_object('stripe_payment_intent_id', o.stripe_payment_intent_id,
+                                     'paypal_capture_id', o.paypal_capture_id)
+            from public.orders o where o.id = r.order_id) as orders
+    from public.order_refunds r where r.id = ${refundId}`);
   const row = data as {
     id: string;
     order_id: string;
@@ -288,15 +290,13 @@ export function paypalRefundOf(resource: {
 
 /** Stripe/PayPal says a refund failed: failed if it was processing, flagged for review if it was done. */
 export async function recordProviderRefundFailed(
-  supabase: SupabaseClient,
+  supabase: Db,
   providerRefundId: string,
   reason: string,
 ): Promise<string> {
-  const { data, error } = await supabase.rpc('provider_refund_failed', {
-    p_provider_refund_id: providerRefundId,
-    p_reason: reason,
-  });
-  if (error) throw mapPgError(error);
+  const data = await dbCall(() =>
+    supabase.call<string>('provider_refund_failed', { p_provider_refund_id: providerRefundId, p_reason: reason }),
+  );
   return String(data);
 }
 
@@ -306,26 +306,26 @@ export async function recordProviderRefundFailed(
  * left as a full refund, and keeps a partial one for Meili to assign.
  */
 export async function recordProviderRefund(
-  supabase: SupabaseClient,
+  supabase: Db,
   provider: 'stripe' | 'paypal',
   paymentRef: string,
   providerRefundId: string,
   cents: number,
 ): Promise<string> {
-  const { data, error } = await supabase.rpc('record_provider_refund', {
-    p_provider: provider,
-    p_payment_ref: paymentRef,
-    p_provider_refund_id: providerRefundId,
-    p_amount_cents: cents,
-  });
-  if (error) throw mapPgError(error);
+  const data = await dbCall(() =>
+    supabase.call<string>('record_provider_refund', {
+      p_provider: provider,
+      p_payment_ref: paymentRef,
+      p_provider_refund_id: providerRefundId,
+      p_amount_cents: cents,
+    }),
+  );
   const result = String(data);
   if (result === 'completed' || result === 'assigned') {
-    const { data: order } = await supabase
-      .from('orders')
-      .select('id')
-      .eq(provider === 'paypal' ? 'paypal_capture_id' : 'stripe_payment_intent_id', paymentRef)
-      .maybeSingle();
+    const order =
+      provider === 'paypal'
+        ? await supabase.one<{ id: string }>`select id from public.orders where paypal_capture_id = ${paymentRef}`
+        : await supabase.one<{ id: string }>`select id from public.orders where stripe_payment_intent_id = ${paymentRef}`;
     if (order?.id) {
       const { sendOrderEmails } = await import('./outbox');
       await sendOrderEmails(supabase, String(order.id));

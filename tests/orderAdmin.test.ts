@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { fakeDb } from './helpers/fakeDb';
 import { cancelOrder, deleteOrder, type CheckoutCloser } from '../src/lib/server/commerce/orderAdmin';
 import { CommerceError } from '../src/lib/server/commerce/errors';
 
 const ORDER = '11111111-1111-4111-8111-111111111111';
 
 function fakeClient(order: Record<string, unknown> | null, rpcError: string | null = null) {
-  const rpc = vi.fn(async (_name: string, _args?: unknown) => ({ data: 'cancelled', error: rpcError ? { message: rpcError } : null }));
-  const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: order, error: null }) };
-  return { client: { rpc, from: () => query } as never, rpc };
+  const { db, call } = fakeDb({
+    answer: () => (rpcError ? { error: { message: rpcError } } : { data: 'cancelled' }),
+    query: () => order,
+  });
+  return { client: db, rpc: call };
 }
 
 const open = { id: ORDER, payment_status: 'checkout_open', payment_provider: 'stripe', stripe_session_id: 'cs_1' };

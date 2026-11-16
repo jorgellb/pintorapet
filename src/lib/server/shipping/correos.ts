@@ -1,5 +1,5 @@
 import { iso3 } from '@/lib/domain/countries';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb, sql } from '@/lib/server/db';
 
 export type CarrierMode = 'test' | 'live';
 
@@ -71,12 +71,16 @@ export function clearCorreosConfigCache(): void {
 
 export async function loadCorreosConfig(): Promise<CorreosConfig | null> {
   if (cached && Date.now() - cached.at < 30_000) return cached.value;
-  const supabase = createServiceClient();
+  const supabase = serviceDb();
   if (!supabase) return null;
-  const [{ data: row }, { data: secrets }] = await Promise.all([
-    supabase.from('shipping_carriers').select('*').eq('carrier', 'correos').maybeSingle(),
-    supabase.rpc('carrier_secrets', { p_carrier: 'correos' }),
+  // Secrets come out of the vault, which needs the key for that transaction.
+  const [row, secretRows] = await Promise.all([
+    supabase.one<Record<string, string | null>>`select * from public.shipping_carriers where carrier = 'correos'`.catch(() => null),
+    supabase
+      .withVaultKey<{ secrets: Record<string, string> | null }>(sql`select public.carrier_secrets(p_carrier => 'correos') as secrets`)
+      .catch(() => []),
   ]);
+  const secrets = secretRows[0]?.secrets ?? null;
   const s = (secrets ?? {}) as Record<string, string>;
   const value =
     row && s.oauth_client_secret && s.gateway_client_secret
@@ -96,10 +100,10 @@ export async function loadCorreosConfig(): Promise<CorreosConfig | null> {
 }
 
 export async function loadShippingSettings(): Promise<ShippingSettings> {
-  const supabase = createServiceClient();
-  const { data } = supabase
-    ? await supabase.from('shop_settings').select('shipping_config').eq('id', 1).maybeSingle()
-    : { data: null };
+  const supabase = serviceDb();
+  const data = supabase
+    ? await supabase.one<{ shipping_config: unknown }>`select shipping_config from public.shop_settings where id = 1`.catch(() => null)
+    : null;
   const raw = (data?.shipping_config ?? {}) as Partial<ShippingSettings>;
   return {
     packagingGrams: Number(raw.packagingGrams ?? 150),

@@ -14,7 +14,7 @@ export const PUT: APIRoute = async ({ cookies, request }) => {
   if (!admin) return forbidden();
   try {
     const { ids } = orderSchema.parse(await request.json());
-    await reorderProducts(admin.client, ids);
+    await reorderProducts(admin.db, ids);
     await audit(admin, 'reorder_products', 'products', '', { count: ids.length });
     return Response.json({ ok: true });
   } catch (err) {

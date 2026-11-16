@@ -3,6 +3,7 @@ import { deleteMedia, uploadMedia } from '../src/lib/server/admin/editorial';
 import { CommerceError } from '../src/lib/server/commerce/errors';
 import { CloudinaryError } from '../src/lib/server/media/cloudinary';
 import type { MediaStore } from '../src/lib/server/media/store';
+import { fakeDb } from './helpers/fakeDb';
 
 const MEDIA_ID = '22222222-2222-4222-8222-222222222222';
 
@@ -13,35 +14,28 @@ function fakeStore(overrides: Partial<MediaStore> = {}): MediaStore {
   return { put: vi.fn(async () => {}), remove: vi.fn(async () => {}), ...overrides };
 }
 
-/** media_assets insert/select/delete and media_translations upsert, as editorial.ts uses them. */
+/** media_assets insert/select/delete and the alt-text upsert, answered as PostgreSQL would. */
 function fakeClient(opts: { insertError?: string; existing?: Record<string, unknown> | null } = {}) {
   const inserted: Record<string, unknown>[] = [];
   const deleted: string[] = [];
-  const assets = {
-    insert: (row: Record<string, unknown>) => {
-      inserted.push(row);
-      return {
-        select: () => ({
-          single: async () =>
-            opts.insertError
-              ? { data: null, error: { message: opts.insertError } }
-              : { data: { id: MEDIA_ID, created_at: '2026-11-16T12:00:00Z', ...row }, error: null },
-        }),
-      };
+  const { db } = fakeDb({
+    query: (q) => {
+      if (q.text.includes('insert into public.media_assets')) {
+        if (opts.insertError) throw new Error(opts.insertError);
+        const [origin, bucket, object_path, mime_type, byte_size, processing_status] = q.values;
+        const row = { origin, bucket, object_path, mime_type, byte_size, processing_status };
+        inserted.push(row);
+        return { id: MEDIA_ID, created_at: '2026-11-16T12:00:00Z', ...row };
+      }
+      if (q.text.includes('select bucket, object_path from public.media_assets')) return opts.existing ?? null;
+      if (q.text.includes('delete from public.media_assets')) {
+        deleted.push(String(q.values[0]));
+        return 1;
+      }
+      return undefined;
     },
-    select: () => ({
-      eq: () => ({ maybeSingle: async () => ({ data: opts.existing ?? null, error: null }) }),
-    }),
-    delete: () => ({
-      eq: async (_col: string, id: string) => {
-        deleted.push(id);
-        return { error: null };
-      },
-    }),
-  };
-  const translations = { upsert: async () => ({ error: null }) };
-  const client = { from: (table: string) => (table === 'media_assets' ? assets : translations) } as never;
-  return { client, inserted, deleted };
+  });
+  return { client: db, inserted, deleted };
 }
 
 function image(name: string, bytes = 3, type = 'image/png'): File {

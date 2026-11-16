@@ -26,7 +26,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const body = connectSchema.parse(await request.json());
-    const row = await connectCorreos(admin.client, body);
+    const row = await connectCorreos(admin.db, body);
     await audit(admin, 'connect_carrier', 'shipping_carrier', 'correos', {
       mode: row?.mode,
       contract: row?.contract_number,
@@ -42,7 +42,7 @@ export const DELETE: APIRoute = async ({ request, cookies }) => {
   try {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
-    await disconnectCorreos(admin.client);
+    await disconnectCorreos(admin.db);
     await audit(admin, 'disconnect_carrier', 'shipping_carrier', 'correos', {});
     return Response.json({ ok: true });
   } catch (err) {

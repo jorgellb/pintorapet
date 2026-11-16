@@ -11,7 +11,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return jsonError(new CommerceError('FORBIDDEN', 'Admin required', 403));
     const input = artworkSchema.parse(await request.json());
-    const id = await createArtwork(admin.client, input);
+    const id = await createArtwork(admin.db, input);
     return Response.json({ ok: true, id });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);

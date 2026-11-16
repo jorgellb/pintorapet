@@ -7,20 +7,21 @@ import SeoFields from '@/components/admin/SeoFields.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { getAdminProduct, listProductImages, listVariants } from '@/lib/server/admin/products';
 import { listMedia } from '@/lib/server/admin/editorial';
-import { hasSupabase, siteUrl } from '@/lib/server/env';
+import { siteUrl } from '@/lib/server/env';
+import { hasDatabase, settle } from '@/lib/server/db';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
 import { chipClass, euros, inventoryLabel, productStatusLabel } from '@/lib/admin/labels';
 
 export const prerender = false;
 
-if (!hasSupabase()) return Astro.redirect('/admin/login/');
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
 const id = Astro.params.id;
 if (!id) return Astro.redirect('/admin/products/');
 
-const product = await getAdminProduct(admin.client, id);
+const product = await getAdminProduct(admin.db, id);
 if (!product) return new Response('Producto no encontrado', { status: 404 });
 if (product.parent_id) return Astro.redirect(`/admin/products/${product.parent_id}/#variaciones`);
 
@@ -30,11 +31,11 @@ const inv = product.inventory;
 const title = es?.title || en?.title || product.sku;
 
 const [variants, images, media, { data: shopCategories }, typeNames] = await Promise.all([
-  listVariants(admin.client, product.id),
-  listProductImages(admin.client, product.id),
-  listMedia(admin.client).catch(() => []),
-  admin.client.from('shop_collections').select('id, name_es, published').order('sort_order'),
-  productTypeNames(admin.client),
+  listVariants(admin.db, product.id),
+  listProductImages(admin.db, product.id),
+  listMedia(admin.db).catch(() => []),
+  settle(admin.db.rows<{ id: string; name_es: string; published: boolean }>`select id, name_es, published from public.shop_collections order by sort_order`),
+  productTypeNames(admin.db),
 ]);
 
 const altById = new Map(media.map((item) => [item.id, item.altEs]));

@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import { checkoutCreateSchema } from '@/lib/validation/checkout';
 import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
-import { hasServiceSupabase } from '@/lib/server/env';
+import { hasDatabase } from '@/lib/server/db';
 import { ensureCartOwnerHash } from '@/lib/server/commerce/cartOwner';
 import { createCheckout } from '@/lib/server/commerce/checkout';
 import { checkoutProviders } from '@/lib/server/payments/config';
-import { createServiceClient } from '@/lib/server/supabase';
+import { serviceDb } from '@/lib/server/db';
 import { normalizeCartItems } from '@/lib/domain/cart';
 import { customerSession, loadProfile, saveProfile } from '@/lib/server/account';
 
@@ -19,7 +19,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       throw new CommerceError('FORBIDDEN', 'Client prices are not accepted', 400);
     }
 
-    if (!hasServiceSupabase()) {
+    if (!hasDatabase()) {
       return Response.json(
         {
           error: {
@@ -44,7 +44,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       );
     }
 
-    const supabase = createServiceClient();
+    const supabase = serviceDb();
     if (!supabase) {
       throw new CommerceError(
         'NOT_CONFIGURED',
