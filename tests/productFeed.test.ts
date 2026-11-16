@@ -42,6 +42,17 @@ describe('product feeds', () => {
     expect(xml).toContain('Springer &amp; Spaniel');
   });
 
+  it('sends Cloudinary photos as JPEG rather than the automatic format', () => {
+    const cdn = 'https://res.cloudinary.com/demo/image/upload/c_limit,w_2000';
+    const [offer] = catalogOffers(
+      [{ ...product, imageUrls: [`${cdn}/f_auto/q_auto/catalog-public/a`, `${cdn}/f_auto/q_auto/catalog-public/b`] }],
+      'https://petsdrawings.com',
+      'es',
+    );
+    expect(offer?.imageLink).toBe(`${cdn}/f_jpg/q_auto/catalog-public/a`);
+    expect(offer?.additionalImages).toEqual([`${cdn}/f_jpg/q_auto/catalog-public/b`]);
+  });
+
   it('marks a sellable product in stock with Meta wording', () => {
     const xml = buildProductFeed({
       products: [{ ...product, saleEnabled: true, availability: 'available' }],

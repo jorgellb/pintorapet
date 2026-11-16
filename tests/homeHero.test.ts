@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkEntry } from '../src/lib/content/editorial';
 import {
   HERO_EXTRAS,
@@ -23,6 +23,10 @@ const work = (id: string, title: string, photo = true): WorkEntry => ({
     order: 0,
   },
 });
+
+// Image links are compared as saved, so no CDN rewriting unless a test asks for it.
+beforeEach(() => vi.stubEnv('CLOUDINARY_URL', ''));
+afterEach(() => vi.unstubAllEnvs());
 
 const works = [
   work('frankie', 'Frankie'),
@@ -89,6 +93,14 @@ describe('resolveHero with edits', () => {
     // One chosen, three filled in from the works.
     expect(hero.extras).toHaveLength(HERO_EXTRAS.collage);
     expect(hero.extras[0].src).toBe(media('a.jpg').src);
+  });
+
+  it('serves images saved as Supabase links from Cloudinary', () => {
+    vi.stubEnv('CLOUDINARY_URL', 'cloudinary://1234:shh@demo-cloud');
+    const hero = resolveHero(edited({ images: { main: media('luna.jpg'), photo: null, extras: [] } }), works, 'es');
+    expect(hero.main?.src).toBe(
+      'https://res.cloudinary.com/demo-cloud/image/upload/c_limit,w_2000/f_auto/q_auto/portfolio-public/luna_jpg',
+    );
   });
 
   it('follows the featured work and the chosen links', () => {

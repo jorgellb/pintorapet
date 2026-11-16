@@ -3,6 +3,7 @@ import { productPath } from '@/i18n/routes';
 import type { ProductPublic } from '@/lib/domain/types';
 import { DEFAULT_TYPES, fromRow, type ProductType } from '@/lib/catalog/productTypes';
 import { variantTitle } from '@/lib/admin/slug';
+import { jpegDeliveryUrl } from '@/lib/server/media/cloudinary';
 
 export type FeedChannel = 'google' | 'meta';
 
@@ -80,8 +81,8 @@ export function catalogOffers(
         ),
         description: plain(product.description || product.summary || product.title),
         link: absoluteUrl(base, productPath(locale, product.slug)),
-        imageLink: absoluteUrl(base, images[0]!),
-        additionalImages: images.slice(1, 11).map((src) => absoluteUrl(base, src)),
+        imageLink: jpegDeliveryUrl(absoluteUrl(base, images[0]!)),
+        additionalImages: images.slice(1, 11).map((src) => jpegDeliveryUrl(absoluteUrl(base, src))),
         availability: onSale ? 'in stock' : 'out of stock',
         price: price(product.priceCents),
         priceValue: (product.priceCents / 100).toFixed(2),

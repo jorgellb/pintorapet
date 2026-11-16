@@ -3,6 +3,7 @@ import { t, type Locale } from '@/i18n';
 import { localizedPath, workPath } from '@/i18n/routes';
 import type { WorkEntry } from '@/lib/content/editorial';
 import { hasSupabase } from '@/lib/server/env';
+import { resolveMediaUrl } from '@/lib/server/storageUrl';
 
 /**
  * The home page hero, edited in Admin › Portada (table site_home_hero).
@@ -184,7 +185,7 @@ export function resolveHero(
     return src ? { src, alt: w.data.title[locale], href: href(w), workId: w.data.id } : null;
   };
   const fromMedia = (image: HeroImage, fallbackAlt: string): HeroPicture => ({
-    src: image.src,
+    src: resolveMediaUrl(image.src),
     alt: alt(image) || fallbackAlt,
     href: null,
     workId: null,

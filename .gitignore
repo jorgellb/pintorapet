@@ -40,3 +40,9 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+
+# local TLS material
+certs/
+
+# local database dumps (contain customer data)
+backups/

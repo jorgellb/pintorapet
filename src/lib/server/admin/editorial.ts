@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CommerceError } from '@/lib/server/commerce/errors';
 import { mapPgError } from '@/lib/server/commerce/pgErrors';
+import { mediaPublicId } from '@/lib/server/media/cloudinary';
+import { cloudinaryStore, mediaStoreError, type MediaStore } from '@/lib/server/media/store';
 import { storagePublicUrl } from '@/lib/server/storageUrl';
 
 export type MediaRow = {
@@ -61,7 +63,11 @@ export async function saveMediaAlts(
   if (error) throw mapPgError(error);
 }
 
-export async function deleteMedia(client: SupabaseClient, id: string): Promise<void> {
+export async function deleteMedia(
+  client: SupabaseClient,
+  id: string,
+  store: MediaStore = cloudinaryStore(),
+): Promise<void> {
   const { data, error } = await client
     .from('media_assets')
     .select('bucket, object_path')
@@ -69,8 +75,9 @@ export async function deleteMedia(client: SupabaseClient, id: string): Promise<v
     .maybeSingle();
   if (error) throw mapPgError(error);
   if (!data) throw new CommerceError('VALIDATION', 'Media not found', 404);
-  const removed = await client.storage.from(data.bucket).remove([data.object_path]);
-  if (removed.error) throw mapPgError(removed.error);
+  await store.remove(mediaPublicId(data.bucket, data.object_path)).catch((err: unknown) => {
+    throw mediaStoreError(err);
+  });
   const del = await client.from('media_assets').delete().eq('id', id);
   if (del.error) throw mapPgError(del.error);
 }
@@ -83,6 +90,7 @@ export async function uploadMedia(
   bucket: string,
   altEn: string,
   altEs: string,
+  store: MediaStore = cloudinaryStore(),
 ): Promise<MediaRow> {
   if (!buckets.has(bucket)) {
     throw new CommerceError('VALIDATION', 'Unknown media bucket', 400);
@@ -90,8 +98,9 @@ export async function uploadMedia(
   if (!file.type.startsWith('image/')) {
     throw new CommerceError('VALIDATION', 'Only images can be uploaded', 400);
   }
-  if (file.size > 20 * 1024 * 1024) {
-    throw new CommerceError('VALIDATION', 'Image is larger than 20 MB', 400);
+  // Largest image the Cloudinary free plan accepts.
+  if (file.size > 10 * 1024 * 1024) {
+    throw new CommerceError('VALIDATION', 'Image is larger than 10 MB', 400);
   }
   const safe = file.name
     .toLowerCase()
@@ -100,11 +109,10 @@ export async function uploadMedia(
     .slice(0, 80);
   const objectPath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safe || 'image'}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const uploaded = await client.storage.from(bucket).upload(objectPath, bytes, {
-    contentType: file.type,
-    upsert: false,
+  const publicId = mediaPublicId(bucket, objectPath);
+  await store.put(publicId, bytes, file.type).catch((err: unknown) => {
+    throw mediaStoreError(err);
   });
-  if (uploaded.error) throw mapPgError(uploaded.error);
 
   const inserted = await client
     .from('media_assets')
@@ -119,7 +127,7 @@ export async function uploadMedia(
     .select('id, bucket, object_path, mime_type, byte_size, processing_status, created_at')
     .single();
   if (inserted.error || !inserted.data) {
-    await client.storage.from(bucket).remove([objectPath]);
+    await store.remove(publicId).catch(() => {});
     if (inserted.error) throw mapPgError(inserted.error);
     throw new CommerceError('INTERNAL', 'Could not record the upload', 500);
   }
