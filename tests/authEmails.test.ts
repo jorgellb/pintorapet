@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAuthEmail } from '../src/lib/server/auth/emails';
+import { renderAuthEmail, withTrailingSlash } from '../src/lib/server/auth/emails';
 
 const url = 'https://petsdrawings.com/api/session/verify-email?token=t';
 
@@ -20,5 +20,21 @@ describe('renderAuthEmail', () => {
     const mail = renderAuthEmail('magic', 'es', { url, name: '' });
     expect(mail.subject).toMatch(/Entrar/);
     expect(mail.text).toContain(url);
+  });
+});
+
+describe('withTrailingSlash', () => {
+  it('adds the slash this site uses to Better Auth links, before the query', () => {
+    expect(withTrailingSlash('https://petsdrawings.com/api/session/verify-email?token=a&callbackURL=%2Fes%2Fcuenta%2F')).toBe(
+      'https://petsdrawings.com/api/session/verify-email/?token=a&callbackURL=%2Fes%2Fcuenta%2F',
+    );
+    expect(withTrailingSlash('https://petsdrawings.com/api/session/reset-password/tok123?callbackURL=%2Fes%2F')).toBe(
+      'https://petsdrawings.com/api/session/reset-password/tok123/?callbackURL=%2Fes%2F',
+    );
+  });
+
+  it('leaves links that already have it, or are not URLs, alone', () => {
+    expect(withTrailingSlash('https://petsdrawings.com/a/?x=1')).toBe('https://petsdrawings.com/a/?x=1');
+    expect(withTrailingSlash('not a url')).toBe('not a url');
   });
 });

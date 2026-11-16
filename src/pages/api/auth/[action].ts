@@ -135,7 +135,7 @@ export const POST: APIRoute = async (context) => {
   const who = await sessionUser(cookies, request);
   if (!who) return back('link');
   try {
-    await setOwnPassword(who.id, password);
+    await setOwnPassword(cookies, request, who, password);
   } catch (err) {
     return back(authErrorKey(err));
   }

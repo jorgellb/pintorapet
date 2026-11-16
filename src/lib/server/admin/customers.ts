@@ -107,12 +107,14 @@ export async function createAccount(service: Db, email: string, fullName: string
   return row!.id;
 }
 
+/** A new email also ends the account's sessions: whoever was signed in signs in again. */
 export async function changeAccountEmail(service: Db, id: string, email: string): Promise<void> {
   await service.run`update auth.users set email = ${email}, email_verified = true, updated_at = now() where id = ${id}`.catch(
     (err: unknown) => {
       throw authAdminError(err);
     },
   );
+  await service.run`delete from auth.session where user_id = ${id}`;
 }
 
 /** Its sessions and password go with it; orders stay and just lose the link to the account. */

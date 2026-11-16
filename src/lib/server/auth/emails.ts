@@ -45,6 +45,21 @@ export function renderAuthEmail(
   return { subject: copy.subject, text: `${hello}\n\n${copy.body}\n\n${url}\n\n${ignore}\n\nPets Drawings` };
 }
 
+/**
+ * This site's URLs end in "/" (trailingSlash: 'always'); Better Auth builds its
+ * links without it. Adding it saves a redirect and works the same in dev.
+ */
+export function withTrailingSlash(link: string): string {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return link;
+  }
+  if (!url.pathname.endsWith('/')) url.pathname += '/';
+  return url.toString();
+}
+
 /** The visitor's language, from the page the link sends them to. */
 export function localeOfUrl(url: string): Locale {
   return /callbackURL=%2Fen%2F|callbackURL=\/en\//.test(url) ? 'en' : 'es';
@@ -57,7 +72,8 @@ export async function sendAuthEmail(
   { url, name }: { url: string; name: string },
 ): Promise<void> {
   if (!hasResend()) throw new Error('MAIL_FAILED: RESEND_API_KEY is not set');
-  const { subject, text } = renderAuthEmail(kind, localeOfUrl(url), { url, name });
+  const link = withTrailingSlash(url);
+  const { subject, text } = renderAuthEmail(kind, localeOfUrl(link), { url: link, name });
   const { error } = await new Resend(import.meta.env.RESEND_API_KEY).emails.send({ from: emailFrom(), to, subject, text });
   if (error) throw new Error(`MAIL_FAILED: ${error.message}`);
 }

@@ -50,13 +50,16 @@ function create() {
       modelName: 'auth.verification',
       fields: { expiresAt: 'expires_at', ...timestamps },
     },
-    advanced: { database: { generateId: 'uuid' } },
+    // Routes here end in "/" (Astro trailingSlash: 'always'); without this Better Auth 404s them.
+    advanced: { database: { generateId: 'uuid' }, skipTrailingSlashes: true },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
       minPasswordLength: 8,
       maxPasswordLength: 72,
       resetPasswordTokenExpiresIn: 60 * 60,
+      // A new password ends every session the old one had opened.
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => sendAuthEmail('reset', user.email, { url, name: user.name }),
     },
     emailVerification: {
@@ -102,11 +105,21 @@ export async function sessionUser(cookies: AstroCookies, request: Request): Prom
   }
 }
 
-/** Sets a password for a signed-in user, as Supabase's updateUser did (no old password asked). */
-export async function setOwnPassword(userId: string, password: string): Promise<void> {
+/**
+ * Sets a password for a signed-in user, as Supabase's updateUser did (no old
+ * password asked), ends all their sessions, and signs this browser in again.
+ */
+export async function setOwnPassword(
+  cookies: AstroCookies,
+  request: Request,
+  user: SessionUser,
+  password: string,
+): Promise<void> {
   const context = await auth().$context;
   const hash = await context.password.hash(password);
-  await context.internalAdapter.updatePassword(userId, hash);
+  await context.internalAdapter.updatePassword(user.id, hash);
+  await context.internalAdapter.deleteUserSessions(user.id);
+  await signInWithPassword(cookies, request, user.email, password);
 }
 
 /** Email + password sign-in; the session cookie goes out with the response. Throws Better Auth's APIError. */
