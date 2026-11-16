@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Copy the data from Supabase into a target built by apply-schema.py.
 
-  1. auth.users (ids kept; Supabase columns mapped to Better Auth's)
+  1. auth.users (ids kept; Supabase columns mapped to Better Auth's), and
+     their passwords as Better Auth password accounts (copy_passwords.py)
   2. every public table, in foreign-key order, with COPY. The target's rows
      (seeds the migrations insert) are replaced; user triggers are off while
      loading, so invoice numbering or "issued invoices are immutable" rules do
@@ -21,6 +22,7 @@ from psycopg.types.json import Jsonb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from conn import connect, env  # noqa: E402
+from copy_passwords import copy_passwords  # noqa: E402
 
 AUTH_USERS = """
   SELECT id, email,
@@ -132,6 +134,7 @@ def main() -> None:
                                             email_confirmed_at, last_sign_in_at, raw_user_meta_data)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""", users)
             print(f'auth.users: {len(users)}')
+            print('password accounts: {1} of {0}'.format(*copy_passwords(src, dst)))
 
             # 2. tables
             for t in tables:

@@ -11,6 +11,7 @@ import { hasDatabase, pool } from '@/lib/server/db';
 import { siteUrl } from '@/lib/server/env';
 import { forwardCookies } from './cookies';
 import { sendAuthEmail } from './emails';
+import { verifyPassword } from './password';
 
 const timestamps = { createdAt: 'created_at', updatedAt: 'updated_at' };
 
@@ -57,6 +58,8 @@ function create() {
       requireEmailVerification: true,
       minPasswordLength: 8,
       maxPasswordLength: 72,
+      // Better Auth's scrypt for new passwords; the old Supabase bcrypt ones still work.
+      password: { verify: (data) => verifyPassword(data) },
       resetPasswordTokenExpiresIn: 60 * 60,
       // A new password ends every session the old one had opened.
       revokeSessionsOnPasswordReset: true,
@@ -117,7 +120,12 @@ export async function setOwnPassword(
 ): Promise<void> {
   const context = await auth().$context;
   const hash = await context.password.hash(password);
-  await context.internalAdapter.updatePassword(user.id, hash);
+  // Someone who only ever signed in by link has no password account yet.
+  if (await context.internalAdapter.findCredentialAccount(user.id)) {
+    await context.internalAdapter.updatePassword(user.id, hash);
+  } else {
+    await context.internalAdapter.createAccount({ userId: user.id, providerId: 'credential', accountId: user.id, password: hash });
+  }
   await context.internalAdapter.deleteUserSessions(user.id);
   await signInWithPassword(cookies, request, user.email, password);
 }
