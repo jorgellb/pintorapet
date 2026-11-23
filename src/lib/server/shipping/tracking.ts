@@ -1,9 +1,8 @@
 /**
  * The parcel's journey, from the carrier's tracking events, as the order's
- * shipping state (Admin › Pedidos). Correos' answer is read loosely: the
- * events' text decides ("Entregado", "En reparto", "Ausente"…), and their
- * phase (1 preregistered · 2 on its way · 3 out for delivery · 4 delivered)
- * when the text says nothing known.
+ * shipping state (Admin › Pedidos). Trackpub v2 events are read by their text
+ * ("Entregado", "En reparto", "Ausente"…), then by the name of their phase
+ * (phaseDes). The phase number is not used: its meaning is not documented.
  */
 
 export const FULFILLMENT_STATES = [
@@ -18,7 +17,7 @@ export const FULFILLMENT_STATES = [
 ] as const;
 export type FulfillmentState = (typeof FULFILLMENT_STATES)[number];
 
-export type TrackingEvent = { at: string | null; text: string; phase?: number | null };
+export type TrackingEvent = { at: string | null; text: string; phaseText?: string | null };
 
 const plain = (value: string) =>
   value
@@ -28,9 +27,9 @@ const plain = (value: string) =>
 
 const has = (text: string, words: string[]) => words.some((word) => text.includes(word));
 
-/** What one event means for the order; null when it means nothing new (preregistered, unknown). */
-export function carrierStatusOf(event: { text: string; phase?: number | null }): FulfillmentState | null {
-  const text = plain(event.text);
+/** What a text says about the journey: a state, null (preregistered: nothing yet), undefined (unknown). */
+function statusInText(value: string): FulfillmentState | null | undefined {
+  const text = plain(value);
   if (has(text, ['devuelto', 'devolucion al remitente', 'en devolucion', 'returned to sender', 'return to sender'])) return 'returned';
   if (
     has(text, [
@@ -56,16 +55,14 @@ export function carrierStatusOf(event: { text: string; phase?: number | null }):
   if (has(text, ['pre-registrado', 'prerregistrado', 'preregistrado', 'preregistered', 'pre-registered'])) return null;
   if (has(text, ['admitido', 'en transito', 'en camino', 'clasificad', 'en tratamiento', 'llegada', 'salida', 'accepted', 'in transit']))
     return 'in_transit';
-  switch (event.phase) {
-    case 2:
-      return 'in_transit';
-    case 3:
-      return 'out_for_delivery';
-    case 4:
-      return 'completed';
-    default:
-      return null;
-  }
+  return undefined;
+}
+
+/** What one event means for the order; null when it means nothing new (preregistered, unknown). */
+export function carrierStatusOf(event: { text: string; phaseText?: string | null }): FulfillmentState | null {
+  const own = statusInText(event.text);
+  if (own !== undefined) return own;
+  return (event.phaseText ? statusInText(event.phaseText) : null) ?? null;
 }
 
 /** "08/11/2026" + "17:00:00" (Madrid time) or an ISO date, as ISO with its offset. */
@@ -114,13 +111,19 @@ export function parseCorreosTracking(payload: unknown): {
       if (!raw || typeof raw !== 'object') continue;
       const e = raw as Record<string, unknown>;
       const label =
-        text(e.summaryText) ?? text(e.desTextoResumen) ?? text(e.description) ?? text(e.extendedText) ?? text(e.desTextoAmpliado) ?? text(e.text);
+        text(e.summaryText) ??
+        text(e.desTextoResumen) ??
+        text(e.description) ??
+        text(e.expandedText) ??
+        text(e.extendedText) ??
+        text(e.desTextoAmpliado) ??
+        text(e.eventDes) ??
+        text(e.text);
       if (!label) continue;
-      const phase = Number(e.phase ?? e.fase);
       events.push({
-        at: when(e.eventDate ?? e.fecha ?? e.date, e.eventTime ?? e.hora ?? e.time),
+        at: when(e.eventDate ?? e.fecha ?? e.date, e.eventHours ?? e.eventTime ?? e.hora ?? e.time),
         text: label,
-        phase: Number.isFinite(phase) && phase > 0 ? phase : null,
+        phaseText: text(e.phaseDes),
       });
     }
   }

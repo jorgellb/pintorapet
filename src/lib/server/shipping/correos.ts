@@ -167,17 +167,17 @@ async function call<T>(cfg: CorreosConfig, method: 'GET' | 'POST', path: string,
     signal: AbortSignal.timeout(30_000),
   }).catch(() => null);
   if (!res) throw new CorreosApiError('No se pudo contactar con Correos.', 502);
-  const data = (await res.json().catch(() => ({}))) as T & { message?: string; description?: string };
+  const data = (await res.json().catch(() => ({}))) as T & { message?: string; description?: string; body?: string };
   if (res.status === 401 || res.status === 403) {
     throw new CorreosApiError('Correos rechazó las credenciales de la API (client_id / client_secret).', res.status);
   }
   if (!res.ok) {
-    throw new CorreosApiError(data.description || data.message || `Correos respondió con un error (${res.status}).`, res.status);
+    throw new CorreosApiError(data.description || data.body || data.message || `Correos respondió con un error (${res.status}).`, res.status);
   }
   return data;
 }
 
-type CorreosError = { errorCode?: string; description?: string; errorFieldName?: string };
+type CorreosError = { errorCode?: string | number; description?: string; errorFieldName?: string };
 
 type PreregisterResponse = {
   fileIdentifier?: string;
@@ -212,12 +212,14 @@ export interface ShipmentInput {
 
 const clip = (value: string | undefined, max: number) => (value ?? '').trim().slice(0, max);
 
-/** Registers the parcel with Correos; returns the code printed on the label and used for tracking. */
-export async function preregisterShipment(
-  cfg: CorreosConfig,
-  settings: ShippingSettings,
-  input: ShipmentInput,
-): Promise<{ shipmentCode: string; packageCode: string }> {
+/** A Spanish phone as Correos wants it: 9 digits starting with 6, 7, 8 or 9. Anything else is left out. */
+export function spanishPhone(value: string | undefined): string | undefined {
+  const digits = (value ?? '').replace(/\D/g, '').replace(/^(0034|34)(?=\d{9}$)/, '');
+  return /^[6789]\d{8}$/.test(digits) ? digits : undefined;
+}
+
+/** One shipment of POST /delivery (Preregister v1). */
+export function shipmentPayload(cfg: CorreosConfig, settings: ShippingSettings, input: ShipmentInput) {
   const sender = settings.sender;
   if (!sender.name || !sender.address || !sender.locality || !sender.postalCode) {
     throw new CorreosApiError('Completa la dirección del remitente en Envíos antes de crear el envío.', 400);
@@ -230,6 +232,8 @@ export async function preregisterShipment(
   if (input.customs) {
     pkg.packageContents = {
       shipmentType: '2',
+      // Required abroad: an undeliverable parcel comes back to Meili.
+      ...(spain ? {} : { instructionsDoNotDeliver: 'D' }),
       customsData: input.items.map((item) => ({
         quantity: String(item.quantity),
         description: clip(`${settings.customsDescription} — ${item.title}`, 50),
@@ -240,7 +244,7 @@ export async function preregisterShipment(
     };
   }
 
-  const shipment = {
+  return {
     product: input.product,
     deliveryMethod: 'DOUAOF',
     contractNumber: cfg.contractNumber,
@@ -256,21 +260,32 @@ export async function preregisterShipment(
       province: sender.postalCode.slice(0, 2),
       cp: sender.postalCode,
       country: 'ESP',
-      contactPhone: clip(sender.phone, 15) || undefined,
+      contactPhone: spanishPhone(sender.phone),
       email: clip(sender.email, 50) || undefined,
     },
     addressee: {
       name: clip(input.addressee.name, 50),
       address: clip([input.addressee.line1, input.addressee.line2].filter(Boolean).join(', '), 100),
       locality: clip(input.addressee.city, 40),
-      province: spain ? input.addressee.postalCode.slice(0, 2) : clip(input.addressee.state, 40) || undefined,
-      ...(spain ? { cp: input.addressee.postalCode } : { zip: clip(input.addressee.postalCode, 10) }),
+      // A 2-digit Spanish province code: it does not exist abroad.
+      province: spain ? input.addressee.postalCode.slice(0, 2) : undefined,
+      cp: spain ? input.addressee.postalCode : undefined,
+      zip: spain ? undefined : clip(input.addressee.postalCode, 10),
       country,
-      contactPhone: clip(input.addressee.phone, 15) || undefined,
+      contactPhone: spain ? spanishPhone(input.addressee.phone) : clip(input.addressee.phone, 15) || undefined,
       email: clip(input.addressee.email, 50) || undefined,
     },
     packages: [pkg],
   };
+}
+
+/** Registers the parcel with Correos; returns the code printed on the label and used for tracking. */
+export async function preregisterShipment(
+  cfg: CorreosConfig,
+  settings: ShippingSettings,
+  input: ShipmentInput,
+): Promise<{ shipmentCode: string; packageCode: string }> {
+  const shipment = shipmentPayload(cfg, settings, input);
 
   const data = await call<PreregisterResponse>(cfg, 'POST', '/admissions/preregister/api/v1/delivery', {
     shipments: [shipment],
@@ -293,15 +308,14 @@ export async function preregisterShipment(
 }
 
 /** Label (and CN22/CN23 when the parcel needs customs) as a PDF. */
-export async function shipmentLabelPdf(cfg: CorreosConfig, shipmentCode: string, customs: boolean): Promise<Buffer> {
+export async function shipmentLabelPdf(cfg: CorreosConfig, packageCode: string, customs: boolean): Promise<Buffer> {
   const data = await call<{ pdf?: string; error?: string }>(cfg, 'POST', '/support/labels/api/v1/labels/print', {
     documentationType: customs ? 0 : 1,
     application: 'P3',
     print: {
-      shipments: [shipmentCode],
+      shipments: [packageCode],
       labelFormat: 2,
       labelPrintMode: 1,
-      preregisterInd: 1,
       labelOrderType: 4,
     },
   });
@@ -310,7 +324,18 @@ export async function shipmentLabelPdf(cfg: CorreosConfig, shipmentCode: string,
 }
 
 export async function cancelShipment(cfg: CorreosConfig, packageCode: string): Promise<void> {
-  await call(cfg, 'POST', '/admissions/preregister/api/v1/delivery/annulment', { packageCode });
+  // Correos answers 201 even when it refuses: the refusal comes in `errors`.
+  const data = await call<{ message?: string; errors?: CorreosError[] }>(
+    cfg,
+    'POST',
+    '/admissions/preregister/api/v1/delivery/annulment',
+    { packageCode, errorCodeLanguage: 'spa' },
+  );
+  const errors = data.errors ?? [];
+  if (errors.length > 0) {
+    const detail = errors.map((e) => e.description || e.errorCode).filter(Boolean).join(' · ');
+    throw new CorreosApiError(`Correos no anuló el envío: ${detail || data.message || 'sin motivo'}`, 409);
+  }
 }
 
 /** Checks both credential pairs: Correos ID (token) and the API gateway (a tracking lookup). */
@@ -325,5 +350,5 @@ export async function testCorreos(cfg: CorreosConfig): Promise<void> {
 
 /** A parcel's tracking events (API gateway, trackpub v2). The raw answer: see tracking.ts. */
 export async function trackShipment(cfg: CorreosConfig, code: string): Promise<unknown> {
-  return call<unknown>(cfg, 'GET', `/support/trackpub/api/v2/search/${encodeURIComponent(code)}`);
+  return call<unknown>(cfg, 'GET', `/support/trackpub/api/v2/search/${encodeURIComponent(code)}?languageCode=ES`);
 }

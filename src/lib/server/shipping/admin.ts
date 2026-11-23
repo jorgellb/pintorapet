@@ -201,7 +201,8 @@ export async function correosLabel(client: Db, id: string): Promise<{ pdf: Buffe
   if (!cfg) throw new CommerceError('NOT_CONFIGURED', 'Correos no está conectado.', 409);
   const customs = (order.shipping_address?.country ?? 'ES').toUpperCase() !== 'ES' || (await zoneNeedsCustoms(client, order.shipping_zone_id));
   try {
-    return { pdf: await shipmentLabelPdf(cfg, order.carrier_shipment_code, customs), reference: order.reference };
+    // The label is asked for by package code (tracking_code), not by the expedition's code.
+    return { pdf: await shipmentLabelPdf(cfg, order.tracking_code || order.carrier_shipment_code, customs), reference: order.reference };
   } catch (err) {
     throw asCommerce(err, 'No se pudo descargar la etiqueta.');
   }

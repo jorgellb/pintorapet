@@ -13,9 +13,10 @@ describe('carrierStatusOf', () => {
     expect(carrierStatusOf({ text: 'Devuelto al remitente' })).toBe('returned');
   });
 
-  it('falls back on the phase when the text says nothing it knows', () => {
-    expect(carrierStatusOf({ text: 'Clasificación automática', phase: 2 })).toBe('in_transit');
-    expect(carrierStatusOf({ text: 'Evento 5', phase: 4 })).toBe('completed');
+  it('falls back on the name of the phase, never on its number', () => {
+    expect(carrierStatusOf({ text: 'Evento 5', phaseText: 'ENTREGADO' })).toBe('completed');
+    expect(carrierStatusOf({ text: 'Evento 5', phaseText: 'EN CAMINO' })).toBe('in_transit');
+    expect(carrierStatusOf({ text: 'Evento 5' })).toBeNull();
   });
 });
 
@@ -26,9 +27,9 @@ describe('parseCorreosTracking', () => {
         {
           shipmentCode: 'PK0000000000000000000001',
           events: [
-            { eventDate: '10/11/2026', eventTime: '18:20:00', phase: '3', summaryText: 'En reparto' },
-            { eventDate: '09/11/2026', eventTime: '09:15:00', phase: '2', summaryText: 'Admitido' },
-            { eventDate: '08/11/2026', eventTime: '17:00:00', phase: '1', summaryText: 'Pre-registrado' },
+            { eventDate: '10/11/2026', eventHours: '18:20:00', phase: '3', summaryText: 'En reparto' },
+            { eventDate: '09/11/2026', eventHours: '09:15:00', phase: '2', summaryText: 'Admitido' },
+            { eventDate: '08/11/2026', eventHours: '17:00:00', phase: '1', summaryText: 'Pre-registrado' },
           ],
         },
       ],
@@ -37,6 +38,20 @@ describe('parseCorreosTracking', () => {
     expect(parsed.events[0].at).toBe('2026-11-08T17:00:00+01:00');
     expect(parsed.status).toBe('out_for_delivery');
     expect(parsed.summary).toBe('En reparto');
+  });
+
+  it('reads Trackpub v2: eventHours orders two events of the same day', () => {
+    const parsed = parseCorreosTracking({
+      code: 'PK1',
+      events: [
+        { eventDate: '10/11/2026', eventHours: '18:20:00', phase: '4', phaseDes: 'ENTREGADO', summaryText: 'Entregado' },
+        { eventDate: '10/11/2026', eventHours: '08:05:00', phase: '3', phaseDes: 'EN REPARTO', summaryText: 'En reparto' },
+      ],
+      error: [],
+    });
+    expect(parsed.events.map((e) => e.text)).toEqual(['En reparto', 'Entregado']);
+    expect(parsed.events[1].at).toBe('2026-11-10T18:20:00+01:00');
+    expect(parsed.status).toBe('completed');
   });
 
   it('copes with other shapes and with nothing useful', () => {
