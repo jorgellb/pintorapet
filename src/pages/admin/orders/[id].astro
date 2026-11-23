@@ -450,6 +450,17 @@ const carrierName = (value: string | null) =>
               ) : (
                 <p class="muted">Todavía sin noticias de Correos.</p>
               )}
+              {canAskCorreos && order.fulfillment_status === 'completed' && (
+                <div class="proofs" data-proofs data-id={order.id}>
+                  <button type="button" class="btn--quiet" data-proof="pee">
+                    Descargar prueba de entrega (PDF)
+                  </button>
+                  <button type="button" class="btn--quiet" data-proof="pod">
+                    Descargar firma (imagen)
+                  </button>
+                  <p class="status" data-proof-status role="status" hidden></p>
+                </div>
+              )}
             </div>
           )}
 
@@ -892,6 +903,18 @@ const carrierName = (value: string | null) =>
     gap: 0.5rem;
   }
 
+  .proofs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .proofs .status {
+    flex-basis: 100%;
+    margin: 0;
+  }
+
   .tracking-head {
     display: flex;
     flex-wrap: wrap;
@@ -1064,6 +1087,36 @@ const carrierName = (value: string | null) =>
       }
     });
   }
+  // ——— Proof of delivery and signature (Correos) ———
+  const proofs = document.querySelector<HTMLElement>('[data-proofs]');
+  proofs?.querySelectorAll<HTMLButtonElement>('[data-proof]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const status = proofs.querySelector<HTMLElement>('[data-proof-status]');
+      const say = (text: string) => {
+        if (!status) return;
+        status.hidden = false;
+        status.textContent = text;
+      };
+      button.disabled = true;
+      say('Pidiendo el documento a Correos…');
+      const res = await fetch(`/api/admin/orders/${proofs.dataset.id}/delivery-proof/?tipo=${button.dataset.proof}`).catch(() => null);
+      button.disabled = false;
+      if (!res?.ok) {
+        const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+        say(data?.error?.message ?? 'Correos no respondió.');
+        return;
+      }
+      const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'prueba-entrega';
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      say('Documento descargado.');
+    });
+  });
+
   document.querySelector<HTMLButtonElement>('[data-track]')?.addEventListener('click', async (event) => {
     const button = event.currentTarget as HTMLButtonElement;
     const id = document.querySelector<HTMLElement>('[data-shipping-panel]')?.dataset.id;

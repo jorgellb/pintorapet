@@ -1,5 +1,6 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
+import CitypaqFinder from '@/components/admin/CitypaqFinder.astro';
 import CorreosConnection from '@/components/admin/CorreosConnection.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasDatabase, settle } from '@/lib/server/db';
@@ -342,6 +343,7 @@ const blankZone: Zone = {
   </section>
 
   <CorreosConnection client={admin.db} />
+  <CitypaqFinder client={admin.db} />
 
   <template data-zone-template>
     <details class="zone" data-zone="" open>

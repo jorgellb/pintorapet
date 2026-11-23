@@ -1,0 +1,120 @@
+---
+import type { Db } from '@/lib/server/db';
+import { carrierRow } from '@/lib/server/shipping/admin';
+
+/** Admin › Envíos: look up public Citypaq lockers (Correos Terminals API). */
+interface Props {
+  client: Db;
+}
+
+const connected = Boolean(await carrierRow(Astro.props.client).catch(() => null));
+---
+
+<section class="panel citypaq" id="citypaq">
+  <h2>Taquillas Citypaq</h2>
+  <p class="hint">
+    Busca las taquillas públicas por código postal o población. Todavía no se ofrecen en la compra: falta la tarifa y el
+    producto de Correos.
+  </p>
+  {
+    connected ? (
+      <form class="citypaq__form" data-citypaq-form>
+        <label>
+          Código postal o población
+          <input name="q" required minlength="2" maxlength="60" placeholder="28013 o Madrid" autocomplete="off" />
+        </label>
+        <button type="submit">Buscar</button>
+      </form>
+    ) : (
+      <p class="note">Conecta Correos arriba para poder buscar taquillas.</p>
+    )
+  }
+  <p class="status" data-citypaq-status role="status" hidden></p>
+  <ul class="citypaq__list" data-citypaq-list hidden></ul>
+</section>
+
+<style>
+  .citypaq__form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.75rem;
+  }
+
+  .citypaq__form label {
+    flex: 1 1 16rem;
+    max-width: 24rem;
+  }
+
+  .citypaq__list {
+    display: grid;
+    gap: 0.5rem;
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .citypaq__list[hidden] {
+    display: none;
+  }
+
+  .citypaq__list :global(li) {
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .citypaq__list :global(strong) {
+    display: block;
+  }
+
+  .citypaq__list :global(small) {
+    color: var(--muted);
+  }
+</style>
+
+<script>
+  type Locker = { id: string; name: string; address: string; municipality: string; postalCode: string; schedule: string };
+
+  const form = document.querySelector<HTMLFormElement>('[data-citypaq-form]');
+  const status = document.querySelector<HTMLElement>('[data-citypaq-status]');
+  const list = document.querySelector<HTMLElement>('[data-citypaq-list]');
+  const say = (text: string) => {
+    if (!status) return;
+    status.hidden = false;
+    status.textContent = text;
+  };
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!list) return;
+    const q = String(new FormData(form).get('q') ?? '').trim();
+    const button = form.querySelector('button');
+    if (button) button.disabled = true;
+    list.hidden = true;
+    list.replaceChildren();
+    say('Buscando en Correos…');
+    const res = await fetch(`/api/admin/shipping/citypaqs/?q=${encodeURIComponent(q)}`).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as { lockers?: Locker[]; error?: { message?: string } } | null;
+    if (button) button.disabled = false;
+    if (!res?.ok) {
+      say(data?.error?.message ?? 'Correos no respondió.');
+      return;
+    }
+    const lockers = data?.lockers ?? [];
+    say(lockers.length === 0 ? 'No hay taquillas públicas en esa zona.' : `${lockers.length} ${lockers.length === 1 ? 'taquilla' : 'taquillas'}.`);
+    for (const locker of lockers) {
+      const item = document.createElement('li');
+      const name = document.createElement('strong');
+      name.textContent = locker.name;
+      const address = document.createElement('span');
+      address.textContent = locker.address || `${locker.postalCode} ${locker.municipality}`;
+      const extra = document.createElement('small');
+      extra.textContent = ` · ${[locker.schedule, locker.id].filter(Boolean).join(' · ')}`;
+      item.append(name, address, extra);
+      list.append(item);
+    }
+    list.hidden = lockers.length === 0;
+  });
+</script>

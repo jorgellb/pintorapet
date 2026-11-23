@@ -6,14 +6,18 @@ import {
   cancelShipment,
   clearCorreosConfigCache,
   CorreosApiError,
+  deliveryProof,
   loadCorreosConfig,
   loadShippingSettings,
   preregisterShipment,
+  searchCitypaqs,
   shipmentLabelPdf,
   testCorreos,
   trackingUrl,
   type CarrierMode,
+  type Citypaq,
   type CorreosConfig,
+  type ProofKind,
 } from './correos';
 
 export type CarrierRow = {
@@ -205,6 +209,34 @@ export async function correosLabel(client: Db, id: string): Promise<{ pdf: Buffe
     return { pdf: await shipmentLabelPdf(cfg, order.tracking_code || order.carrier_shipment_code, customs), reference: order.reference };
   } catch (err) {
     throw asCommerce(err, 'No se pudo descargar la etiqueta.');
+  }
+}
+
+/** The parcel's proof of delivery or signature, also for refunded orders: it is what settles a dispute. */
+export async function correosDeliveryProof(client: Db, id: string, kind: ProofKind) {
+  const order = await dbCall(() => client.one<{ reference: string; carrier: string | null; tracking_code: string | null }>`
+    select reference, carrier, tracking_code from public.orders where id = ${id}`);
+  if (!order) throw new CommerceError('UNAVAILABLE', 'Pedido no encontrado.', 404);
+  if (order.carrier !== 'correos' || !order.tracking_code) {
+    throw new CommerceError('CONFLICT', 'Este pedido no tiene envío en Correos.', 409);
+  }
+  const cfg = await loadCorreosConfig();
+  if (!cfg) throw new CommerceError('NOT_CONFIGURED', 'Correos no está conectado.', 409);
+  try {
+    return { ...(await deliveryProof(cfg, order.tracking_code, kind)), reference: order.reference };
+  } catch (err) {
+    throw asCommerce(err, 'No se pudo descargar la prueba de entrega.');
+  }
+}
+
+/** Public Citypaq lockers for a postal code or a town. */
+export async function findCitypaqs(query: string): Promise<Citypaq[]> {
+  const cfg = await loadCorreosConfig();
+  if (!cfg) throw new CommerceError('NOT_CONFIGURED', 'Conecta Correos para buscar taquillas.', 409);
+  try {
+    return await searchCitypaqs(cfg, query);
+  } catch (err) {
+    throw asCommerce(err, 'No se pudieron buscar las taquillas.');
   }
 }
 

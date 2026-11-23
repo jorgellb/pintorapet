@@ -2,7 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/server/db', () => ({ serviceDb: () => null, sql: () => null }));
 
-const { cancelShipment, CorreosApiError, shipmentLabelPdf, shipmentPayload, spanishPhone, trackShipment } = await import(
+const {
+  cancelShipment,
+  CorreosApiError,
+  deliveryProof,
+  publicCitypaqs,
+  searchCitypaqs,
+  shipmentLabelPdf,
+  shipmentPayload,
+  spanishPhone,
+  trackShipment,
+} = await import(
   '../src/lib/server/shipping/correos'
 );
 
@@ -103,5 +113,120 @@ describe('trackShipment', () => {
     reply({ events: [] });
     await trackShipment(cfg, 'PK1');
     expect(String(apiCall()[0])).toContain('/support/trackpub/api/v2/search/PK1?languageCode=ES');
+  });
+});
+
+describe('deliveryProof', () => {
+  const b64 = (text: string) => Buffer.from(text).toString('base64');
+
+  it('gets the electronic proof of delivery as a PDF', async () => {
+    reply({ shippingCode: 'PK1', format: 'pdf', content: b64('%PDF-1.4'), metadata: { contentType: 'application/pdf' } });
+    const proof = await deliveryProof(cfg, 'PK1', 'pee');
+    expect(String(apiCall()[0])).toContain('/digital-services/expclidocs/api/v1/pee/PK1?format=pdf');
+    expect(proof).toMatchObject({ contentType: 'application/pdf', extension: 'pdf' });
+    expect(proof.bytes.toString()).toBe('%PDF-1.4');
+  });
+
+  it('takes the signed document among the signatures', async () => {
+    reply({
+      shippingCode: 'PK1',
+      format: 'jpg',
+      documents: [
+        { content: b64('unsigned'), metadata: { contentType: 'image/jpeg', signed: '0' } },
+        { content: b64('signed'), metadata: { contentType: 'image/jpeg', signed: '1' } },
+      ],
+    });
+    const proof = await deliveryProof(cfg, 'PK1', 'pod');
+    expect(String(apiCall()[0])).toContain('/pod/PK1?format=jpg');
+    expect(proof).toMatchObject({ contentType: 'image/jpeg', extension: 'jpg' });
+    expect(proof.bytes.toString()).toBe('signed');
+  });
+
+  it('never serves a file type other than the one asked for', async () => {
+    reply({ content: b64('<script>'), metadata: { contentType: 'text/html' } });
+    expect((await deliveryProof(cfg, 'PK1', 'pee')).contentType).toBe('application/pdf');
+  });
+
+  it('says so when Correos has no proof yet', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes('/Authorize/Token')
+        ? answer({ idToken: token }, 200)
+        : answer({ code: 404, message: 'Not Found', moreInformation: { description: 'x' } }, 404),
+    );
+    await expect(deliveryProof(cfg, 'PK1', 'pod')).rejects.toThrow(/todavía no tiene/);
+  });
+
+  it('points at the contract when the proof is not allowed', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes('/Authorize/Token') ? answer({ idToken: token }, 200) : answer({ code: 403 }, 403),
+    );
+    await expect(deliveryProof(cfg, 'PK1', 'pee')).rejects.toThrow(/contrato/);
+  });
+});
+
+describe('Citypaq lockers', () => {
+  const locker = {
+    terminalId: 'S1999942D',
+    terminalState: 'ACTIVO',
+    terminalType: 'P',
+    modality: 'T',
+    visibilityIndex: 'S',
+    alias: 'REPSOL VIA DUBLIN',
+    address: 'CALLE VIA DUBLIN 7 28020 MADRID',
+    postalCode: '28020',
+    municipality: 'MADRID',
+    province: 'MADRID',
+    openingDescription: '24 HORAS',
+    latitudeWGS84: '40,36149087226',
+    longitudeWGS84: '-3,78064967055',
+  };
+
+  it('keeps only active public lockers: never a private home one', () => {
+    const lockers = publicCitypaqs([
+      locker,
+      { ...locker, terminalId: 'HOME', terminalType: 'DOMICILIARIO' },
+      { ...locker, terminalId: 'PERSONAL', terminalType: 'DOM PERSONAL' },
+      { ...locker, terminalId: 'CLOSED', terminalState: 'CLAUSURADO' },
+      { ...locker, terminalId: 'HIDDEN', visibilityIndex: 'N' },
+      { ...locker, terminalId: 'OFFICE', modality: 'E' },
+    ]);
+    expect(lockers.map((l) => l.id)).toEqual(['S1999942D']);
+    expect(lockers[0]).toMatchObject({ name: 'REPSOL VIA DUBLIN', schedule: '24 HORAS', latitude: 40.36149087226, longitude: -3.78064967055 });
+  });
+
+  it('searches a postal code among active lockers', async () => {
+    reply({ content: [locker] });
+    const lockers = await searchCitypaqs(cfg, '28020');
+    const url = new URL(String(apiCall()[0]));
+    expect(url.pathname).toBe('/logistics/terminals/api/v1/homepaqs');
+    expect(url.searchParams.get('postalCode')).toBe('28020');
+    expect(url.searchParams.get('terminalStates')).toBe('ACTIVO');
+    expect(lockers).toHaveLength(1);
+  });
+
+  it('looks around the postal code when it has none', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes('/Authorize/Token')) return answer({ idToken: token }, 200);
+      return answer({ content: new URL(String(url)).searchParams.has('postalCodeBeg') ? [locker] : [] }, 200);
+    });
+    expect(await searchCitypaqs(cfg, '28021')).toHaveLength(1);
+    const calls = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('homepaqs'));
+    expect(new URL(calls[1]).searchParams.get('postalCodeBeg')).toBe('280');
+  });
+
+  it('searches a town in the way Correos writes it', async () => {
+    reply({ content: [] });
+    await searchCitypaqs(cfg, ' Málaga ');
+    expect(new URL(String(apiCall()[0])).searchParams.get('municipality')).toBe('MALAGA');
+    fetchMock.mockClear();
+    await searchCitypaqs(cfg, 'A Coruña');
+    expect(new URL(String(apiCall()[0])).searchParams.get('municipality')).toBe('A CORUÑA');
+  });
+
+  it('treats "nothing found" as an empty list', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes('/Authorize/Token') ? answer({ idToken: token }, 200) : answer({ code: 404 }, 404),
+    );
+    await expect(searchCitypaqs(cfg, 'Villaperdida')).resolves.toEqual([]);
   });
 });

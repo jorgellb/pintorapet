@@ -352,3 +352,120 @@ export async function testCorreos(cfg: CorreosConfig): Promise<void> {
 export async function trackShipment(cfg: CorreosConfig, code: string): Promise<unknown> {
   return call<unknown>(cfg, 'GET', `/support/trackpub/api/v2/search/${encodeURIComponent(code)}?languageCode=ES`);
 }
+
+// --- Proof of delivery (Expclidocs) ------------------------------------------
+
+export type ProofKind = 'pee' | 'pod';
+
+// Always one of these two types: what Correos labels a document is not trusted.
+const PROOFS: Record<ProofKind, { format: string; contentType: string; extension: string }> = {
+  pee: { format: 'pdf', contentType: 'application/pdf', extension: 'pdf' },
+  pod: { format: 'jpg', contentType: 'image/jpeg', extension: 'jpg' },
+};
+
+type ProofDocument = { content?: string; metadata?: { signed?: string } };
+
+/** The electronic proof of delivery (pee, PDF) or the signature (pod, image) of a parcel. */
+export async function deliveryProof(
+  cfg: CorreosConfig,
+  code: string,
+  kind: ProofKind,
+): Promise<{ bytes: Buffer; contentType: string; extension: string }> {
+  const proof = PROOFS[kind];
+  let data: ProofDocument & { documents?: ProofDocument[] };
+  try {
+    data = await call(cfg, 'GET', `/digital-services/expclidocs/api/v1/${kind}/${encodeURIComponent(code)}?format=${proof.format}`);
+  } catch (err) {
+    if (err instanceof CorreosApiError && err.status === 404) {
+      throw new CorreosApiError('Correos todavía no tiene esta prueba de entrega.', 404);
+    }
+    if (err instanceof CorreosApiError && err.status === 403) {
+      throw new CorreosApiError(
+        'Correos no da acceso a este documento. Comprueba que el contrato incluye las pruebas de entrega y que la aplicación está suscrita a Expclidocs.',
+        403,
+      );
+    }
+    throw err;
+  }
+  const documents = data.documents ?? [data];
+  const chosen = documents.find((d) => d.metadata?.signed === '1') ?? documents[0];
+  if (!chosen?.content) throw new CorreosApiError('Correos todavía no tiene esta prueba de entrega.', 404);
+  return { bytes: Buffer.from(chosen.content, 'base64'), contentType: proof.contentType, extension: proof.extension };
+}
+
+// --- Citypaq lockers (Terminals) ----------------------------------------------
+
+export type Citypaq = {
+  /** The code a parcel is addressed to (addressee.homepaqCode). */
+  id: string;
+  name: string;
+  address: string;
+  postalCode: string;
+  municipality: string;
+  province: string;
+  schedule: string;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+const words = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+/** Correos writes some coordinates with a decimal comma. */
+const coordinate = (value: unknown) => {
+  const number = Number(words(value).replace(',', '.'));
+  return words(value) && Number.isFinite(number) ? number : null;
+};
+
+/** Only lockers anyone can use: active, visible, public. Never a private home locker. */
+export function publicCitypaqs(rows: unknown[]): Citypaq[] {
+  return rows.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const t = raw as Record<string, unknown>;
+    const id = words(t.terminalId);
+    const open = words(t.terminalState).toUpperCase() === 'ACTIVO';
+    const isPublic = /^P/i.test(words(t.terminalType));
+    if (!id || !open || !isPublic || words(t.visibilityIndex).toUpperCase() === 'N' || words(t.modality).toUpperCase() === 'E') {
+      return [];
+    }
+    return [
+      {
+        id,
+        name: words(t.alias) || words(t.channelDescription) || id,
+        address: words(t.address) || words(t.location),
+        postalCode: words(t.postalCode),
+        municipality: words(t.municipality) || words(t.locality),
+        province: words(t.province),
+        schedule: words(t.openingDescription) || words(t.scheduleIndex),
+        latitude: coordinate(t.latitudeWGS84) ?? coordinate(t.latitudeETRS89),
+        longitude: coordinate(t.longitudeWGS84) ?? coordinate(t.longitudeETRS89),
+      },
+    ];
+  });
+}
+
+async function terminals(cfg: CorreosConfig, filter: Record<string, string>): Promise<unknown[]> {
+  const params = new URLSearchParams({ terminalStates: 'ACTIVO', currPage: '0', itemsPage: '30', ...filter });
+  try {
+    const data = await call<{ content?: unknown[] }>(cfg, 'GET', `/logistics/terminals/api/v1/homepaqs?${params}`);
+    return Array.isArray(data.content) ? data.content : [];
+  } catch (err) {
+    if (err instanceof CorreosApiError && err.status === 404) return [];
+    throw err;
+  }
+}
+
+/** A town as Correos stores it: capitals, no accents, but keeping the Ñ. */
+const townName = (value: string) =>
+  value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/(N\u0303)|[\u0300-\u036f]/g, (_match, enye) => (enye ? 'Ñ' : ''));
+
+/** Lockers for a postal code (and around it, if it has none) or a town. */
+export async function searchCitypaqs(cfg: CorreosConfig, query: string): Promise<Citypaq[]> {
+  const q = query.trim();
+  if (!/^\d{5}$/.test(q)) return publicCitypaqs(await terminals(cfg, { municipality: townName(q) }));
+  const exact = publicCitypaqs(await terminals(cfg, { postalCode: q }));
+  return exact.length > 0 ? exact : publicCitypaqs(await terminals(cfg, { postalCodeBeg: q.slice(0, 3) }));
+}
