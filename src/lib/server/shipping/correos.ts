@@ -415,6 +415,15 @@ const coordinate = (value: unknown) => {
   return words(value) && Number.isFinite(number) ? number : null;
 };
 
+// The values the Terminals API documents for a public locker. Anything else, or
+// nothing at all, stays out: a home locker's address must never be shown.
+const PUBLIC_TERMINAL_TYPES = new Set(['P', 'PUBLICO']);
+const unaccented = (value: unknown) =>
+  words(value)
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
 /** Only lockers anyone can use: active, visible, public. Never a private home locker. */
 export function publicCitypaqs(rows: unknown[]): Citypaq[] {
   return rows.flatMap((raw) => {
@@ -422,10 +431,10 @@ export function publicCitypaqs(rows: unknown[]): Citypaq[] {
     const t = raw as Record<string, unknown>;
     const id = words(t.terminalId);
     const open = words(t.terminalState).toUpperCase() === 'ACTIVO';
-    const isPublic = /^P/i.test(words(t.terminalType));
-    if (!id || !open || !isPublic || words(t.visibilityIndex).toUpperCase() === 'N' || words(t.modality).toUpperCase() === 'E') {
-      return [];
-    }
+    const isPublic = PUBLIC_TERMINAL_TYPES.has(unaccented(t.terminalType));
+    const visible = words(t.visibilityIndex).toUpperCase() === 'S';
+    const isLocker = words(t.modality).toUpperCase() === 'T';
+    if (!id || !open || !isPublic || !visible || !isLocker) return [];
     return [
       {
         id,

@@ -194,6 +194,21 @@ describe('Citypaq lockers', () => {
     expect(lockers[0]).toMatchObject({ name: 'REPSOL VIA DUBLIN', schedule: '24 HORAS', latitude: 40.36149087226, longitude: -3.78064967055 });
   });
 
+  it('accepts only the documented public values: anything unknown or missing stays out', () => {
+    const { terminalType: _type, visibilityIndex: _visible, modality: _modality, ...bare } = locker;
+    const lockers = publicCitypaqs([
+      { ...locker, terminalId: 'PUBLICO', terminalType: 'PUBLICO' },
+      { ...locker, terminalId: 'PUBLICO2', terminalType: 'Público' },
+      { ...locker, terminalId: 'PERSONAL', terminalType: 'PERSONAL' },
+      { ...locker, terminalId: 'PRIVATE', terminalType: 'PRIVADO' },
+      { ...locker, terminalId: 'NO-TYPE', terminalType: undefined },
+      { ...locker, terminalId: 'NO-VISIBILITY', visibilityIndex: undefined },
+      { ...locker, terminalId: 'UNKNOWN-MODALITY', modality: 'D' },
+      { ...bare, terminalId: 'BARE' },
+    ]);
+    expect(lockers.map((l) => l.id)).toEqual(['PUBLICO', 'PUBLICO2']);
+  });
+
   it('searches a postal code among active lockers', async () => {
     reply({ content: [locker] });
     const lockers = await searchCitypaqs(cfg, '28020');
