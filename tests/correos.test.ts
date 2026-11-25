@@ -4,6 +4,7 @@ vi.mock('@/lib/server/db', () => ({ serviceDb: () => null, sql: () => null }));
 
 const {
   cancelShipment,
+  testCorreos,
   CorreosApiError,
   deliveryProof,
   publicCitypaqs,
@@ -55,6 +56,15 @@ const reply = (body: unknown) =>
     String(url).includes('/Authorize/Token') ? answer({ idToken: token }, 200) : answer(body),
   );
 const apiCall = () => fetchMock.mock.calls.find(([url]) => !String(url).includes('/Authorize/Token'))!;
+
+describe('Correos ID token', () => {
+  it('asks for every application the site uses, Trackpub (TPB) included', async () => {
+    reply({ events: [] });
+    await trackShipment({ ...cfg, oauthClientId: `scope-${Math.random()}` }, 'PK1');
+    const tokenCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/Authorize/Token'))!;
+    expect(new URLSearchParams(String(tokenCall[1].body)).get('scope')).toBe('AP3 LBS RCG TPB');
+  });
+});
 
 describe('spanishPhone', () => {
   it('leaves the 9 digits Correos asks for', () => {
@@ -238,10 +248,43 @@ describe('Citypaq lockers', () => {
     expect(new URL(String(apiCall()[0])).searchParams.get('municipality')).toBe('A CORUÑA');
   });
 
+  it('reads the plain list Correos really answers, with its "TERMINAL" modality', async () => {
+    const live = { ...locker, terminalType: 'PUBLICO', modality: 'TERMINAL', openingDescription: null, scheduleIndex: '24 HORAS' };
+    reply([live, { ...live, terminalId: 'HOME', terminalType: 'DOMICILIARIO' }, { ...live, terminalId: 'OFFICE', modality: 'ESTAFETA' }]);
+    const lockers = await searchCitypaqs(cfg, 'Madrid');
+    expect(lockers.map((l) => l.id)).toEqual(['S1999942D']);
+    expect(lockers[0].schedule).toBe('24 HORAS');
+  });
+
   it('treats "nothing found" as an empty list', async () => {
     fetchMock.mockImplementation(async (url: string) =>
       String(url).includes('/Authorize/Token') ? answer({ idToken: token }, 200) : answer({ code: 404 }, 404),
     );
     await expect(searchCitypaqs(cfg, 'Villaperdida')).resolves.toEqual([]);
+  });
+});
+
+describe('testCorreos', () => {
+  it('says what Correos answered, where, and what to check', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes('/Authorize/Token')
+        ? answer({ idToken: token }, 200)
+        : answer({ error: 'Invalid Client' }, 401),
+    );
+    const error = (await testCorreos(cfg).catch((err: unknown) => err)) as Error;
+    expect(error).toBeInstanceOf(CorreosApiError);
+    expect(error.message).toContain('api1.correospre.es respondió 401: Invalid Client');
+    expect(error.message).toMatch(/Real/);
+    expect(error.message).toMatch(/Trackpub/);
+  });
+
+  it('never repeats a secret Correos might echo back', async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes('/Authorize/Token')
+        ? answer({ idToken: token }, 200)
+        : answer({ error: `bad secret ${cfg.gatewayClientSecret}` }, 403),
+    );
+    const error = (await testCorreos(cfg).catch((err: unknown) => err)) as Error;
+    expect(error.message).not.toContain(cfg.gatewayClientSecret);
   });
 });

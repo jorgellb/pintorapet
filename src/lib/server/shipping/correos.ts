@@ -136,7 +136,8 @@ export async function correosToken(cfg: CorreosConfig): Promise<string> {
       grant_type: 'client_credentials',
       client_id: cfg.oauthClientId,
       client_secret: cfg.oauthClientSecret,
-      scope: 'AP3 LBS RCG',
+      // Correos ID applications: AP3 preregister, LBS labels, RCG requests, TPB Trackpub.
+      scope: 'AP3 LBS RCG TPB',
     }),
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);
@@ -151,6 +152,9 @@ export async function correosToken(cfg: CorreosConfig): Promise<string> {
   tokens.set(key, { token, expiresAt: jwtExpiry(token) });
   return token;
 }
+
+const hideSecrets = (text: string, cfg: CorreosConfig) =>
+  [cfg.gatewayClientSecret, cfg.oauthClientSecret].reduce((out, secret) => (secret ? out.split(secret).join('***') : out), text);
 
 async function call<T>(cfg: CorreosConfig, method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   const token = await correosToken(cfg);
@@ -167,9 +171,20 @@ async function call<T>(cfg: CorreosConfig, method: 'GET' | 'POST', path: string,
     signal: AbortSignal.timeout(30_000),
   }).catch(() => null);
   if (!res) throw new CorreosApiError('No se pudo contactar con Correos.', 502);
-  const data = (await res.json().catch(() => ({}))) as T & { message?: string; description?: string; body?: string };
+  const data = (await res.json().catch(() => ({}))) as T & {
+    message?: string;
+    description?: string;
+    body?: string;
+    error?: unknown;
+  };
   if (res.status === 401 || res.status === 403) {
-    throw new CorreosApiError('Correos rechazó las credenciales de la API (client_id / client_secret).', res.status);
+    // What Correos said, never the secrets it may echo back.
+    const said = [data.error, data.body, data.description, data.message].find((v) => typeof v === 'string' && v.trim());
+    const reason = typeof said === 'string' ? hideSecrets(said.trim(), cfg).slice(0, 160) : '';
+    throw new CorreosApiError(
+      `Correos rechazó las credenciales de la API (client_id / client_secret): ${new URL(HOSTS[cfg.mode].api).host} respondió ${res.status}${reason ? `: ${reason}` : ''}.`,
+      res.status,
+    );
   }
   if (!res.ok) {
     throw new CorreosApiError(data.description || data.body || data.message || `Correos respondió con un error (${res.status}).`, res.status);
@@ -344,7 +359,16 @@ export async function testCorreos(cfg: CorreosConfig): Promise<void> {
   try {
     await call(cfg, 'GET', '/support/trackpub/api/v2/search/PQ000000000000000000');
   } catch (err) {
-    if (err instanceof CorreosApiError && (err.status === 401 || err.status === 403)) throw err;
+    if (err instanceof CorreosApiError && (err.status === 401 || err.status === 403)) {
+      const mode =
+        cfg.mode === 'test'
+          ? ' Estás en «Pruebas (preproducción)»: si las claves vienen de «My Applications» del portal de Correos, prueba con «Real» (la comprobación no crea ningún envío).'
+          : ' Estás en «Real»: si Correos te dio claves de preproducción, prueba con «Pruebas».';
+      throw new CorreosApiError(
+        `${err.message}${mode} Comprueba también que la aplicación tiene Trackpub aprobada y que las claves de la «Pasarela API» son las de esa aplicación.`,
+        err.status,
+      );
+    }
   }
 }
 
@@ -433,7 +457,8 @@ export function publicCitypaqs(rows: unknown[]): Citypaq[] {
     const open = words(t.terminalState).toUpperCase() === 'ACTIVO';
     const isPublic = PUBLIC_TERMINAL_TYPES.has(unaccented(t.terminalType));
     const visible = words(t.visibilityIndex).toUpperCase() === 'S';
-    const isLocker = words(t.modality).toUpperCase() === 'T';
+    // The spec says T; the live API says TERMINAL (ESTAFETA for a post office).
+    const isLocker = ['T', 'TERMINAL'].includes(words(t.modality).toUpperCase());
     if (!id || !open || !isPublic || !visible || !isLocker) return [];
     return [
       {
@@ -452,9 +477,11 @@ export function publicCitypaqs(rows: unknown[]): Citypaq[] {
 }
 
 async function terminals(cfg: CorreosConfig, filter: Record<string, string>): Promise<unknown[]> {
-  const params = new URLSearchParams({ terminalStates: 'ACTIVO', currPage: '0', itemsPage: '30', ...filter });
+  const params = new URLSearchParams({ terminalStates: 'ACTIVO', ...filter });
   try {
-    const data = await call<{ content?: unknown[] }>(cfg, 'GET', `/logistics/terminals/api/v1/homepaqs?${params}`);
+    // Unpaginated, the live API answers a plain list; paginated, the spec's { content }.
+    const data = await call<unknown[] | { content?: unknown[] }>(cfg, 'GET', `/logistics/terminals/api/v1/homepaqs?${params}`);
+    if (Array.isArray(data)) return data;
     return Array.isArray(data.content) ? data.content : [];
   } catch (err) {
     if (err instanceof CorreosApiError && err.status === 404) return [];
