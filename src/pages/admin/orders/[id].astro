@@ -6,7 +6,7 @@ import type { OrdersRow } from '@/lib/server/dbTypes';
 import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate, type Tone } from '@/lib/admin/labels';
 import { countryOptions } from '@/lib/domain/countries';
 import { trackingUrl } from '@/lib/server/shipping/correos';
-import { carrierRow } from '@/lib/server/shipping/admin';
+import { carrierRow, ON_ITS_WAY } from '@/lib/server/shipping/admin';
 import { loadShippingSettings } from '@/lib/server/shipping/correos';
 
 export const prerender = false;
@@ -144,7 +144,8 @@ const fulfillment = fulfillmentLabel(order.fulfillment_status);
 const paid = order.payment_status === 'paid' || order.payment_status === 'partially_refunded';
 // Charged at some point: it has (or will have) an invoice.
 const charged = paid || order.payment_status === 'refunded';
-const sent = order.fulfillment_status === 'shipped' || order.fulfillment_status === 'completed';
+// The parcel has left: no more "Marcar enviado" nor "Anular envío".
+const sent = ON_ITS_WAY.includes(order.fulfillment_status);
 const hasCorreosShipment = order.carrier === 'correos' && Boolean(order.carrier_shipment_code);
 const trackLink =
   order.tracking_code && order.carrier === 'correos' ? trackingUrl(order.tracking_code, 'es') : null;

@@ -29,7 +29,7 @@ async function syncOne(client: Db, order: TrackedOrder): Promise<TrackingSync> {
   await dbCall(() => client.run`
     update public.orders
     set tracking_events = ${json(parsed.events)}, tracking_status = ${parsed.summary}, tracking_checked_at = now(),
-        fulfillment_status = ${status}::public.fulfillment_status
+        fulfillment_status = ${status}::public.order_fulfillment_status
     where id = ${order.id}`);
   return { status, changed: status !== order.fulfillment_status, summary: parsed.summary, events: parsed.events.length };
 }

@@ -28,7 +28,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     if ('fulfillmentStatus' in body) {
       // A partly refunded order still has pieces to send.
       const data = await dbCall(() => admin.db.one`
-        update public.orders set fulfillment_status = ${body.fulfillmentStatus}::public.fulfillment_status
+        update public.orders set fulfillment_status = ${body.fulfillmentStatus}::public.order_fulfillment_status
         where id = ${id} and payment_status in ('paid', 'partially_refunded')
         returning id, fulfillment_status`);
       if (!data) throw new CommerceError('VALIDATION', 'El envío solo se cambia en pedidos pagados.', 409);

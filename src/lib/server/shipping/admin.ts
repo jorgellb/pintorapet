@@ -191,7 +191,7 @@ export async function createCorreosShipment(client: Db, id: string) {
     update public.orders
     set carrier = 'correos', carrier_shipment_code = ${created.shipmentCode}, tracking_code = ${created.packageCode},
         label_created_at = now(),
-        fulfillment_status = ${order.fulfillment_status === 'unfulfilled' ? 'preparing' : order.fulfillment_status}::public.fulfillment_status
+        fulfillment_status = ${order.fulfillment_status === 'unfulfilled' ? 'preparing' : order.fulfillment_status}::public.order_fulfillment_status
     where id = ${id}`);
   return { ...created, product, customs: Boolean(zone?.customs) || international };
 }
@@ -246,12 +246,15 @@ async function zoneNeedsCustoms(client: Db, zoneId: string | null): Promise<bool
   return Boolean(row?.customs);
 }
 
+/** Shipping states in which the parcel has left: it can no longer be annulled or sent again. */
+export const ON_ITS_WAY = ['shipped', 'in_transit', 'out_for_delivery', 'completed', 'incident', 'returned'];
+
 export async function cancelCorreosShipment(client: Db, id: string): Promise<void> {
   const order = await paidOrder(client, id);
   if (order.carrier !== 'correos' || !order.tracking_code) {
     throw new CommerceError('CONFLICT', 'Este pedido no tiene envío en Correos.', 409);
   }
-  if (order.fulfillment_status === 'shipped' || order.fulfillment_status === 'completed') {
+  if (ON_ITS_WAY.includes(order.fulfillment_status)) {
     throw new CommerceError('CONFLICT', 'El paquete ya salió; la anulación se gestiona con Correos.', 409);
   }
   const cfg = await loadCorreosConfig();
@@ -275,7 +278,11 @@ export async function markShipped(
   const order = await paidOrder(client, id);
   await dbCall(() => client.run`
     update public.orders
-    set carrier = ${input.carrier}, tracking_code = ${input.trackingCode}, fulfillment_status = 'shipped', shipped_at = now()
+    set carrier = ${input.carrier}, tracking_code = ${input.trackingCode},
+        -- A parcel Correos already moves further keeps its state.
+        fulfillment_status = case when fulfillment_status in ('unfulfilled', 'preparing')
+                                  then 'shipped'::public.order_fulfillment_status else fulfillment_status end,
+        shipped_at = coalesce(shipped_at, now())
     where id = ${id}`);
 
   if (input.notify && order.customer_email) {
