@@ -4,7 +4,7 @@ import StallItem from '@/components/shop/StallItem.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath, productPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
-import { loadPublicCatalog, loadProductPage, topLevelProducts } from '@/lib/catalog/loadProducts';
+import { loadPublicCatalogForPages, topLevelProducts, type loadProductPage } from '@/lib/catalog/loadProducts';
 import { loadShopCollections } from '@/lib/catalog/shopSets';
 import { loadProductTypes } from '@/lib/catalog/productTypes';
 import { sizedImage } from '@/lib/catalog/imageSize';
@@ -14,23 +14,20 @@ import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
   locale: Locale;
-  slug: string;
+  /** Found by the route (src/pages/…/[slug].astro), which sends unknown products back to the shop. */
+  page: NonNullable<Awaited<ReturnType<typeof loadProductPage>>>;
 }
 
-const { locale, slug } = Astro.props;
+const { locale, page } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const page = await loadProductPage(locale, slug);
-if (!page) {
-  return Astro.redirect(localizedPath(locale, 'shop'));
-}
 const { product, options, selected } = page;
 
 // Product slugs are translated, so find this option's slug in the other locale.
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
 const [catalog, otherCatalog, collections, types] = await Promise.all([
-  loadPublicCatalog(locale),
-  loadPublicCatalog(otherLocale),
+  loadPublicCatalogForPages(locale),
+  loadPublicCatalogForPages(otherLocale),
   loadShopCollections(locale),
   loadProductTypes(locale),
 ]);

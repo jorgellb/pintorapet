@@ -5,7 +5,7 @@ import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
-import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
+import { loadPublicCatalogForPages, topLevelProducts } from '@/lib/catalog/loadProducts';
 import { getAboutImages } from '@/lib/content/siteExtras';
 import { isHeroDesign, loadHeroContent, resolveHero } from '@/lib/content/homeHero';
 import { loadHomeSections, resolveHomeSections, sectionLinks } from '@/lib/content/homeSections';
@@ -23,7 +23,7 @@ const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
 const [catalog, aboutImages, sectionsContent] = await Promise.all([
-  loadPublicCatalog(locale),
+  loadPublicCatalogForPages(locale),
   getAboutImages(),
   loadHomeSections(),
 ]);

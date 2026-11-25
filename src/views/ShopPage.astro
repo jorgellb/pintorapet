@@ -2,7 +2,7 @@
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
-import { loadPublicCatalog, topLevelProducts } from '@/lib/catalog/loadProducts';
+import { loadPublicCatalogForPages, topLevelProducts } from '@/lib/catalog/loadProducts';
 import { buildShopSets, loadShopCollections, piecesOfType } from '@/lib/catalog/shopSets';
 import StallItem from '@/components/shop/StallItem.astro';
 import TypeIcon from '@/components/shop/TypeIcon.astro';
@@ -16,7 +16,7 @@ const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
 const [catalog, collections, types] = await Promise.all([
-  loadPublicCatalog(locale),
+  loadPublicCatalogForPages(locale),
   loadShopCollections(locale),
   loadProductTypes(locale),
 ]);

@@ -130,7 +130,10 @@ async function loadFromSupabase(locale: Locale): Promise<ProductPublic[] | null>
       client.rows`select * from public.catalog_product_translations_v where locale = ${locale}`.then(asData, asError),
       client.rows`select * from public.catalog_product_images_v order by position`.then(asData, asError),
     ]);
-    if (products.error || !products.data) return null;
+    if (products.error || !products.data) {
+      console.error('[catalog] database unavailable, using the local file:', String((products.error as { message?: unknown } | null)?.message ?? products.error));
+      return null;
+    }
 
     const copy = new Map(
       (translations.data ?? []).map((row) => [String(row.product_id), row]),
@@ -216,6 +219,32 @@ export async function loadPublicCatalog(locale: Locale): Promise<{
   return { products: [], source: 'empty' };
 }
 
+const PAGE_CACHE_MS = 30_000;
+const pageCache = new Map<Locale, { at: number; value: ReturnType<typeof loadPublicCatalog> }>();
+
+/**
+ * The catalogue for public pages (shop, product pages, home): kept for 30 s per
+ * locale, and visitors arriving together share one load. A product page used
+ * to read the whole catalogue three times; Aiven's free plan allows 20
+ * connections in all. Only a catalogue read from the database is kept. Carts,
+ * checkout and the shopping-feed sync read it fresh (loadPublicCatalog).
+ */
+export function loadPublicCatalogForPages(locale: Locale): ReturnType<typeof loadPublicCatalog> {
+  const hit = pageCache.get(locale);
+  if (hit && Date.now() - hit.at < PAGE_CACHE_MS) return hit.value;
+  const value = loadPublicCatalog(locale);
+  pageCache.set(locale, { at: Date.now(), value });
+  value.then(
+    (catalog) => {
+      if (catalog.source !== 'supabase' && pageCache.get(locale)?.value === value) pageCache.delete(locale);
+    },
+    () => {
+      if (pageCache.get(locale)?.value === value) pageCache.delete(locale);
+    },
+  );
+  return value;
+}
+
 /** @deprecated Prefer loadPublicCatalog for source awareness. */
 export async function loadManifestProducts(
   locale: Locale,
@@ -245,7 +274,7 @@ export async function loadProductPage(
   locale: Locale,
   slug: string,
 ): Promise<{ product: ProductPublic; options: ProductPublic[]; selected: ProductPublic } | null> {
-  const all = await loadManifestProducts(locale);
+  const all = (await loadPublicCatalogForPages(locale)).products;
   const hit = all.find((p) => p.slug === slug);
   if (!hit) return null;
   const product = hit.parentId ? all.find((p) => p.id === hit.parentId) : hit;

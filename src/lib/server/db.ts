@@ -11,6 +11,7 @@
  *   numeric as numbers, json/jsonb parsed.
  */
 import pg from 'pg';
+import { attachDatabasePool } from '@vercel/functions';
 
 export type Row = Record<string, unknown>;
 
@@ -226,9 +227,13 @@ export function pool(): pg.Pool {
     max: Number(import.meta.env.DATABASE_POOL_MAX ?? 3),
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
-    options: '-c TimeZone=UTC -c statement_timeout=15000',
+    // Postgres itself drops a session left idle: a Vercel instance frozen between
+    // requests cannot close its own, and Aiven's free plan has 20 connections in all.
+    options: '-c TimeZone=UTC -c statement_timeout=15000 -c idle_session_timeout=60000 -c idle_in_transaction_session_timeout=30000',
   });
   created.on('error', (err) => console.error('[db] idle client error', err.message));
+  // On Vercel: close idle clients before the instance is suspended (a no-op elsewhere).
+  attachDatabasePool(created);
   globalPool.__pintoraPool = created;
   return created;
 }

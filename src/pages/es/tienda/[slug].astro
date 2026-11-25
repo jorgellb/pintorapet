@@ -1,5 +1,12 @@
 ---
 import ProductPage from '@/views/ProductPage.astro';
-const { slug } = Astro.params;
+import { localizedPath } from '@/i18n/routes';
+import { loadProductPage } from '@/lib/catalog/loadProducts';
+
+// Looked up here, before anything is sent: an unknown product goes back to the
+// shop (a redirect from inside the view would come too late and leave a blank page).
+const page = await loadProductPage('es', Astro.params.slug ?? '');
+if (!page) return Astro.redirect(localizedPath('es', 'shop'));
 ---
-<ProductPage locale="es" slug={slug!} />
+
+<ProductPage locale="es" page={page} />
