@@ -34,3 +34,10 @@ describe('customerStatus with the carrier’s states', () => {
     expect(customerStatus('expired', 'unfulfilled', 'en')).toMatchObject({ key: 'cancelled', label: 'Not paid' });
   });
 });
+
+describe('customerStatus for an order paid by transfer', () => {
+  it('says the transfer is awaited, without a journey yet', () => {
+    expect(customerStatus('awaiting_transfer', 'unfulfilled', 'es')).toMatchObject({ key: 'awaiting', label: 'Pendiente de transferencia', step: 0 });
+    expect(customerStatus('awaiting_transfer', 'unfulfilled', 'en').label).toBe('Awaiting bank transfer');
+  });
+});

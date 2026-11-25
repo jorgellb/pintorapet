@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { CommerceError } from '@/lib/server/commerce/errors';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
-import { cancelOrder, deleteOrder } from '@/lib/server/commerce/orderAdmin';
+import { cancelOrder, deleteOrder, markOrderPaid } from '@/lib/server/commerce/orderAdmin';
+import { sendOrderEmails } from '@/lib/server/commerce/outbox';
+import { serviceDb } from '@/lib/server/db';
 import { FULFILLMENT_STATES } from '@/lib/server/shipping/tracking';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
 
@@ -16,6 +18,8 @@ const patchSchema = z.union([
   z.object({ archived: z.boolean() }).strict(),
   /** An order never paid: cancelled (its stock freed, its checkout closed). */
   z.object({ cancel: z.literal(true) }).strict(),
+  /** The bank transfer arrived. */
+  z.object({ markPaid: z.literal(true) }).strict(),
 ]);
 
 export const PATCH: APIRoute = async ({ params, request, cookies }) => {
@@ -39,6 +43,14 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     if ('archived' in body) {
       await dbCall(() => admin.db.call('admin_set_order_archived', { p_order_id: id, p_archived: body.archived }));
       await audit(admin, body.archived ? 'archive_order' : 'unarchive_order', 'orders', id, {});
+      return Response.json({ ok: true });
+    }
+
+    if ('markPaid' in body) {
+      await markOrderPaid(admin.db, id);
+      await audit(admin, 'mark_order_paid', 'orders', id, { by: 'transfer' });
+      const service = serviceDb();
+      if (service) await sendOrderEmails(service, id);
       return Response.json({ ok: true });
     }
 

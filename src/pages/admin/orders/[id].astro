@@ -3,7 +3,7 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasDatabase, settle } from '@/lib/server/db';
 import type { OrdersRow } from '@/lib/server/dbTypes';
-import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate, type Tone } from '@/lib/admin/labels';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, providerLabel, shortDate, type Tone } from '@/lib/admin/labels';
 import { countryOptions } from '@/lib/domain/countries';
 import { trackingUrl } from '@/lib/server/shipping/correos';
 import { carrierRow, ON_ITS_WAY } from '@/lib/server/shipping/admin';
@@ -78,7 +78,7 @@ type RefundRow = {
   id: string;
   status: 'pending' | 'succeeded' | 'failed' | 'unassigned';
   channel: 'api' | 'manual' | 'provider';
-  provider: 'stripe' | 'paypal' | null;
+  provider: 'stripe' | 'paypal' | 'transfer' | null;
   items: Array<{ order_item_id: string; quantity: number; amount_cents: number }>;
   shipping_cents: number;
   amount_cents: number;
@@ -115,6 +115,8 @@ const refundable =
   order.total_cents - left.refunded_cents + unassignedCents > 0;
 const nothingRefunded = refunds.every((r) => r.status === 'failed');
 const providerName = order.payment_provider === 'paypal' ? 'PayPal' : 'Stripe';
+// Paid by bank transfer: its refunds go back by transfer, done by hand and only recorded here.
+const byTransfer = order.payment_provider === 'transfer';
 const refundWhat = (r: RefundRow) =>
   [
     ...r.items.map((i) => `${i.quantity} × ${itemTitle.get(i.order_item_id) ?? 'pieza'}`),
@@ -124,7 +126,7 @@ const refundHow = (r: RefundRow) =>
   r.channel === 'api'
     ? `Por ${r.provider === 'paypal' ? 'PayPal' : 'Stripe'}`
     : r.channel === 'manual'
-      ? 'Registrada (devuelta fuera)'
+      ? r.provider === 'transfer' ? 'Por transferencia (registrada)' : 'Registrada (devuelta fuera)'
       : `Desde el panel de ${r.provider === 'paypal' ? 'PayPal' : 'Stripe'}`;
 const refundState: Record<RefundRow['status'], { text: string; tone: Tone }> = {
   succeeded: { text: 'Hecha', tone: 'ok' },
@@ -153,7 +155,9 @@ const carriers = ['Correos', 'Correos Express', 'SEUR', 'MRW', 'GLS', 'DHL', 'UP
 const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'in_transit', 'out_for_delivery', 'completed', 'incident', 'returned'];
 
 // ——— Unpaid orders: cancel / delete; any order: archive ———
-const unpaidOrder = ['pending_session', 'checkout_open', 'expired', 'cancelled'].includes(order.payment_status) && !order.paid_at;
+const awaitingTransfer = order.payment_status === 'awaiting_transfer';
+const unpaidOrder =
+  ['pending_session', 'checkout_open', 'expired', 'cancelled', 'awaiting_transfer'].includes(order.payment_status) && !order.paid_at;
 const cancellable = unpaidOrder && order.payment_status !== 'cancelled';
 
 // ——— Correos tracking ———
@@ -194,6 +198,10 @@ const historyText = (operation: string, change: Record<string, unknown>) => {
       return 'Facturas emitidas';
     case 'cancel_order':
       return 'Pedido cancelado';
+    case 'create_manual_order':
+      return change.paid ? 'Pedido por teléfono, ya pagado por transferencia' : 'Pedido por teléfono, esperando la transferencia';
+    case 'mark_order_paid':
+      return 'Transferencia recibida: marcado como pagado';
     case 'archive_order':
       return 'Archivado';
     case 'unarchive_order':
@@ -221,7 +229,7 @@ const carrierName = (value: string | null) =>
     <div>
       <h1><code>{order.reference}</code></h1>
       <p class="lead">
-        {shortDate(order.created_at)} · {order.payment_provider === 'paypal' ? 'PayPal' : 'Stripe'}
+        {shortDate(order.created_at)} · {providerLabel(order.payment_provider)}
       </p>
     </div>
     <div class="head-side">
@@ -230,7 +238,12 @@ const carrierName = (value: string | null) =>
         <span class={chipClass(pay.tone)}>{pay.text}</span>
         <span class={chipClass(fulfillment.tone)}>{fulfillment.text}</span>
       </div>
-      <div class="actions" data-order-actions data-id={order.id} data-reference={order.reference}>
+      <div class="actions" data-order-actions data-id={order.id} data-reference={order.reference} data-total={euros(order.total_cents)}>
+        {awaitingTransfer && (
+          <button type="button" class="btn" data-mark-paid>
+            Marcar como pagado
+          </button>
+        )}
         {cancellable && (
           <button type="button" class="btn--quiet" data-cancel-unpaid>
             Cancelar pedido
@@ -249,6 +262,17 @@ const carrierName = (value: string | null) =>
       <p class="status" data-order-status role="status" hidden></p>
     </div>
   </header>
+
+  {
+    awaitingTransfer && (
+      <p class="alert alert--info">
+        Esperando la transferencia de <strong>{euros(order.total_cents)}</strong>. Pide que pongan
+        <strong> {order.reference}</strong> como concepto. Cuando llegue, pulsa «Marcar como pagado»: se
+        descuentan las piezas del stock, se emite la factura{order.customer_email ? ' y se avisa por email' : ''}.
+        Mientras tanto las piezas quedan reservadas.
+      </p>
+    )
+  }
 
   {
     order.shipping_destination_ok === false && (
@@ -391,7 +415,9 @@ const carrierName = (value: string | null) =>
     {
       !paid ? (
         <p class="muted">
-          {unpaidOrder
+          {awaitingTransfer
+            ? 'El envío se prepara cuando llegue la transferencia y marques el pedido como pagado.'
+            : unpaidOrder
             ? `Este pedido no está pagado (${pay.text.toLowerCase()}): no hay nada que enviar. Puedes ${cancellable ? 'cancelarlo o ' : ''}borrarlo con los botones de arriba.`
             : order.payment_status === 'refunded'
               ? 'Pedido reembolsado entero: no hay nada que enviar.'
@@ -561,7 +587,7 @@ const carrierName = (value: string | null) =>
 
   {
     (charged || refunds.length > 0) && (
-      <section class="panel refunds" data-refunds-panel data-id={order.id} data-provider={providerName}>
+      <section class="panel refunds" data-refunds-panel data-id={order.id} data-provider={providerName} data-by-transfer={byTransfer ? '1' : undefined}>
         <div class="refunds__head">
           <h2>Devoluciones</h2>
           {refundable && (
@@ -709,10 +735,17 @@ const carrierName = (value: string | null) =>
               Volver a poner las piezas en stock
               <span class="hint">Solo cuenta para productos con stock controlado.</span>
             </label>
-            <label class="check">
-              <input type="checkbox" data-refund-manual checked={unassigned.length > 0} />
-              Ya lo devolví desde el panel de {providerName}: solo registrarlo
-            </label>
+            {byTransfer ? (
+              <p class="hint">
+                Pagado por transferencia: aquí solo se registra la devolución (factura rectificativa, stock y
+                email). La transferencia de vuelta la haces tú desde el banco.
+              </p>
+            ) : (
+              <label class="check">
+                <input type="checkbox" data-refund-manual checked={unassigned.length > 0} />
+                Ya lo devolví desde el panel de {providerName}: solo registrarlo
+              </label>
+            )}
             <label>
               Motivo <span class="hint">opcional · sale en la factura rectificativa</span>
               <input type="text" maxlength="300" data-refund-reason placeholder="Ej.: llegó rota" />
@@ -781,6 +814,11 @@ const carrierName = (value: string | null) =>
     border-radius: var(--a-radius-sm);
     background: color-mix(in srgb, var(--danger) 10%, transparent);
     color: var(--danger);
+  }
+
+  .alert--info {
+    background: var(--a-warn-soft);
+    color: var(--a-warn);
   }
 
   .detail {
@@ -1055,6 +1093,17 @@ const carrierName = (value: string | null) =>
       const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
       return { ok: Boolean(res?.ok), message: data?.error?.message ?? 'No hubo respuesta del servidor.' };
     };
+    actions.querySelector<HTMLButtonElement>('[data-mark-paid]')?.addEventListener('click', async (event) => {
+      if (!confirm(`¿Ha llegado la transferencia de ${actions.dataset.total ?? ''} del pedido ${reference}? Se marca pagado, se descuentan las piezas del stock y se emite la factura.`)) return;
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      const { ok, message } = await call('PATCH', { markPaid: true });
+      if (ok) location.reload();
+      else {
+        say(message);
+        button.disabled = false;
+      }
+    });
     actions.querySelector<HTMLButtonElement>('[data-cancel-unpaid]')?.addEventListener('click', async (event) => {
       if (!confirm(`¿Cancelar el pedido ${reference}? No está pagado: se libera su stock y ya no se podrá pagar.`)) return;
       const button = event.currentTarget as HTMLButtonElement;
@@ -1139,6 +1188,7 @@ const carrierName = (value: string | null) =>
   if (refunds) {
     const orderId = refunds.dataset.id!;
     const provider = refunds.dataset.provider ?? 'Stripe';
+    const byTransfer = refunds.dataset.byTransfer === '1';
     const form = refunds.querySelector<HTMLFormElement>('[data-refund-form]');
     const status = refunds.querySelector<HTMLElement>('[data-refund-status]');
     const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
@@ -1169,7 +1219,7 @@ const carrierName = (value: string | null) =>
       const cents = total();
       if (submit) {
         submit.disabled = cents <= 0;
-        submit.textContent = manual?.checked ? `Registrar ${euros(cents)}` : `Devolver ${euros(cents)}`;
+        submit.textContent = byTransfer || manual?.checked ? `Registrar ${euros(cents)}` : `Devolver ${euros(cents)}`;
       }
     };
     form?.addEventListener('input', refresh);
@@ -1215,8 +1265,10 @@ const carrierName = (value: string | null) =>
       event.preventDefault();
       const cents = total();
       if (cents <= 0) return;
-      const recordOnly = Boolean(manual?.checked);
-      const question = recordOnly
+      const recordOnly = byTransfer || Boolean(manual?.checked);
+      const question = byTransfer
+        ? `¿Registrar una devolución de ${euros(cents)}? La transferencia de vuelta la haces tú desde el banco; aquí no se mueve dinero.`
+        : recordOnly
         ? `¿Registrar una devolución de ${euros(cents)} hecha desde ${provider}? No se mueve dinero.`
         : `¿Devolver ${euros(cents)} a la clienta por ${provider}? No se puede deshacer.`;
       if (!confirm(question)) return;
@@ -1240,7 +1292,10 @@ const carrierName = (value: string | null) =>
       if (restock) restock.checked = true;
       if (manual) manual.checked = false;
       const cents = total();
-      if (!confirm(`¿Cancelar el pedido y devolver ${euros(cents)} a la clienta por ${provider}? Las piezas vuelven al stock. No se puede deshacer.`)) return;
+      const question = byTransfer
+        ? `¿Cancelar el pedido y registrar la devolución de ${euros(cents)}? Las piezas vuelven al stock. La transferencia de vuelta la haces tú desde el banco.`
+        : `¿Cancelar el pedido y devolver ${euros(cents)} a la clienta por ${provider}? Las piezas vuelven al stock. No se puede deshacer.`;
+      if (!confirm(question)) return;
       void send(
         'POST',
         {
@@ -1248,7 +1303,7 @@ const carrierName = (value: string | null) =>
           shipping: Boolean(shipping),
           restock: true,
           reason: 'Pedido cancelado',
-          manual: false,
+          manual: byTransfer,
         },
         event.currentTarget as HTMLButtonElement,
       );

@@ -1,0 +1,561 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { euros } from '@/lib/admin/labels';
+import { countryOptions } from '@/lib/domain/countries';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+// What can be sold by phone: published, with its stock checked (as on the web).
+type Sellable = {
+  id: string;
+  sku: string;
+  title: string;
+  parent_title: string | null;
+  variant_label_es: string | null;
+  price_cents: number;
+  inventory_mode: string;
+  available: number | null;
+};
+const { data, error } = await settle(admin.db.rows<Sellable>`
+  select p.id, p.sku, p.price_cents, p.variant_label_es,
+         coalesce((select t.title from public.product_translations t where t.product_id = p.id and t.locale = 'es'), p.sku) as title,
+         (select t.title from public.product_translations t where t.product_id = p.parent_id and t.locale = 'es') as parent_title,
+         i.inventory_mode,
+         case when i.inventory_mode = 'tracked' then i.stock_on_hand - i.stock_reserved end as available
+  from public.products p
+  join public.inventory i on i.product_id = p.id
+  where p.status = 'published' and i.inventory_mode <> 'unverified' and i.verified_at is not null
+  order by coalesce((select t.title from public.product_translations t where t.product_id = p.parent_id and t.locale = 'es'),
+                    (select t.title from public.product_translations t where t.product_id = p.id and t.locale = 'es'), p.sku),
+           p.variant_order, p.sku`);
+const products = data ?? [];
+const name = (p: Sellable) => {
+  const base = p.parent_title ?? p.title;
+  const option = p.variant_label_es || (p.parent_title && p.parent_title !== p.title ? p.title : null);
+  return option ? `${base} · ${option}` : base;
+};
+const stockText = (p: Sellable) => (p.available === null ? 'bajo pedido' : p.available > 0 ? `${p.available} libres` : 'sin stock');
+const countries = countryOptions('es');
+---
+
+<AdminLayout title="Nuevo pedido" email={admin.user.email}>
+  <a class="back" href="/admin/orders/">← Pedidos</a>
+  <header class="page-head">
+    <div>
+      <h1>Nuevo pedido</h1>
+      <p class="lead">
+        Para quien compra por teléfono y paga por transferencia. Los precios y el envío son los de la web
+        (sin IVA donde no se paga, como en Canarias). El pedido queda «Esperando transferencia» con las piezas
+        reservadas; cuando llegue el dinero, lo marcas como pagado desde el pedido.
+      </p>
+    </div>
+  </header>
+
+  {error && <p class="err">{error.message}</p>}
+
+  <form class="new-order" data-new-order novalidate>
+    <div class="columns">
+      <div class="main">
+        <section class="panel">
+          <h2>Piezas</h2>
+          {
+            products.length === 0 ? (
+              <p class="empty">No hay productos publicados con el stock verificado.</p>
+            ) : (
+              <div class="add-line">
+                <label class="grow">
+                  Producto
+                  <select data-product>
+                    {products.map((p) => (
+                      <option value={p.id} data-available={p.available ?? ''} disabled={p.available !== null && p.available <= 0}>
+                        {name(p)} — {euros(p.price_cents)} ({stockText(p)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label class="qty">
+                  Cantidad
+                  <input type="number" min="1" max="99" value="1" inputmode="numeric" data-quantity />
+                </label>
+                <button type="button" class="btn" data-add-line>Añadir</button>
+              </div>
+            )
+          }
+          <div class="table-wrap" data-lines-wrap hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th>Pieza</th>
+                  <th class="num">Cant.</th>
+                  <th class="num">Precio</th>
+                  <th class="num">Importe</th>
+                  <th><span class="visually-hidden">Quitar</span></th>
+                </tr>
+              </thead>
+              <tbody data-lines></tbody>
+            </table>
+          </div>
+          <p class="muted" data-no-lines>Añade las piezas que te ha pedido.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Cliente</h2>
+          <div class="grid">
+            <label class="wide">
+              Nombre y apellidos
+              <input type="text" maxlength="160" autocomplete="off" required data-field="customer.name" />
+            </label>
+            <label>
+              Teléfono
+              <input type="tel" maxlength="30" autocomplete="off" data-field="customer.phone" />
+            </label>
+            <label>
+              Email <span class="hint">opcional · para la confirmación y la factura</span>
+              <input type="email" maxlength="254" autocomplete="off" data-field="customer.email" />
+            </label>
+            <label>
+              Idioma de los emails
+              <select data-field="locale">
+                <option value="es">Español</option>
+                <option value="en">Inglés</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Dirección de envío</h2>
+          <div class="grid">
+            <label class="wide">
+              Destinatario <span class="hint">si no es la misma persona</span>
+              <input type="text" maxlength="160" autocomplete="off" data-field="address.name" />
+            </label>
+            <label class="wide">
+              Calle y número
+              <input type="text" maxlength="200" autocomplete="off" required data-field="address.line1" />
+            </label>
+            <label class="wide">
+              Piso, puerta… <span class="hint">opcional</span>
+              <input type="text" maxlength="200" autocomplete="off" data-field="address.line2" />
+            </label>
+            <label>
+              Código postal
+              <input type="text" maxlength="12" autocomplete="off" required data-field="postalCode" data-requote />
+            </label>
+            <label>
+              Ciudad
+              <input type="text" maxlength="100" autocomplete="off" required data-field="address.city" />
+            </label>
+            <label>
+              Provincia <span class="hint">opcional</span>
+              <input type="text" maxlength="100" autocomplete="off" data-field="address.state" />
+            </label>
+            <label>
+              País
+              <select data-field="country" data-requote>
+                {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+              </select>
+            </label>
+            <label class="wide">
+              Nota <span class="hint">opcional · solo la ves tú</span>
+              <textarea maxlength="500" rows="2" data-field="address.note"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <label class="check">
+            <input type="checkbox" data-invoice-toggle />
+            Quiere factura con su NIF
+          </label>
+          <div class="grid" data-invoice hidden>
+            <label>
+              NIF / CIF
+              <input type="text" maxlength="20" autocomplete="off" data-invoice-field="taxId" />
+            </label>
+            <label>
+              Nombre o razón social
+              <input type="text" maxlength="160" autocomplete="off" data-invoice-field="name" />
+            </label>
+            <label class="wide">
+              Dirección fiscal
+              <input type="text" maxlength="200" autocomplete="off" data-invoice-field="address" />
+            </label>
+            <label>
+              Código postal
+              <input type="text" maxlength="12" autocomplete="off" data-invoice-field="postalCode" />
+            </label>
+            <label>
+              Ciudad
+              <input type="text" maxlength="100" autocomplete="off" data-invoice-field="city" />
+            </label>
+            <label>
+              País
+              <select data-invoice-field="country">
+                {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+              </select>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <aside class="side">
+        <section class="panel summary">
+          <h2>Resumen</h2>
+          <dl class="totals">
+            <div><dt>Subtotal</dt><dd data-subtotal>—</dd></div>
+            <div><dt>Envío <span class="muted" data-zone></span></dt><dd data-shipping>—</dd></div>
+            <div class="totals__grand"><dt>Total</dt><dd data-total>—</dd></div>
+          </dl>
+          <p class="hint" data-no-vat hidden>Destino sin IVA español: precios sin IVA, como en la web.</p>
+          <p class="err" data-shipping-problem hidden></p>
+          <label>
+            Envío a mano <span class="hint">opcional · en euros, 0 si es gratis</span>
+            <input type="text" inputmode="decimal" placeholder="Precio de la zona" data-field="shipping" data-requote />
+          </label>
+          <label class="check">
+            <input type="checkbox" data-field="paid" />
+            La transferencia ya ha llegado
+          </label>
+          <p class="hint" data-paid-hint>
+            Se crea esperando la transferencia, con las piezas reservadas.
+          </p>
+          <button type="submit" class="btn" data-submit disabled>Crear pedido</button>
+          <p class="status" data-status role="status" hidden></p>
+        </section>
+      </aside>
+    </div>
+  </form>
+</AdminLayout>
+
+<style>
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  .main {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .side {
+    position: sticky;
+    top: 1rem;
+  }
+
+  .summary {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .add-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: end;
+    margin-bottom: 1rem;
+  }
+
+  .add-line .grow {
+    flex: 1 1 18rem;
+  }
+
+  .add-line .qty {
+    width: 6.5rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem 1rem;
+    align-items: end;
+  }
+
+  .grid .wide {
+    grid-column: 1 / -1;
+  }
+
+  [data-invoice] {
+    margin-top: 1rem;
+  }
+
+  .grid[hidden] {
+    display: none;
+  }
+
+  /* The order lines are drawn by the script: no Astro scope on them. */
+  [data-lines] :global(input[type='number']) {
+    width: 4.5rem;
+    text-align: right;
+  }
+
+  [data-lines] :global(.line) {
+    display: block;
+    font-size: 0.82rem;
+  }
+
+  .totals {
+    display: grid;
+    gap: 0.45rem;
+    margin: 0;
+  }
+
+  .totals div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .totals dt,
+  .totals dd {
+    margin: 0;
+  }
+
+  .totals__grand {
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--line);
+    font-weight: 600;
+  }
+
+  @media (max-width: 900px) {
+    .columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .side {
+      position: static;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<script>
+  type Line = { productId: string; quantity: number };
+  type Quote = {
+    lines: Array<{ productId: string; sku: string; title: string; quantity: number; unitPriceCents: number; lineSubtotalCents: number; available: number | null }>;
+    subtotalCents: number;
+    shippingQuotedCents: number | null;
+    shippingProblem: string | null;
+    shippingCents: number | null;
+    totalCents: number | null;
+    noVat: boolean;
+    zoneName: string | null;
+  };
+
+  const form = document.querySelector<HTMLFormElement>('[data-new-order]');
+  if (form) {
+    const $ = <T extends Element>(selector: string) => form.querySelector<T>(selector);
+    const euros = (cents: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(cents / 100);
+    const linesBody = $<HTMLTableSectionElement>('[data-lines]')!;
+    const status = $<HTMLElement>('[data-status]')!;
+    const submit = $<HTMLButtonElement>('[data-submit]')!;
+    const problem = $<HTMLElement>('[data-shipping-problem]')!;
+    const invoiceToggle = $<HTMLInputElement>('[data-invoice-toggle]')!;
+    const invoiceBox = $<HTMLElement>('[data-invoice]')!;
+    const paid = $<HTMLInputElement>('[data-field="paid"]')!;
+    let lines: Line[] = [];
+    let quote: Quote | null = null;
+    let asked = 0;
+
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      status.hidden = !text;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+
+    const field = (name: string) =>
+      ($<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`[data-field="${name}"]`)?.value ?? '').trim();
+
+    const body = () => ({
+      lines,
+      country: field('country'),
+      postalCode: field('postalCode'),
+      locale: field('locale') || 'es',
+      shipping: field('shipping'),
+      customer: { name: field('customer.name'), email: field('customer.email'), phone: field('customer.phone') },
+      address: {
+        name: field('address.name'),
+        line1: field('address.line1'),
+        line2: field('address.line2'),
+        city: field('address.city'),
+        state: field('address.state'),
+        note: field('address.note'),
+      },
+      invoiceCustomer: invoiceToggle.checked
+        ? Object.fromEntries(
+            [...invoiceBox.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-invoice-field]')].map((input) => [
+              input.dataset.invoiceField!,
+              input.value.trim(),
+            ]),
+          )
+        : null,
+      paid: paid.checked,
+    });
+
+    const cell = (text: string, className = '') => {
+      const td = document.createElement('td');
+      td.textContent = text;
+      if (className) td.className = className;
+      return td;
+    };
+
+    const render = () => {
+      $<HTMLElement>('[data-lines-wrap]')!.hidden = lines.length === 0;
+      $<HTMLElement>('[data-no-lines]')!.hidden = lines.length > 0;
+      linesBody.replaceChildren(
+        ...lines.map((line, index) => {
+          const priced = quote?.lines.find((q) => q.productId === line.productId);
+          const option = $<HTMLOptionElement>(`[data-product] option[value="${line.productId}"]`);
+          const tr = document.createElement('tr');
+          const title = cell(priced?.title ?? option?.textContent?.split(' — ')[0] ?? '');
+          if (priced) {
+            const sku = document.createElement('span');
+            sku.className = 'muted line';
+            sku.textContent = priced.available !== null && priced.available < line.quantity
+              ? `${priced.sku} · solo quedan ${priced.available}`
+              : priced.sku;
+            title.append(sku);
+          }
+          const qtyCell = document.createElement('td');
+          qtyCell.className = 'num';
+          const qty = document.createElement('input');
+          qty.type = 'number';
+          qty.min = '1';
+          qty.max = '99';
+          qty.value = String(line.quantity);
+          qty.setAttribute('aria-label', 'Cantidad');
+          qty.addEventListener('change', () => {
+            line.quantity = Math.max(1, Math.min(99, Math.floor(Number(qty.value) || 1)));
+            requote();
+          });
+          qtyCell.append(qty);
+          const removeCell = document.createElement('td');
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'btn--quiet btn--danger';
+          remove.textContent = 'Quitar';
+          remove.addEventListener('click', () => {
+            lines.splice(index, 1);
+            requote();
+          });
+          removeCell.append(remove);
+          tr.append(
+            title,
+            qtyCell,
+            cell(priced ? euros(priced.unitPriceCents) : '…', 'num'),
+            cell(priced ? euros(priced.lineSubtotalCents) : '…', 'num'),
+            removeCell,
+          );
+          return tr;
+        }),
+      );
+      $<HTMLElement>('[data-subtotal]')!.textContent = quote ? euros(quote.subtotalCents) : '—';
+      $<HTMLElement>('[data-shipping]')!.textContent =
+        quote?.shippingCents == null ? '—' : quote.shippingCents === 0 ? 'Gratis' : euros(quote.shippingCents);
+      $<HTMLElement>('[data-zone]')!.textContent = quote?.zoneName ? `· ${quote.zoneName}` : '';
+      $<HTMLElement>('[data-total]')!.textContent = quote?.totalCents == null ? '—' : euros(quote.totalCents);
+      $<HTMLElement>('[data-no-vat]')!.hidden = !quote?.noVat;
+      const shippingByHand = field('shipping') !== '';
+      problem.hidden = !quote?.shippingProblem || shippingByHand;
+      problem.textContent = quote?.shippingProblem ? `${quote.shippingProblem} Escribe el precio del envío a mano.` : '';
+      submit.disabled = !quote || quote.totalCents == null || lines.length === 0;
+    };
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const requote = () => {
+      render();
+      clearTimeout(timer);
+      if (lines.length === 0) {
+        quote = null;
+        render();
+        return;
+      }
+      timer = setTimeout(async () => {
+        const ticket = ++asked;
+        const res = await fetch('/api/admin/orders/manual/quote/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(body()),
+        }).catch(() => null);
+        const data = (await res?.json().catch(() => null)) as { quote?: Quote; error?: { message?: string } } | null;
+        if (ticket !== asked) return;
+        if (data?.quote) {
+          quote = data.quote;
+          say('');
+        } else {
+          quote = null;
+          say(data?.error?.message ?? 'No hubo respuesta del servidor.', 'err');
+        }
+        render();
+      }, 300);
+    };
+
+    $('[data-add-line]')?.addEventListener('click', () => {
+      const product = $<HTMLSelectElement>('[data-product]')!;
+      const quantity = Math.max(1, Math.min(99, Math.floor(Number($<HTMLInputElement>('[data-quantity]')!.value) || 1)));
+      if (!product.value) return;
+      const existing = lines.find((line) => line.productId === product.value);
+      if (existing) existing.quantity = Math.min(99, existing.quantity + quantity);
+      else lines.push({ productId: product.value, quantity });
+      requote();
+    });
+
+    form.querySelectorAll<HTMLElement>('[data-requote]').forEach((input) => {
+      input.addEventListener('change', requote);
+      input.addEventListener('input', requote);
+    });
+
+    invoiceToggle.addEventListener('change', () => {
+      invoiceBox.hidden = !invoiceToggle.checked;
+    });
+
+    paid.addEventListener('change', () => {
+      $<HTMLElement>('[data-paid-hint]')!.textContent = paid.checked
+        ? 'Se crea ya pagado: se descuentan las piezas del stock y se emite la factura.'
+        : 'Se crea esperando la transferencia, con las piezas reservadas.';
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!quote || quote.totalCents == null) return;
+      if (!field('customer.name') || !field('address.line1') || !field('postalCode') || !field('address.city')) {
+        say('Faltan datos: nombre, calle, código postal y ciudad.', 'err');
+        return;
+      }
+      const question = paid.checked
+        ? `¿Crear el pedido de ${euros(quote.totalCents)} ya pagado por transferencia? Se emite la factura.`
+        : `¿Crear el pedido de ${euros(quote.totalCents)} esperando la transferencia?`;
+      if (!confirm(question)) return;
+      submit.disabled = true;
+      say('Creando el pedido…');
+      const res = await fetch('/api/admin/orders/manual/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body()),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { orderId?: string; error?: { message?: string } } | null;
+      if (res?.ok && data?.orderId) {
+        location.assign(`/admin/orders/${data.orderId}/`);
+        return;
+      }
+      say(data?.error?.message ?? 'No hubo respuesta del servidor. Mira la lista de pedidos antes de repetirlo.', 'err');
+      submit.disabled = false;
+    });
+
+    render();
+  }
+</script>

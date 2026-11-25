@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fakeDb } from './helpers/fakeDb';
-import { cancelOrder, deleteOrder, type CheckoutCloser } from '../src/lib/server/commerce/orderAdmin';
+import { cancelOrder, deleteOrder, markOrderPaid, type CheckoutCloser } from '../src/lib/server/commerce/orderAdmin';
 import { CommerceError } from '../src/lib/server/commerce/errors';
 
 const ORDER = '11111111-1111-4111-8111-111111111111';
@@ -58,5 +58,35 @@ describe('deleteOrder', () => {
     const { client } = fakeClient({ ...open, payment_status: 'expired' }, 'ORDER_NOT_DELETABLE');
     const error = (await deleteOrder(client, ORDER, vi.fn()).catch((err: unknown) => err)) as CommerceError;
     expect(error.message).toMatch(/no se puede borrar/);
+  });
+});
+
+describe('orders paid by bank transfer', () => {
+  const awaiting = { id: ORDER, payment_status: 'awaiting_transfer', payment_provider: 'transfer', stripe_session_id: null };
+
+  it('can be cancelled before the money arrives (no Stripe involved)', async () => {
+    const { client, rpc } = fakeClient(awaiting);
+    const close: CheckoutCloser = vi.fn(async () => 'closed' as const);
+    await cancelOrder(client, ORDER, close);
+    expect(close).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('admin_cancel_order', { p_order_id: ORDER });
+  });
+
+  it('are cancelled (their pieces freed) before being deleted', async () => {
+    const { client, rpc } = fakeClient(awaiting);
+    await deleteOrder(client, ORDER, vi.fn());
+    expect(rpc.mock.calls.map((call) => call[0])).toEqual(['admin_cancel_order', 'admin_delete_order']);
+  });
+
+  it('are marked paid when the transfer arrives', async () => {
+    const { client, rpc } = fakeClient(awaiting);
+    await markOrderPaid(client, ORDER);
+    expect(rpc).toHaveBeenCalledWith('admin_mark_order_paid', { p_order_id: ORDER });
+  });
+
+  it('explain why another order cannot be marked paid by hand', async () => {
+    const { client } = fakeClient(awaiting, 'ORDER_NOT_AWAITING_TRANSFER');
+    const error = (await markOrderPaid(client, ORDER).catch((err: unknown) => err)) as CommerceError;
+    expect(error.message).toMatch(/transferencia/);
   });
 });

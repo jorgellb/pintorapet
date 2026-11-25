@@ -3,7 +3,8 @@ import { CommerceError } from './errors';
 import { dbCall, mapPgError } from './pgErrors';
 
 /**
- * Cancelling and deleting orders that were never paid (Admin › Pedidos). The
+ * Cancelling and deleting orders that were never paid (Admin › Pedidos), and
+ * marking paid those whose bank transfer arrived. The
  * database does the bookkeeping (admin_cancel_order / admin_delete_order, see
  * supabase/migrations/20261111000005_order_admin.sql); this module first closes
  * an open Stripe checkout, so the customer cannot pay an order that is gone.
@@ -20,7 +21,9 @@ type OrderRow = {
   stripe_session_id: string | null;
 };
 
-const CANCELLABLE = ['pending_session', 'checkout_open', 'expired', 'cancelled'];
+const CANCELLABLE = ['pending_session', 'checkout_open', 'expired', 'cancelled', 'awaiting_transfer'];
+/** Still holding reserved pieces: cancelled (freeing them) before being deleted. */
+const HOLDS_STOCK = ['pending_session', 'checkout_open', 'awaiting_transfer'];
 
 async function load(client: Db, id: string): Promise<OrderRow> {
   const data = await dbCall(() => client.one<OrderRow>`
@@ -45,7 +48,21 @@ function explain(err: unknown): CommerceError {
       409,
     );
   }
+  if (message.includes('ORDER_NOT_AWAITING_TRANSFER')) {
+    return new CommerceError(
+      'VALIDATION',
+      'Solo se marca a mano como pagado un pedido que espera una transferencia.',
+      409,
+    );
+  }
   return mapPgError(err);
+}
+
+/** The transfer arrived: the pieces leave the stock, the invoice is issued and the customer emailed. */
+export async function markOrderPaid(client: Db, id: string): Promise<void> {
+  await client.call('admin_mark_order_paid', { p_order_id: id }).catch((err: unknown) => {
+    throw explain(err);
+  });
 }
 
 export async function cancelOrder(
@@ -75,7 +92,7 @@ export async function deleteOrder(
   closeStripe: CheckoutCloser = closeStripeCheckout,
 ): Promise<void> {
   const order = await load(client, id);
-  if (order.payment_status === 'checkout_open' || order.payment_status === 'pending_session') {
+  if (HOLDS_STOCK.includes(order.payment_status)) {
     await cancelOrder(client, id, closeStripe);
   }
   await client.call('admin_delete_order', { p_order_id: id }).catch((err: unknown) => {

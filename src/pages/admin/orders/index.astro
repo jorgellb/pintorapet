@@ -4,7 +4,7 @@ import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasDatabase, settle } from '@/lib/server/db';
 import type { OrdersRow } from '@/lib/server/dbTypes';
-import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, providerLabel, shortDate } from '@/lib/admin/labels';
 
 export const prerender = false;
 
@@ -37,6 +37,7 @@ const ON_THE_WAY = ['shipped', 'in_transit', 'out_for_delivery'];
 const charged = (o: Order) => o.payment_status === 'paid' || o.payment_status === 'partially_refunded';
 const toShip = (o: Order) => charged(o) && (o.fulfillment_status === 'unfulfilled' || o.fulfillment_status === 'preparing');
 const unpaid = (o: Order) => UNPAID.includes(o.payment_status) && !o.paid_at;
+const awaitingTransfer = (o: Order) => o.payment_status === 'awaiting_transfer';
 // What the "Borrar abandonados" button deletes (same rule as admin_delete_abandoned_orders).
 const DAY = 24 * 60 * 60 * 1000;
 const abandoned = all.filter(
@@ -55,6 +56,7 @@ const filters = {
     list: live,
   },
   pagados: { label: 'Pagados', test: charged, list: live },
+  transferencias: { label: 'Esperando transferencia', test: awaitingTransfer, list: live },
   'sin-pagar': { label: 'Sin pagar', test: unpaid, list: live },
   revisar: { label: 'Revisar', test: (o: Order) => o.payment_status === 'review', list: live },
   archivados: { label: 'Archivados', test: () => true, list: archived },
@@ -75,9 +77,12 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
       <p class="lead">
         Compras de la tienda. Cambia el estado del envío desde la lista o abre un pedido para ver la
         dirección, imprimir la etiqueta, añadir el seguimiento o devolver dinero. Los pedidos sin pagar
-        se pueden cancelar y borrar; los pagados, archivar.
+        se pueden cancelar y borrar; los pagados, archivar. Los pedidos por teléfono se crean con
+        «Nuevo pedido» y se pagan por transferencia.
       </p>
     </div>
+    <div class="head-actions">
+      <a class="btn" href="/admin/orders/new/">Nuevo pedido</a>
     {
       abandoned > 0 && (
         <button type="button" class="btn--danger" data-delete-abandoned data-count={abandoned}>
@@ -85,6 +90,7 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
         </button>
       )
     }
+    </div>
   </header>
 
   {
@@ -157,7 +163,7 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
                       </td>
                       <td>
                         <span class={chipClass(pay.tone)}>{pay.text}</span>
-                        <span class="muted line">{o.payment_provider === 'paypal' ? 'PayPal' : 'Stripe'}</span>
+                        <span class="muted line">{providerLabel(o.payment_provider)}</span>
                       </td>
                       <td>
                         {charged(o) ? (
@@ -180,7 +186,7 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
                       </td>
                       <td class="num">{euros(o.total_cents)}</td>
                       <td class="actions">
-                        {unpaid(o) ? (
+                        {unpaid(o) || awaitingTransfer(o) ? (
                           <button type="button" class="btn--quiet btn--danger" data-delete-order={o.id} data-reference={o.reference}>
                             Borrar
                           </button>
@@ -204,6 +210,13 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
 </AdminLayout>
 
 <style>
+  .head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+
   .summary {
     display: flex;
     flex-wrap: wrap;
@@ -270,7 +283,7 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
 
   document.querySelectorAll<HTMLButtonElement>('[data-delete-order]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm(`¿Borrar el pedido ${button.dataset.reference}? No se llegó a pagar; se borra con todo lo suyo y no se puede deshacer.`)) return;
+      if (!confirm(`¿Borrar el pedido ${button.dataset.reference}? No se llegó a pagar; se borra con todo lo suyo (las piezas reservadas vuelven al stock) y no se puede deshacer.`)) return;
       button.disabled = true;
       const res = await fetch(`/api/admin/orders/${button.dataset.deleteOrder}/`, { method: 'DELETE' }).catch(() => null);
       if (res?.ok) {

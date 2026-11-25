@@ -1,6 +1,7 @@
 export type CustomerStatus = {
   key:
     | 'processing'
+    | 'awaiting'
     | 'review'
     | 'preparing'
     | 'shipped'
@@ -17,6 +18,7 @@ export type CustomerStatus = {
 
 const LABELS: Record<CustomerStatus['key'], { es: string; en: string }> = {
   processing: { es: 'Confirmando el pago', en: 'Confirming payment' },
+  awaiting: { es: 'Pendiente de transferencia', en: 'Awaiting bank transfer' },
   review: { es: 'En revisión', en: 'Being checked' },
   preparing: { es: 'Meili lo está preparando', en: 'Meili is preparing it' },
   shipped: { es: 'En camino', en: 'On its way' },
@@ -42,6 +44,7 @@ export function customerStatus(
   if (paymentStatus === 'refunded') return make('refunded', 0);
   if (paymentStatus === 'review') return make('review', 0);
   if (paymentStatus === 'cancelled') return make('cancelled', 0);
+  if (paymentStatus === 'awaiting_transfer') return make('awaiting', 0);
   if (paymentStatus === 'expired') return make('cancelled', 0, locale === 'es' ? 'Sin pagar' : 'Not paid');
   // A partly refunded order still has pieces on their way.
   if (paymentStatus !== 'paid' && paymentStatus !== 'partially_refunded') return make('processing', 0);
