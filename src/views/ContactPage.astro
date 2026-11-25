@@ -5,6 +5,7 @@ import AntiBot from '@/components/AntiBot.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { getFeedbackImages } from '@/lib/content/siteExtras';
+import { WHATSAPP_URL } from '@/lib/domain/whatsapp';
 
 interface Props {
   locale: Locale;
@@ -27,7 +28,7 @@ const channels = [
   {
     label: dict.contact.whatsapp,
     value: '+34 636 386 531',
-    href: 'https://wa.me/34636386531',
+    href: WHATSAPP_URL,
     external: true,
     extra: { label: dict.contact.phone, href: 'tel:+34636386531' },
   },

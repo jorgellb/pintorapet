@@ -44,3 +44,14 @@ test('the pieces with the same portrait are offered below', async ({ page }) => 
   expect(kinds).toContain('Posavasos');
   expect(kinds).not.toContain('Taza');
 });
+
+test('a question on WhatsApp names the piece on show', async ({ page }) => {
+  await page.goto('/es/tienda/llavero-pug/');
+  const ask = page.locator('[data-ask]');
+  await expect(ask).toHaveAttribute('href', /^https:\/\/wa\.me\/34636386531\?text=/);
+  await expect(ask).toHaveAttribute('target', '_blank');
+  const text = async () => new URL((await ask.getAttribute('href')) ?? '').searchParams.get('text');
+  expect(await text()).toContain('«Llavero Pug» (PD-2068)');
+  await page.getByText('Rectangular', { exact: true }).click();
+  expect(await text()).toContain('Rectangular');
+});

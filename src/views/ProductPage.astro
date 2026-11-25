@@ -10,6 +10,7 @@ import { loadProductTypes } from '@/lib/catalog/productTypes';
 import { sizedImage } from '@/lib/catalog/imageSize';
 import { productDetails } from '@/lib/catalog/productDetails';
 import { jsonLdText, productJsonLd } from '@/lib/catalog/productJsonLd';
+import { productQuestion, whatsappLink } from '@/lib/domain/whatsapp';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
@@ -48,6 +49,14 @@ const statusOf = (p: ProductPublic) =>
 const price = formatEur(selected.priceCents, locale);
 const canAdd = canAddOf(selected);
 const statusLabel = statusOf(selected);
+// A question on WhatsApp names the option on show, with its link.
+const askOf = (p: ProductPublic) =>
+  whatsappLink(
+    productQuestion(
+      { title: p.title, sku: p.sku, url: new URL(productPath(locale, p.slug), Astro.site ?? 'https://petsdrawings.com').href },
+      locale,
+    ),
+  );
 const choices = options.map((option) => ({
   id: option.id,
   label: option.variantLabel || dict.shop.defaultOption,
@@ -55,6 +64,7 @@ const choices = options.map((option) => ({
   canAdd: canAddOf(option),
   status: statusOf(option) ?? '',
   path: productPath(locale, option.slug),
+  ask: askOf(option),
 }));
 
 // ——— Its type (Taza…) and its portrait (Pug…) ———
@@ -251,13 +261,22 @@ const assurances = es
         >
           {canAdd ? dict.shop.addToCart : (statusLabel ?? dict.shop.unavailable)}
         </button>
-        {
-          !canAdd && (
-            <p class="buy__ask">
-              <a href={localizedPath(locale, 'contact')}>{es ? 'Pregunta a Meili por esta pieza' : 'Ask Meili about this piece'}</a>
-            </p>
-          )
-        }
+        <a class="ask" href={askOf(selected)} target="_blank" rel="noopener" data-ask>
+          <span class="ask__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path class="ask__bubble" d="M12 3.6a8.4 8.4 0 0 0-7.2 12.7L3.6 20.4l4.2-1.1A8.4 8.4 0 1 0 12 3.6z" />
+              <path
+                class="ask__phone"
+                d="M9.1 7.9c.2-.4.4-.4.7-.4h.5c.2 0 .4 0 .5.4l.7 1.7c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3 0 .5.6 1 1.4 1.8 2.4 2.4.2.1.4.1.5 0l.6-.6c.2-.2.4-.2.6-.1l1.7.8c.3.1.4.3.4.5v.4c0 .4-.2.9-.6 1.1-.6.4-1.4.5-2.1.3-2.6-.8-4.7-2.9-5.5-5.5-.2-.8 0-1.5.4-2.1z"
+              />
+            </svg>
+          </span>
+          <span class="ask__text">
+            <span class="ask__lead">{es ? '¿Tienes alguna duda?' : 'Any questions?'}</span>
+            {es ? 'Pregúntale a Meili por WhatsApp' : 'Ask Meili on WhatsApp'}
+          </span>
+          <svg class="ask__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>
+        </a>
 
         <ul class="assure">
           {assurances.map((text) => (
@@ -709,13 +728,96 @@ const assurances = es
     font-size: 1.02rem;
   }
 
-  .buy__ask {
-    margin: 0.75rem 0 0;
-    font-size: 0.92rem;
+  /* ——— A question on WhatsApp: quiet, under the button ——— */
+  .ask {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-top: 1rem;
+    padding: 0.7rem 0.9rem 0.7rem 0.7rem;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    text-decoration: none;
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      box-shadow var(--dur-ui) var(--ease-soft);
   }
 
-  .buy__ask a {
-    color: var(--ink-soft);
+  .ask:hover {
+    border-color: var(--line-strong);
+    box-shadow: 0 10px 24px -18px rgb(22 23 26 / 0.35);
+  }
+
+  .ask:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .ask__icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    color: #1f8a4c;
+    transition:
+      background var(--dur-ui) var(--ease-soft),
+      color var(--dur-ui) var(--ease-soft),
+      border-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .ask__icon svg {
+    width: 1.3rem;
+    height: 1.3rem;
+  }
+
+  .ask__bubble {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+
+  .ask__phone {
+    fill: currentColor;
+  }
+
+  .ask:hover .ask__icon {
+    border-color: #1f8a4c;
+    background: #1f8a4c;
+    color: #fff;
+  }
+
+  .ask__text {
+    display: grid;
+    flex: 1;
+    font-size: 0.95rem;
+    line-height: 1.3;
+  }
+
+  .ask__lead {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .ask__arrow {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform var(--dur-ui) var(--ease-out);
+  }
+
+  .ask:hover .ask__arrow {
+    stroke: var(--ink);
+    transform: translate(2px, -2px);
   }
 
   .assure {
@@ -991,7 +1093,7 @@ const assurances = es
 <script>
   import { addItem, openCart } from '@/stores/cart';
 
-  type Choice = { id: string; label: string; price: string; canAdd: boolean; status: string; path: string };
+  type Choice = { id: string; label: string; price: string; canAdd: boolean; status: string; path: string; ask: string };
 
   // ——— Photos: slide, thumbnails, arrows and a larger view ———
   const gallery = document.querySelector<HTMLElement>('[data-gallery]');
@@ -1084,6 +1186,8 @@ const assurances = es
         status.hidden = !choice.status;
       }
       btn.dataset.productId = choice.id;
+      const ask = document.querySelector<HTMLAnchorElement>('[data-ask]');
+      if (ask) ask.href = choice.ask;
       btn.disabled = !choice.canAdd;
       btn.textContent = choice.canAdd ? (btn.dataset.label ?? '') : choice.status;
       history.replaceState(null, '', choice.path);
