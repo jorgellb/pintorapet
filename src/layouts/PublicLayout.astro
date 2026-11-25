@@ -20,6 +20,8 @@ interface Props {
   noindex?: boolean;
   /** Same page in the other locale. Defaults to a translation of the current path. */
   alternatePath?: string;
+  /** Open Graph type: 'product' on a product page. */
+  ogType?: 'website' | 'product';
 }
 
 const {
@@ -31,6 +33,7 @@ const {
   canonicalPath,
   noindex = false,
   alternatePath: alternateOverride,
+  ogType = 'website',
 } = Astro.props;
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
 const alternateHref =
@@ -51,7 +54,7 @@ const ogImage = image ? new URL(image, origin).href : null;
     {description && <meta name="description" content={description} />}
     {noindex && <meta name="robots" content="noindex,nofollow" />}
     <link rel="canonical" href={canonical} />
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content={dict.brand.name} />
     <meta property="og:title" content={siteTitle} />
     {description && <meta property="og:description" content={description} />}
@@ -61,6 +64,7 @@ const ogImage = image ? new URL(image, origin).href : null;
     <link rel="alternate" hreflang={locale} href={canonical} />
     <link rel="alternate" hreflang={otherLocale} href={new URL(alternateHref, origin).href} />
     <meta name="generator" content={Astro.generator} />
+    <slot name="head" />
   </head>
   <body>
     <a class="skip-link" href="#main">{dict.nav.skip}</a>

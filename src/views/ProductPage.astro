@@ -1,10 +1,15 @@
 ---
 import PublicLayout from '@/layouts/PublicLayout.astro';
-import ProductImage from '@/components/shop/ProductImage.astro';
+import StallItem from '@/components/shop/StallItem.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath, productPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
-import { loadPublicCatalog, loadProductPage } from '@/lib/catalog/loadProducts';
+import { loadPublicCatalog, loadProductPage, topLevelProducts } from '@/lib/catalog/loadProducts';
+import { loadShopCollections } from '@/lib/catalog/shopSets';
+import { loadProductTypes } from '@/lib/catalog/productTypes';
+import { sizedImage } from '@/lib/catalog/imageSize';
+import { productDetails } from '@/lib/catalog/productDetails';
+import { jsonLdText, productJsonLd } from '@/lib/catalog/productJsonLd';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
@@ -13,6 +18,7 @@ interface Props {
 }
 
 const { locale, slug } = Astro.props;
+const es = locale === 'es';
 const dict = t(locale);
 const page = await loadProductPage(locale, slug);
 if (!page) {
@@ -22,10 +28,14 @@ const { product, options, selected } = page;
 
 // Product slugs are translated, so find this option's slug in the other locale.
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
-const otherSlug = (await loadPublicCatalog(otherLocale)).products.find((p) => p.id === selected.id)?.slug;
-const alternate = otherSlug
-  ? productPath(otherLocale, otherSlug)
-  : localizedPath(otherLocale, 'shop');
+const [catalog, otherCatalog, collections, types] = await Promise.all([
+  loadPublicCatalog(locale),
+  loadPublicCatalog(otherLocale),
+  loadShopCollections(locale),
+  loadProductTypes(locale),
+]);
+const otherSlug = otherCatalog.products.find((p) => p.id === selected.id)?.slug;
+const alternate = otherSlug ? productPath(otherLocale, otherSlug) : localizedPath(otherLocale, 'shop');
 
 const canAddOf = (p: ProductPublic) =>
   p.saleEnabled && p.availability !== 'sold_out' && p.availability !== 'unavailable';
@@ -49,6 +59,64 @@ const choices = options.map((option) => ({
   status: statusOf(option) ?? '',
   path: productPath(locale, option.slug),
 }));
+
+// ——— Its type (Taza…) and its portrait (Pug…) ———
+const typeOf = new Map(types.map((type) => [type.code, type]));
+const kind = typeOf.get(product.category);
+const collection = collections.find((c) => c.id === product.collectionId) ?? null;
+const shopPath = localizedPath(locale, 'shop');
+const breedPath = collection ? `${shopPath}?breed=${encodeURIComponent(collection.code)}#stall` : null;
+// The other pieces with the same portrait, in the types' order.
+const order = types.map((type) => type.code);
+const siblings = collection
+  ? topLevelProducts(catalog.products)
+      .filter((p) => p.collectionId === collection.id && p.id !== product.id && typeOf.has(p.category))
+      .sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category))
+  : [];
+// The coaster shows the drawing flat and centred (as in the shop's medallions).
+const portrait =
+  collection?.portraitUrl ??
+  [product, ...siblings].find((p) => p.category === 'coasters')?.coverImageUrl ??
+  product.coverImageUrl;
+
+// ——— Photos ———
+const images = (product.imageUrls.length ? product.imageUrls : [product.coverImageUrl]).filter(
+  (url): url is string => Boolean(url),
+);
+const srcset = (url: string) =>
+  [800, 1200, 1600].map((w) => `${sizedImage(url, w)} ${w}w`).join(', ');
+const imageAlt = (i: number) =>
+  i === 0
+    ? es
+      ? `${product.title}: retrato a lápiz de Meili Stringfellow`
+      : `${product.title}: pencil portrait by Meili Stringfellow`
+    : `${product.title} (${i + 1})`;
+
+const paragraphs = product.description
+  .split(/\n\s*\n/)
+  .map((paragraph) => paragraph.trim())
+  .filter(Boolean);
+const details = productDetails(product.category, locale);
+
+// ——— Search engines ———
+const origin = Astro.site ?? new URL('https://petsdrawings.com');
+const abs = (path: string) => new URL(path, origin).href;
+const canonicalPath = productPath(locale, product.slug);
+const breadcrumbs = [
+  { name: dict.shop.title, url: abs(shopPath) },
+  ...(collection && breedPath ? [{ name: collection.name, url: abs(breedPath.replace('#stall', '')) }] : []),
+  { name: product.title, url: abs(canonicalPath) },
+];
+const structured = productJsonLd({
+  product: { ...product, imageUrls: images.map((url) => abs(url)) },
+  selected,
+  url: abs(productPath(locale, selected.slug)),
+  breadcrumbs,
+});
+
+const assurances = es
+  ? ['Dibujo original a lápiz de Meili Stringfellow', 'Envío con Correos desde España', 'Pago seguro con tarjeta o PayPal']
+  : ['Original pencil drawing by Meili Stringfellow', 'Shipped with Correos from Spain', 'Secure payment by card or PayPal'];
 ---
 
 <PublicLayout
@@ -57,59 +125,127 @@ const choices = options.map((option) => ({
   seoTitle={product.seoTitle}
   description={product.seoDescription ?? product.summary}
   image={product.coverImageUrl}
-  canonicalPath={productPath(locale, product.slug)}
+  canonicalPath={canonicalPath}
   alternatePath={alternate}
+  ogType="product"
 >
-  <section class="section">
-    <div class="site-shell product">
-      <div class="gallery">
-        <ProductImage
-          class="gallery__main"
-          src={product.coverImageUrl}
-          alt={product.title}
-        />
+  <script slot="head" type="application/ld+json" set:html={jsonLdText(structured)} />
+
+  <article class="pdp">
+    <nav class="site-shell crumbs" aria-label={es ? 'Estás en' : 'You are here'}>
+      <ol>
+        <li><a href={shopPath}>{dict.shop.title}</a></li>
+        {collection && breedPath && <li><a href={breedPath}>{collection.name}</a></li>}
+        <li aria-current="page">{kind?.singular ?? product.title}</li>
+      </ol>
+    </nav>
+
+    <div class="site-shell pdp__grid">
+      <!-- ——— Photos ——— -->
+      <div class="gallery" data-gallery>
+        <div class="stage">
+          <ul class="stage__track" data-track tabindex="0" aria-label={es ? 'Fotos del producto' : 'Product photos'}>
+            {
+              images.length === 0 ? (
+                <li class="slide">
+                  <span class="slide__frame slide__frame--empty" />
+                </li>
+              ) : (
+                images.map((url, i) => (
+                  <li class="slide" aria-label={`${i + 1} / ${images.length}`}>
+                    <button
+                      type="button"
+                      class="slide__frame"
+                      data-zoom={i}
+                      aria-label={es ? 'Ver la foto ampliada' : 'View the photo larger'}
+                    >
+                      <img
+                        src={sizedImage(url, 1200)}
+                        srcset={srcset(url)}
+                        sizes="(min-width: 64rem) 56vw, 100vw"
+                        alt={imageAlt(i)}
+                        width="1200"
+                        height="1200"
+                        loading={i === 0 ? 'eager' : 'lazy'}
+                        fetchpriority={i === 0 ? 'high' : undefined}
+                        decoding="async"
+                      />
+                    </button>
+                  </li>
+                ))
+              )
+            }
+          </ul>
+          {
+            images.length > 1 && (
+              <>
+                <button type="button" class="stage__arrow stage__arrow--prev" data-prev aria-label={es ? 'Foto anterior' : 'Previous photo'}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+                </button>
+                <button type="button" class="stage__arrow stage__arrow--next" data-next aria-label={es ? 'Foto siguiente' : 'Next photo'}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+                </button>
+                <p class="stage__count" aria-hidden="true">
+                  <span data-count>1</span> / {images.length}
+                </p>
+              </>
+            )
+          }
+        </div>
         {
-          product.imageUrls.length > 1 && (
+          images.length > 1 && (
             <ul class="thumbs">
-              {product.imageUrls.map((url, i) => (
+              {images.map((url, i) => (
                 <li>
-                  <ProductImage
-                    src={url}
-                    alt={`${product.title} (${i + 1})`}
-                  />
+                  <button
+                    type="button"
+                    class="thumb"
+                    data-thumb={i}
+                    aria-label={es ? `Ver la foto ${i + 1}` : `Show photo ${i + 1}`}
+                    aria-current={i === 0 ? 'true' : undefined}
+                  >
+                    <img src={sizedImage(url, 240)} alt="" width="240" height="240" loading="lazy" decoding="async" />
+                  </button>
                 </li>
               ))}
             </ul>
           )
         }
       </div>
+
+      <!-- ——— Buy ——— -->
       <div class="buy">
-        <p class="muted"><a href={localizedPath(locale, 'shop')}>{dict.shop.title}</a></p>
-        <h1 class="display h1-display">{product.title}</h1>
-        <p class="price" data-price>{price}</p>
-        <p class="muted" data-status hidden={!statusLabel}>{statusLabel}</p>
+        <p class="eyebrow buy__eyebrow">
+          {kind?.singular}
+          {kind && collection && <span aria-hidden="true"> · </span>}
+          {collection?.name}
+        </p>
+        <h1 class="display buy__title">{product.title}</h1>
+        {product.summary && <p class="buy__summary">{product.summary}</p>}
+
+        <div class="buy__price">
+          <p class="price" data-price>{price}</p>
+          <p class="buy__status" data-status hidden={!statusLabel}>{statusLabel}</p>
+        </div>
+
         {
           choices.length > 1 && (
             <fieldset class="options" data-options={JSON.stringify(choices)}>
               <legend>{dict.shop.options}</legend>
-              {choices.map((choice) => (
-                <label class="option">
-                  <input type="radio" name="option" value={choice.id} checked={choice.id === selected.id} />
-                  <span>{choice.label}</span>
-                </label>
-              ))}
+              <div class="options__list">
+                {choices.map((choice) => (
+                  <label class="option">
+                    <input type="radio" name="option" value={choice.id} checked={choice.id === selected.id} />
+                    <span>{choice.label}</span>
+                  </label>
+                ))}
+              </div>
             </fieldset>
           )
         }
-        {
-          product.description
-            .split(/\n\s*\n/)
-            .map((paragraph) => paragraph.trim())
-            .filter(Boolean)
-            .map((paragraph) => <p>{paragraph}</p>)
-        }
+
         <button
-          class="btn"
+          class="btn buy__add"
           type="button"
           data-add-to-cart
           data-product-id={selected.id}
@@ -118,56 +254,422 @@ const choices = options.map((option) => ({
         >
           {canAdd ? dict.shop.addToCart : (statusLabel ?? dict.shop.unavailable)}
         </button>
+        {
+          !canAdd && (
+            <p class="buy__ask">
+              <a href={localizedPath(locale, 'contact')}>{es ? 'Pregunta a Meili por esta pieza' : 'Ask Meili about this piece'}</a>
+            </p>
+          )
+        }
+
+        <ul class="assure">
+          {assurances.map((text) => (
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" /></svg>
+              {text}
+            </li>
+          ))}
+        </ul>
+
+        {
+          paragraphs.length > 0 && (
+            <section class="story" aria-label={es ? 'Descripción' : 'Description'}>
+              {paragraphs.map((paragraph) => (
+                <p>{paragraph}</p>
+              ))}
+            </section>
+          )
+        }
+
+        {
+          details.length > 0 && (
+            <section class="details" aria-labelledby="details-title">
+              <h2 id="details-title" class="details__title">{es ? 'Detalles' : 'Details'}</h2>
+              <dl>
+                {details.map((detail) => (
+                  <div>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )
+        }
+      </div>
+    </div>
+  </article>
+
+  <!-- ——— Where it comes from ——— -->
+  <section class="origin" aria-labelledby="origin-title">
+    <div class="site-shell origin__inner">
+      {
+        portrait && (
+          <span class="origin__portrait" style={`background-image:url('${sizedImage(portrait, 800)}')`} aria-hidden="true" />
+        )
+      }
+      <div class="origin__text">
+        <p class="eyebrow">{es ? 'Del papel a la pieza' : 'From paper to piece'}</p>
+        <h2 id="origin-title" class="display origin__title">
+          {es ? 'Un retrato dibujado ' : 'A portrait drawn '}<em>{es ? 'a mano' : 'by hand'}</em>
+        </h2>
+        <p>
+          {es
+            ? 'Cada pieza parte de un dibujo a lápiz que Meili hace a mano, trazo a trazo. Si quieres el retrato de tu propio compañero, lo dibuja por encargo.'
+            : 'Every piece starts as a pencil drawing Meili makes by hand, stroke by stroke. If you would like a portrait of your own companion, she draws it to order.'}
+        </p>
+        <a class="btn btn--ghost" href={localizedPath(locale, 'commissions')}>{dict.home.ctaCommission}</a>
       </div>
     </div>
   </section>
+
+  {
+    siblings.length > 0 && collection && (
+      <section class="more" aria-labelledby="more-title">
+        <div class="site-shell">
+          <header class="more__head">
+            <h2 id="more-title" class="display more__title">
+              {es ? `Más con el retrato ${collection.name}` : `More with the ${collection.name} portrait`}
+            </h2>
+            {breedPath && (
+              <a class="more__all" href={breedPath}>
+                {es ? 'Ver todo' : 'See all'}
+              </a>
+            )}
+          </header>
+          <ul class="more__grid">
+            {siblings.map((p, i) => (
+              <StallItem
+                product={p}
+                title={typeOf.get(p.category)?.singular || p.title}
+                kind={typeOf.get(p.category)?.singular ?? ''}
+                tilt={[-5, 4, -3, 6][i % 4]}
+                eager={false}
+                locale={locale}
+              />
+            ))}
+          </ul>
+        </div>
+      </section>
+    )
+  }
+
+  {
+    images.length > 0 && (
+      <dialog
+        class="zoom"
+        data-zoom-dialog
+        data-sources={JSON.stringify(images.map((url, i) => ({ src: url, alt: imageAlt(i) })))}
+        aria-label={product.title}
+      >
+        <img data-zoom-img alt="" />
+        <button type="button" class="zoom__close" data-zoom-close aria-label={es ? 'Cerrar' : 'Close'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        {images.length > 1 && (
+          <>
+            <button type="button" class="zoom__arrow zoom__arrow--prev" data-zoom-prev aria-label={es ? 'Foto anterior' : 'Previous photo'}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+            </button>
+            <button type="button" class="zoom__arrow zoom__arrow--next" data-zoom-next aria-label={es ? 'Foto siguiente' : 'Next photo'}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </>
+        )}
+      </dialog>
+    )
+  }
 </PublicLayout>
 
 <style>
-  .product {
-    display: grid;
-    gap: 2rem;
+  .pdp {
+    padding-block: clamp(1.5rem, 4vw, 3rem) clamp(4rem, 8vw, 7rem);
   }
 
-  .gallery__main :global(img),
-  .gallery__main :global(.ph) {
-    aspect-ratio: 1;
+  /* ——— Breadcrumbs ——— */
+  .crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0 0 clamp(1.5rem, 3vw, 2.5rem);
+    padding: 0;
+    list-style: none;
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+
+  .crumbs li + li::before {
+    content: '/';
+    margin-right: 0.35rem;
+    color: var(--line-strong);
+  }
+
+  .crumbs a {
+    color: var(--ink-soft);
+    text-decoration: none;
+  }
+
+  .crumbs a:hover {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .pdp__grid {
+    display: grid;
+    gap: clamp(2rem, 5vw, 3rem);
+  }
+
+  @media (min-width: 64rem) {
+    .pdp__grid {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+      gap: clamp(3rem, 5vw, 5.5rem);
+      align-items: start;
+    }
+
+    .buy {
+      position: sticky;
+      top: 2rem;
+    }
+  }
+
+  /* ——— Photos: each on a white sheet, like a drawing on the wall ——— */
+  .stage {
+    position: relative;
+  }
+
+  .stage__track {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    outline: none;
+  }
+
+  .stage__track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .stage__track:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  .slide {
+    flex: 0 0 100%;
+    scroll-snap-align: center;
+    padding: 0 0 1.6rem;
+  }
+
+  .slide__frame {
+    display: block;
     width: 100%;
+    aspect-ratio: 1;
+    padding: clamp(0.55rem, 1.2vw, 0.9rem);
+    border: 0;
+    border-radius: 0;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    cursor: zoom-in;
+  }
+
+  .slide__frame--empty {
+    background: var(--paper-deep);
+    cursor: default;
+  }
+
+  .slide__frame img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--sheet);
+  }
+
+  .stage__arrow {
+    position: absolute;
+    top: calc(50% - 0.8rem);
+    display: grid;
+    place-items: center;
+    width: 2.9rem;
+    height: 2.9rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.92);
+    color: var(--ink);
+    cursor: pointer;
+    translate: 0 -50%;
+    opacity: 0;
+    transition:
+      opacity var(--dur-ui) var(--ease-soft),
+      border-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .stage__arrow svg,
+  .zoom svg,
+  .assure svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .stage__arrow--prev {
+    left: 1rem;
+  }
+
+  .stage__arrow--next {
+    right: 1rem;
+  }
+
+  .stage:hover .stage__arrow,
+  .stage__arrow:focus-visible {
+    opacity: 1;
+  }
+
+  .stage__arrow:hover {
+    border-color: var(--ink);
+  }
+
+  .stage__arrow:disabled {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+
+  .stage__count {
+    position: absolute;
+    right: 1rem;
+    bottom: 2.6rem;
+    margin: 0;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.9);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
   }
 
   .thumbs {
-    list-style: none;
-    margin: 0.75rem 0 0;
-    padding: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(4.5rem, 5.5rem));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  .gallery img {
+  .thumb {
+    display: block;
     width: 100%;
+    aspect-ratio: 1;
+    padding: 0.25rem;
+    border: 1px solid transparent;
+    border-radius: 0;
+    background: var(--sheet);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+    cursor: pointer;
+    opacity: 0.62;
+    transition:
+      opacity var(--dur-ui) var(--ease-soft),
+      border-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .thumb:hover {
+    opacity: 1;
+  }
+
+  .thumb[aria-current='true'] {
+    opacity: 1;
+    border-color: var(--ink);
+  }
+
+  /* ——— Buy ——— */
+  .buy__eyebrow {
+    margin: 0 0 0.9rem;
+  }
+
+  .buy__title {
+    margin: 0;
+    font-size: clamp(2.3rem, 3.8vw, 3.7rem);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+
+  .buy__summary {
+    margin: 1.1rem 0 0;
+    max-width: 34rem;
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .buy__price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem 1rem;
+    margin: 1.75rem 0 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--line);
   }
 
   .price {
-    font-size: 1.4rem;
-    font-weight: 700;
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 2.1rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
   }
 
+  .buy__status {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--muted);
+  }
+
   .options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: 0 0 1.25rem;
+    margin: 0 0 1.5rem;
     padding: 0;
     border: 0;
   }
 
   .options legend {
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
+    margin-bottom: 0.65rem;
+    font-size: 0.78rem;
     font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .options__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .option {
@@ -182,10 +684,16 @@ const choices = options.map((option) => ({
 
   .option span {
     display: inline-block;
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: var(--paper);
+    min-width: 7rem;
+    padding: 0.7rem 1.2rem;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    text-align: center;
+    transition: border-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .option:hover span {
+    border-color: var(--ink-soft);
   }
 
   .option input:checked + span {
@@ -194,15 +702,291 @@ const choices = options.map((option) => ({
   }
 
   .option input:focus-visible + span {
-    outline: 2px solid var(--ink);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
-  @media (min-width: 64rem) {
-    .product {
-      grid-template-columns: 3fr 2fr;
-      gap: 3rem;
-      align-items: start;
+  .buy__add {
+    width: 100%;
+    min-height: 3.5rem;
+    font-size: 1.02rem;
+  }
+
+  .buy__ask {
+    margin: 0.75rem 0 0;
+    font-size: 0.92rem;
+  }
+
+  .buy__ask a {
+    color: var(--ink-soft);
+  }
+
+  .assure {
+    display: grid;
+    gap: 0.55rem;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+
+  .assure li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .assure svg {
+    flex: none;
+    color: var(--accent);
+  }
+
+  .story {
+    /* holds the drop cap */
+    display: flow-root;
+    margin-top: 2.25rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .story p {
+    max-width: 36rem;
+    margin: 0 0 1rem;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  .story p:first-child::first-letter {
+    float: left;
+    margin: 0.08em 0.12em 0 0;
+    font-family: var(--font-display);
+    font-size: 3.4em;
+    line-height: 0.8;
+    color: var(--ink);
+  }
+
+  .details {
+    margin-top: 1.75rem;
+  }
+
+  .details__title {
+    margin: 0 0 0.6rem;
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .details dl {
+    margin: 0;
+  }
+
+  .details dl > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, 2fr) 5fr;
+    gap: 1rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .details dl > div:first-child {
+    border-top: 1px solid var(--line);
+  }
+
+  .details dt {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+
+  .details dd {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  /* ——— From paper to piece ——— */
+  .origin {
+    padding-block: clamp(4rem, 9vw, 7.5rem);
+    background:
+      radial-gradient(ellipse 55% 80% at 20% 0%, #fff, transparent 70%),
+      var(--paper-deep);
+  }
+
+  .origin__inner {
+    display: grid;
+    gap: clamp(2rem, 5vw, 4.5rem);
+    align-items: center;
+  }
+
+  .origin__portrait {
+    justify-self: center;
+    width: min(70vw, 20rem);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background-color: var(--sheet);
+    background-size: 210%;
+    background-position: 52% 33%;
+    box-shadow:
+      0 0 0 0.6rem var(--sheet),
+      0 0 0 calc(0.6rem + 1px) var(--line),
+      var(--shadow-art);
+  }
+
+  .origin__title {
+    margin: 0.6rem 0 1.1rem;
+    font-size: clamp(2.2rem, 4.5vw, 3.8rem);
+    letter-spacing: -0.045em;
+  }
+
+  .origin__text p:not(.eyebrow) {
+    max-width: 34rem;
+    margin: 0 0 1.75rem;
+    color: var(--ink-soft);
+  }
+
+  @media (min-width: 56rem) {
+    .origin__inner {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+  }
+
+  /* ——— More with the same portrait ——— */
+  .more {
+    padding-block: clamp(4rem, 9vw, 7rem);
+  }
+
+  .more__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem 2rem;
+  }
+
+  .more__title {
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    letter-spacing: -0.04em;
+  }
+
+  .more__all {
+    color: var(--ink-soft);
+    text-underline-offset: 0.25em;
+  }
+
+  .more__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+    column-gap: clamp(1.25rem, 3vw, 2.5rem);
+    row-gap: clamp(3.5rem, 6vw, 4.5rem);
+    margin: 0;
+    /* room for the hanging tags */
+    padding: 3.25rem 0 0;
+    list-style: none;
+  }
+
+  @media (max-width: 40rem) {
+    .more__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: 1rem;
+      row-gap: 3rem;
+    }
+
+    .more__grid :global(.item__title) {
+      font-size: 1.1rem;
+    }
+
+    .more__grid :global(.item__add) {
+      width: 100%;
+      padding-inline: 0.6rem;
+      font-size: 0.9rem;
+    }
+
+    .more__grid :global(.tag) {
+      right: 0.5rem;
+      scale: 0.82;
+    }
+
+    .thumbs {
+      grid-template-columns: repeat(auto-fill, minmax(3.75rem, 1fr));
+      gap: 0.5rem;
+    }
+  }
+
+  /* ——— A photo, larger ——— */
+  .zoom {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: clamp(1rem, 4vw, 3rem);
+    border: 0;
+    background: var(--paper);
+  }
+
+  .zoom[open] {
+    display: grid;
+    place-items: center;
+  }
+
+  .zoom::backdrop {
+    background: rgb(22 23 26 / 0.4);
+  }
+
+  .zoom img {
+    max-width: 100%;
+    max-height: calc(100dvh - 2 * clamp(1rem, 4vw, 3rem));
+    object-fit: contain;
+    border: 0;
+    border-radius: 0;
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .zoom__close,
+  .zoom__arrow {
+    position: fixed;
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .zoom__close {
+    top: 1rem;
+    right: 1rem;
+  }
+
+  .zoom__arrow {
+    top: 50%;
+    translate: 0 -50%;
+  }
+
+  .zoom__arrow--prev {
+    left: 1rem;
+  }
+
+  .zoom__arrow--next {
+    right: 1rem;
+  }
+
+  @media (hover: none) {
+    .stage__arrow {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage__track {
+      scroll-behavior: auto;
     }
   }
 </style>
@@ -212,6 +996,81 @@ const choices = options.map((option) => ({
 
   type Choice = { id: string; label: string; price: string; canAdd: boolean; status: string; path: string };
 
+  // ——— Photos: slide, thumbnails, arrows and a larger view ———
+  const gallery = document.querySelector<HTMLElement>('[data-gallery]');
+  const track = gallery?.querySelector<HTMLElement>('[data-track]');
+  if (gallery && track) {
+    const slides = [...track.children] as HTMLElement[];
+    const thumbs = [...gallery.querySelectorAll<HTMLButtonElement>('[data-thumb]')];
+    const count = gallery.querySelector<HTMLElement>('[data-count]');
+    const prev = gallery.querySelector<HTMLButtonElement>('[data-prev]');
+    const next = gallery.querySelector<HTMLButtonElement>('[data-next]');
+    let current = 0;
+
+    const show = (i: number) => {
+      const target = Math.max(0, Math.min(slides.length - 1, i));
+      track.scrollTo({ left: target * track.clientWidth });
+    };
+    const mark = (i: number) => {
+      current = i;
+      thumbs.forEach((thumb, j) => {
+        if (j === i) thumb.setAttribute('aria-current', 'true');
+        else thumb.removeAttribute('aria-current');
+      });
+      if (count) count.textContent = String(i + 1);
+      if (prev) prev.disabled = i === 0;
+      if (next) next.disabled = i === slides.length - 1;
+    };
+    track.addEventListener(
+      'scroll',
+      () => {
+        const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+        if (i !== current) mark(i);
+      },
+      { passive: true },
+    );
+    thumbs.forEach((thumb) => thumb.addEventListener('click', () => show(Number(thumb.dataset.thumb))));
+    prev?.addEventListener('click', () => show(current - 1));
+    next?.addEventListener('click', () => show(current + 1));
+    track.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft') show(current - 1);
+      if (event.key === 'ArrowRight') show(current + 1);
+    });
+    mark(0);
+
+    const dialog = document.querySelector<HTMLDialogElement>('[data-zoom-dialog]');
+    const zoomImg = dialog?.querySelector<HTMLImageElement>('[data-zoom-img]');
+    const sources = JSON.parse(dialog?.dataset.sources ?? '[]') as Array<{ src: string; alt: string }>;
+    let zoomed = 0;
+    const zoomTo = (i: number) => {
+      if (!zoomImg || sources.length === 0) return;
+      zoomed = (i + sources.length) % sources.length;
+      zoomImg.src = sources[zoomed]!.src;
+      zoomImg.alt = sources[zoomed]!.alt;
+    };
+    if (dialog && zoomImg) {
+      gallery.querySelectorAll<HTMLButtonElement>('[data-zoom]').forEach((button) =>
+        button.addEventListener('click', () => {
+          zoomTo(Number(button.dataset.zoom));
+          dialog.showModal();
+        }),
+      );
+      dialog.querySelector('[data-zoom-close]')?.addEventListener('click', () => dialog.close());
+      dialog.querySelector('[data-zoom-prev]')?.addEventListener('click', () => zoomTo(zoomed - 1));
+      dialog.querySelector('[data-zoom-next]')?.addEventListener('click', () => zoomTo(zoomed + 1));
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      dialog.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowLeft') zoomTo(zoomed - 1);
+        if (event.key === 'ArrowRight') zoomTo(zoomed + 1);
+      });
+      // Back on the page, the photo last seen is the one on show.
+      dialog.addEventListener('close', () => show(zoomed));
+    }
+  }
+
+  // ——— Options and cart ———
   const btn = document.querySelector('[data-add-to-cart]');
   const options = document.querySelector<HTMLFieldSetElement>('[data-options]');
   if (options && btn instanceof HTMLButtonElement) {
@@ -238,8 +1097,7 @@ const choices = options.map((option) => ({
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-product-id');
       if (!id) return;
-      const uuid =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuid.test(id)) {
         window.alert('Invalid product id.');
         return;
