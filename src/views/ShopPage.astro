@@ -42,7 +42,9 @@ const sets = allSets
 
 // "All": one sliding row per portrait. One type chosen: every piece of that type
 // together on one table, in the order set in Admin › Productos, named after its portrait.
+// One portrait chosen: all its pieces together on one table too, named after their type.
 const byKind = category === 'all' ? [] : piecesOfType(products, sets, category);
+const portrait = category === 'all' && breed !== 'all' ? (sets[0] ?? null) : null;
 
 const shopPath = localizedPath(locale, 'shop');
 const filterHref = (next: { category?: string; breed?: string }) => {
@@ -64,6 +66,7 @@ const categories = [
 ];
 
 const swing = [-6, 4, -3, 7, -5, 3];
+const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) => p.category))];
 ---
 
 <PublicLayout locale={locale} title={dict.shop.title} description={dict.shop.lead}>
@@ -174,6 +177,46 @@ const swing = [-6, 4, -3, 7, -5, 3];
               ))}
             </ul>
           </section>
+        ) : portrait ? (
+          <section class="kindgrid" data-portrait-grid aria-labelledby={`set-${portrait.id}`}>
+            <header class="set__head">
+              <span
+                class="set__portrait"
+                style={portrait.portrait ? `background-image:url('${portrait.portrait}')` : undefined}
+                aria-hidden="true"
+              />
+              <div class="set__titles">
+                <h2 id={`set-${portrait.id}`} class="display set__name">
+                  {portrait.name}
+                </h2>
+                <p class="set__meta">
+                  {portrait.description || (
+                    <>
+                      {es ? 'Un retrato de Meili, en ' : 'One portrait by Meili, as '}
+                      {kindsOf(portrait).map((kind, i, kinds) => (
+                        <>
+                          {i > 0 && (i === kinds.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
+                          {typeOf.get(kind)?.phrase ?? kind}
+                        </>
+                      ))}
+                    </>
+                  )}
+                </p>
+              </div>
+            </header>
+            <ul class="kindgrid__table">
+              {portrait.items.map((product, i) => (
+                <StallItem
+                  product={product}
+                  title={singular(product.category) || product.title}
+                  kind={singular(product.category)}
+                  tilt={swing[i % swing.length]}
+                  eager={i < 4}
+                  locale={locale}
+                />
+              ))}
+            </ul>
+          </section>
         ) : (
           sets.map((set, setIndex) => (
             <article class="set" aria-labelledby={`set-${set.id}`}>
@@ -213,7 +256,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
                     {set.description || (
                       <>
                         {es ? 'Un retrato de Meili, en ' : 'One portrait by Meili, as '}
-                        {[...new Set(set.items.map((p) => p.category))].map((kind, i, kinds) => (
+                        {kindsOf(set).map((kind, i, kinds) => (
                           <>
                             {i > 0 && (i === kinds.length - 1 ? (es ? ' y ' : ' and ') : ', ')}
                             {typeOf.get(kind)?.phrase ?? kind}
@@ -728,7 +771,7 @@ const swing = [-6, 4, -3, 7, -5, 3];
     }
   }
 
-  /* ——— One type chosen: all its pieces on one table ——— */
+  /* ——— One type, or one portrait, chosen: all its pieces on one table ——— */
   .kindgrid {
     display: grid;
     gap: clamp(1.5rem, 3vw, 2.5rem);

@@ -59,10 +59,22 @@ test('a row slides right with its arrows', async ({ page }) => {
   await expect(prev).toBeDisabled();
 });
 
-test('choosing a portrait shows only its row', async ({ page }) => {
+test('choosing a portrait shows all its pieces together, named by type', async ({ page }) => {
   await page.goto('/es/tienda/?breed=cockapoo');
-  await expect(page.locator('.set')).toHaveCount(1);
-  await expect(page.locator('.set__name')).toHaveText('Cockapoo');
+  // No sliding row: one grid with every piece of that portrait.
+  await expect(page.locator('.set')).toHaveCount(0);
+  await expect(page.locator('[data-row]')).toHaveCount(0);
+  const grid = page.locator('[data-portrait-grid]');
+  await expect(grid).toBeVisible();
+  await expect(grid.getByRole('heading', { level: 2 })).toHaveText('Cockapoo');
+  const kinds = await grid.locator('.item__title').allInnerTexts();
+  for (const kind of ['Tarjeta', 'Posavasos', 'Taza']) expect(kinds).toContain(kind);
+  await expect(page.locator('.medallion[aria-current="true"] .medallion__name')).toHaveText('Cockapoo');
+
+  // "Ver todas las razas" brings the rows back.
+  await page.locator('.kind--clear').click();
+  await expect(page.locator('[data-portrait-grid]')).toHaveCount(0);
+  await expect(page.locator('.set').first()).toBeVisible();
 });
 
 test('choosing a type shows all its pieces together, named by portrait', async ({ page }) => {
