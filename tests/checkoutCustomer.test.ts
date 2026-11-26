@@ -169,3 +169,25 @@ describe('a gift', () => {
     expect(() => checkoutCustomerSchema.parse({ ...customer, gift: true, giftMessage: 'x'.repeat(301) })).toThrow();
   });
 });
+
+describe('a pickup at a market', () => {
+  const pickup = { email: 'ana@example.com', name: 'Ana García', phone: '600123456', country: 'ES', pickup: true };
+
+  it('needs no address', () => {
+    const parsed = checkoutCustomerSchema.parse(pickup);
+    expect(parsed.line1).toBe('');
+    expect(shippingAddressFrom(parsed)).toMatchObject({ name: 'Ana García', phone: '600123456', country: 'ES', line1: '' });
+  });
+
+  it('still needs one when it is shipped', () => {
+    expect(() => checkoutCustomerSchema.parse({ ...pickup, pickup: false })).toThrow();
+  });
+
+  it('matches only a pickup quote, and a pickup quote only a pickup', () => {
+    const parsed = checkoutCustomerSchema.parse(pickup);
+    expect(destinationMatches(parsed, { country: 'ES', postalCode: null, pickupMarketId: 'm1' })).toBe(true);
+    expect(destinationMatches(parsed, { country: 'ES', postalCode: '46001' })).toBe(false);
+    const shipped = checkoutCustomerSchema.parse(customer);
+    expect(destinationMatches(shipped, { country: 'ES', postalCode: '46001', pickupMarketId: 'm1' })).toBe(false);
+  });
+});

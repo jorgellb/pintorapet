@@ -32,6 +32,8 @@ export interface PersistedQuote {
   /** 'no_vat' for Canarias, Ceuta, Melilla and outside the EU: Spanish VAT is taken off. */
   vatRegime: 'es_vat' | 'no_vat' | null;
   vatDiscountCents: number;
+  /** Picked up at this market (no shipping). */
+  pickupMarketId: string | null;
 }
 
 export interface QuoteShipping {
@@ -57,6 +59,7 @@ type QuoteRow = {
   shipping_weight_grams: number | null;
   vat_regime?: 'es_vat' | 'no_vat' | null;
   vat_discount_cents?: number | null;
+  pickup_market_id?: string | null;
   lines: Array<{
     product_id: string;
     quantity: number;
@@ -77,6 +80,8 @@ export async function createPersistedQuote(
     items: CartItem[];
     country?: string;
     postalCode?: string;
+    /** Picked up at a market: no shipping, no destination. */
+    pickupMarketId?: string;
     invoice?: InvoiceCustomer;
   },
 ): Promise<PersistedQuote> {
@@ -85,7 +90,17 @@ export async function createPersistedQuote(
     quantity: item.quantity,
   }));
 
-  const data = await dbCall(() => supabase.one<QuoteRow>`
+  const lineArray = json(p_lines);
+  const data = await dbCall(() =>
+    opts.pickupMarketId
+      ? supabase.one<QuoteRow>`
+          select * from public.create_pickup_quote(
+            p_cart_owner_hash => ${opts.cartOwnerHash},
+            p_locale => ${opts.locale}::public.locale_code,
+            p_lines => array(select l from jsonb_populate_recordset(null::public.cart_line_input, ${lineArray}) l),
+            p_market_id => ${opts.pickupMarketId}::uuid,
+            p_invoice_customer => ${opts.invoice ? json(opts.invoice) : null})`
+      : supabase.one<QuoteRow>`
     select * from public.create_checkout_quote(
       p_cart_owner_hash => ${opts.cartOwnerHash},
       p_locale => ${opts.locale}::public.locale_code,
@@ -131,6 +146,7 @@ export async function createPersistedQuote(
       : null,
     vatRegime: row.vat_regime ?? null,
     vatDiscountCents: row.vat_discount_cents ?? 0,
+    pickupMarketId: row.pickup_market_id ?? null,
   };
 }
 
@@ -152,6 +168,7 @@ export function quotePublicPayload(quote: PersistedQuote) {
     vatRegime: quote.vatRegime,
     vatDiscountCents: quote.vatDiscountCents,
     vatDiscountFormatted: formatEur(quote.vatDiscountCents, quote.locale),
+    pickupMarketId: quote.pickupMarketId,
     expiresAt: quote.expiresAt,
     lines: quote.lines.map((l) => ({
       productId: l.productId,

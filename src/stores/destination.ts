@@ -6,7 +6,12 @@ export const DESTINATION_EVENT = 'petsdrawings:destination';
 export interface Destination {
   country: string;
   postalCode: string;
+  /** Picked up at this market (Admin › Mercados) instead of shipped. */
+  pickupMarketId?: string;
 }
+
+/** The country select's value for a market pickup: "pickup:<market id>". */
+export const PICKUP_PREFIX = 'pickup:';
 
 export type ShippingEstimate =
   | {
@@ -21,6 +26,8 @@ export type ShippingEstimate =
       freeReached?: boolean;
       /** "Pide hasta el…" for this zone in the Christmas season. */
       holiday?: { late: boolean; text: string } | null;
+      /** "Recógelo en…" for a market pickup. */
+      pickup?: string | null;
     }
   | { available: false; reason: string };
 
@@ -29,6 +36,7 @@ export function needsPostalCode(country: string): boolean {
 }
 
 export function isCompleteDestination(dest: Destination | null): dest is Destination {
+  if (dest?.pickupMarketId) return true;
   if (!dest || !/^[A-Z]{2}$/.test(dest.country)) return false;
   return !needsPostalCode(dest.country) || /^\d{5}$/.test(dest.postalCode);
 }
@@ -39,17 +47,23 @@ export function readDestination(): Destination | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<Destination>;
     if (typeof parsed.country !== 'string') return null;
-    return { country: parsed.country.toUpperCase(), postalCode: String(parsed.postalCode ?? '').trim() };
+    return {
+      country: parsed.country.toUpperCase(),
+      postalCode: String(parsed.postalCode ?? '').trim(),
+      ...(typeof parsed.pickupMarketId === 'string' && parsed.pickupMarketId ? { pickupMarketId: parsed.pickupMarketId } : {}),
+    };
   } catch {
     return null;
   }
 }
 
 export function writeDestination(dest: Destination): void {
-  const next = {
-    country: dest.country.toUpperCase(),
-    postalCode: needsPostalCode(dest.country) ? dest.postalCode.trim() : '',
-  };
+  const next: Destination = dest.pickupMarketId
+    ? { country: 'ES', postalCode: '', pickupMarketId: dest.pickupMarketId }
+    : {
+        country: dest.country.toUpperCase(),
+        postalCode: needsPostalCode(dest.country) ? dest.postalCode.trim() : '',
+      };
   try {
     localStorage.setItem(DESTINATION_STORAGE_KEY, JSON.stringify(next));
   } catch {
@@ -66,7 +80,7 @@ export function estimateShipping(
   items: CartItem[],
   dest: Destination,
 ): Promise<ShippingEstimate> {
-  const key = JSON.stringify([locale, items, dest.country, dest.postalCode]);
+  const key = JSON.stringify([locale, items, dest.country, dest.postalCode, dest.pickupMarketId ?? '']);
   let hit = cache.get(key);
   if (!hit) {
     hit = fetch('/api/shipping/estimate/', {
@@ -77,6 +91,7 @@ export function estimateShipping(
         items,
         country: dest.country,
         postalCode: dest.postalCode || undefined,
+        pickupMarketId: dest.pickupMarketId || undefined,
       }),
     }).then(async (res) => {
       if (!res.ok) throw new Error(String(res.status));

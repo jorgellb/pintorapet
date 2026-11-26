@@ -2,6 +2,8 @@
 import { t, type Locale } from '@/i18n';
 import { countryOptions } from '@/lib/domain/countries';
 import { shippingHighlights } from '@/lib/server/shipping/highlights';
+import { publicMarkets } from '@/lib/server/markets';
+import { marketDates } from '@/lib/domain/markets';
 
 interface Props {
   locale: Locale;
@@ -16,6 +18,8 @@ const names = Object.fromEntries(countries.map((c) => [c.code, c.name]));
 const uid = Math.random().toString(36).slice(2, 8);
 // Before a destination is chosen: free shipping and Christmas in the main zone.
 const highlights = await shippingHighlights(locale);
+// Markets where a web order can be picked up instead of shipped.
+const pickups = (await publicMarkets()).filter((m) => m.pickup);
 const labels = {
   choose: dict.shipping.choose,
   calculating: dict.shipping.calculating,
@@ -37,7 +41,7 @@ const labels = {
   data-locale={locale}
   data-expanded={String(expanded)}
   data-labels={JSON.stringify(labels)}
-  data-names={JSON.stringify(names)}
+  data-names={JSON.stringify({ ...names, ...Object.fromEntries(pickups.map((m) => [`pickup:${m.id}`, m.name])) })}
   data-teaser={JSON.stringify([highlights.freeShipping, highlights.holiday].filter(Boolean))}
 >
   <div class="ship__row">
@@ -64,6 +68,17 @@ const labels = {
       <select id={`ship-country-${uid}`} data-ship-country autocomplete="country">
         <option value="" disabled selected>{dict.shipping.choose}</option>
         {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+        {
+          pickups.length > 0 && (
+            <optgroup label={locale === 'es' ? 'Recoger en mano, sin envío' : 'Pick up in person, no shipping'}>
+              {pickups.map((m) => (
+                <option value={`pickup:${m.id}`}>
+                  {m.name} ({marketDates(m, locale)})
+                </option>
+              ))}
+            </optgroup>
+          )
+        }
       </select>
     </label>
     <label class="ship__field ship__field--postal" for={`ship-postal-${uid}`} data-ship-postal-wrap hidden>
@@ -267,6 +282,7 @@ const labels = {
   import { CART_EVENT, readCart } from '@/stores/cart';
   import {
     DESTINATION_EVENT,
+    PICKUP_PREFIX,
     estimateShipping,
     isCompleteDestination,
     needsPostalCode,
@@ -314,15 +330,20 @@ const labels = {
       root.dispatchEvent(new CustomEvent('shipping:update', { detail, bubbles: true }));
     }
 
+    // The select carries countries, and markets to pick up at ("pickup:<id>").
+    const picked = () => (country.value.startsWith(PICKUP_PREFIX) ? country.value.slice(PICKUP_PREFIX.length) : '');
+
     function syncFields(dest: Destination | null) {
-      if (dest && country.value !== dest.country) country.value = dest.country;
+      const wanted = dest ? (dest.pickupMarketId ? `${PICKUP_PREFIX}${dest.pickupMarketId}` : dest.country) : null;
+      if (wanted && country.value !== wanted && [...country.options].some((o) => o.value === wanted)) country.value = wanted;
       if (dest && document.activeElement !== postal) postal.value = dest.postalCode;
-      const es = needsPostalCode(country.value);
+      const es = !picked() && needsPostalCode(country.value);
       postalWrap.hidden = !es;
       hint.hidden = !es;
     }
 
     function destinationLabel(dest: Destination, zone?: string) {
+      if (dest.pickupMarketId) return zone ?? names[`${PICKUP_PREFIX}${dest.pickupMarketId}`] ?? '';
       const parts = [names[dest.country] ?? dest.country];
       if (dest.postalCode) parts.push(dest.postalCode);
       if (zone && zone !== parts[0]) parts.push(zone);
@@ -376,6 +397,7 @@ const labels = {
 
         const lines: string[] = [];
         if (estimate.delivery) lines.push(labels.delivery.replace('{days}', estimate.delivery));
+        if (estimate.pickup) lines.push(esc(estimate.pickup));
         if (estimate.freeReached) lines.push(`<span class="ship__ok">${labels.freeReached}</span>`);
         if (estimate.holiday) {
           lines.push(`<span class="ship__holiday${estimate.holiday.late ? ' ship__holiday--late' : ''}">${esc(estimate.holiday.text)}</span>`);
@@ -398,6 +420,10 @@ const labels = {
     }
 
     function save() {
+      if (picked()) {
+        writeDestination({ country: 'ES', postalCode: '', pickupMarketId: picked() });
+        return;
+      }
       const dest = { country: country.value, postalCode: postal.value.replace(/\D/g, '') };
       if (!dest.country) return;
       writeDestination(dest);
@@ -411,7 +437,7 @@ const labels = {
 
     country.addEventListener('change', () => {
       syncFields(null);
-      if (needsPostalCode(country.value)) {
+      if (!picked() && needsPostalCode(country.value)) {
         if (/^\d{5}$/.test(postal.value)) save();
         else {
           writeDestination({ country: country.value, postalCode: '' });

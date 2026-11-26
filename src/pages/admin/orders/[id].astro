@@ -6,6 +6,7 @@ import type { OrdersRow } from '@/lib/server/dbTypes';
 import { chipClass, euros, fulfillmentLabel, paymentLabel, providerLabel, shortDate, type Tone } from '@/lib/admin/labels';
 import { countryOptions } from '@/lib/domain/countries';
 import { SHOP_PHONE } from '@/lib/domain/whatsapp';
+import { marketDates } from '@/lib/domain/markets';
 import { trackingUrl } from '@/lib/server/shipping/correos';
 import { carrierRow, ON_ITS_WAY } from '@/lib/server/shipping/admin';
 import { loadShippingSettings } from '@/lib/server/shipping/correos';
@@ -126,6 +127,8 @@ const manualWay = MANUAL_WAYS[order.payment_provider] ?? 'transferencia';
 // A sale at the stall (or, later, a pickup at a market).
 const market = ((order as unknown as { market?: { name: string; starts_on: string; ends_on: string } | null }).market ?? null);
 const stallSale = order.payment_provider === 'cash' || order.payment_provider === 'terminal' || (market !== null && !order.shipping_address);
+// A web order picked up at a market (checkout): no address, no Correos.
+const pickupAt = order.pickup && market ? `${market.name}, ${marketDates({ startsOn: market.starts_on, endsOn: market.ends_on }, 'es')}` : null;
 const refundWhat = (r: RefundRow) =>
   [
     ...r.items.map((i) => `${i.quantity} × ${itemTitle.get(i.order_item_id) ?? 'pieza'}`),
@@ -353,7 +356,12 @@ const carrierName = (value: string | null) =>
         {address?.phone && <span class="line">{address.phone}</span>}
       </p>
       {
-        address ? (
+        order.pickup ? (
+          <p class="pickup-note">
+            <strong>Recogida en mano</strong>
+            <span class="line">{pickupAt ?? 'En un mercado que ya no está en el calendario.'}</span>
+          </p>
+        ) : address ? (
           <address>
             {address.line1}
             {address.line2 && <><br />{address.line2}</>}
@@ -453,6 +461,27 @@ const carrierName = (value: string | null) =>
           Vendido y entregado en el puesto{market ? `, en ${market.name}` : ''}: no hay nada que enviar. El ticket
           está en «Factura».
         </p>
+      ) : order.pickup && paid ? (
+        <>
+          <p class="alert alert--info">
+            Se recoge en mano{pickupAt ? ` en ${pickupAt}` : ''}: sin etiqueta ni Correos. Cuando la clienta se la lleve,
+            pon el estado en «Entregado».
+          </p>
+          <div class="state">
+            <label>
+              Estado
+              <select data-fulfillment>
+                {fulfillmentSteps
+                  .filter((step) => ['unfulfilled', 'preparing', 'completed'].includes(step))
+                  .map((step) => (
+                    <option value={step} selected={order.fulfillment_status === step}>
+                      {step === 'completed' ? 'Entregado (recogido)' : fulfillmentLabel(step).text}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+        </>
       ) : !paid ? (
         <p class="muted">
           {awaitingTransfer
@@ -854,6 +883,10 @@ const carrierName = (value: string | null) =>
     border-radius: var(--a-radius-sm);
     background: color-mix(in srgb, var(--danger) 10%, transparent);
     color: var(--danger);
+  }
+
+  .pickup-note {
+    margin: 0.75rem 0 0;
   }
 
   .gift-note {

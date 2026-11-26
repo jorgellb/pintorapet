@@ -3,6 +3,8 @@ import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { countryOptions } from '@/lib/domain/countries';
+import { marketDates } from '@/lib/domain/markets';
+import { publicMarkets } from '@/lib/server/markets';
 import { hasDatabase } from '@/lib/server/db';
 import { checkoutProviders } from '@/lib/server/payments/config';
 import { loadProfile } from '@/lib/server/account';
@@ -19,6 +21,8 @@ const providers = hasDatabase() ? await checkoutProviders() : [];
 const preview = providers.length === 0 && import.meta.env.DEV;
 const ready = providers.length > 0 || preview;
 const countries = countryOptions(locale);
+// Markets where the order can be picked up instead of shipped.
+const pickups = (await publicMarkets()).filter((m) => m.pickup);
 
 // A signed-in customer gets the form filled from their profile.
 const account = ready ? (Astro.locals.customer ?? null) : null;
@@ -371,6 +375,15 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
                   <label for="co-country">{copy.country}</label>
                   <select id="co-country" name="country" autocomplete="shipping country" required>
                     {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+                    {pickups.length > 0 && (
+                      <optgroup label={es ? 'Recoger en mano, sin envío' : 'Pick up in person, no shipping'}>
+                        {pickups.map((m) => (
+                          <option value={`pickup:${m.id}`}>
+                            {m.name} ({marketDates(m, locale)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
                 <div class="fld" data-field="postalCode">
@@ -1232,6 +1245,11 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
     margin: 0.35rem 0 0;
     font-size: 0.82rem;
     color: var(--muted);
+  }
+
+  /* A pickup at a market hides the address fields. */
+  .fld[hidden] {
+    display: none !important;
   }
 
   .note summary {

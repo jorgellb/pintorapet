@@ -12,9 +12,9 @@ export const checkoutCustomerSchema = z
     email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
     name: required(120),
     phone: required(32).refine((value) => value.replace(/\D/g, '').length >= 6, 'PHONE'),
-    line1: required(160),
+    line1: text(160).default(''),
     line2: text(160).default(''),
-    city: required(100),
+    city: text(100).default(''),
     state: text(100).default(''),
     postalCode: text(12).default(''),
     country: z
@@ -30,9 +30,14 @@ export const checkoutCustomerSchema = z
     gift: z.boolean().default(false),
     giftFrom: text(120).default(''),
     giftMessage: text(300).default(''),
+    /** Picked up at a market (Admin › Mercados): no address to ship to. */
+    pickup: z.boolean().default(false),
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.pickup) return;
+    if (!value.line1) ctx.addIssue({ code: 'custom', path: ['line1'], message: 'LINE1' });
+    if (!value.city) ctx.addIssue({ code: 'custom', path: ['city'], message: 'CITY' });
     const needed = value.country === 'ES' || !COUNTRIES_WITHOUT_POSTCODES.includes(value.country);
     const ok =
       value.country === 'ES' ? /^\d{5}$/.test(value.postalCode) : !needed || value.postalCode.length > 0;
@@ -89,8 +94,11 @@ export function buyerName(customer: CheckoutCustomer): string {
 /** The address must be in the destination the shipping price was quoted for. */
 export function destinationMatches(
   customer: CheckoutCustomer,
-  quoted: { country: string | null; postalCode: string | null },
+  quoted: { country: string | null; postalCode: string | null; pickupMarketId?: string | null },
 ): boolean {
+  // A pickup quote is only for a pickup, and a pickup only for a pickup quote.
+  if (Boolean(quoted.pickupMarketId) !== customer.pickup) return false;
+  if (customer.pickup) return true;
   if (!quoted.country || customer.country !== quoted.country.toUpperCase()) return false;
   if (customer.country !== 'ES') return true;
   return customer.postalCode === (quoted.postalCode ?? '').trim();

@@ -7,6 +7,8 @@ import { isShippingCountry } from '@/lib/domain/countries';
 import { formatEur } from '@/lib/domain/money';
 import { json, serviceDb } from '@/lib/server/db';
 import { holidayNotice, holidayText } from '@/lib/domain/holidays';
+import { marketDates } from '@/lib/domain/markets';
+import { publicMarkets } from '@/lib/server/markets';
 
 export const prerender = false;
 
@@ -27,6 +29,26 @@ type ShippingQuote = {
 export const POST: APIRoute = async ({ request }) => {
   try {
     const body = shippingEstimateSchema.parse(await request.json().catch(() => null));
+    if (body.pickupMarketId) {
+      const market = (await publicMarkets()).find((m) => m.id === body.pickupMarketId && m.pickup);
+      if (!market) return Response.json({ available: false, reason: 'PICKUP_UNAVAILABLE' });
+      const es = body.locale === 'es';
+      const where = [market.place, market.city].filter(Boolean).join(', ');
+      return Response.json({
+        available: true,
+        zoneName: market.name,
+        delivery: '',
+        shippingCents: 0,
+        shippingFormatted: formatEur(0, body.locale),
+        freeOverCents: null,
+        remainingForFreeCents: null,
+        remainingForFreeFormatted: null,
+        holiday: null,
+        pickup: es
+          ? `Recógelo en ${market.name}, ${marketDates(market, 'es')}${market.hours ? ` (${market.hours})` : ''}${where ? `, ${where}` : ''}.`
+          : `Pick it up at ${market.name}, ${marketDates(market, 'en')}${market.hours ? ` (${market.hours})` : ''}${where ? `, ${where}` : ''}.`,
+      });
+    }
     if (!isShippingCountry(body.country)) {
       return Response.json({ available: false, reason: 'NO_ZONE' });
     }

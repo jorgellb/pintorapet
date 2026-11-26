@@ -25,6 +25,8 @@ const status = order ? customerStatus(order.payment_status, order.fulfillment_st
 const date = new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 const names = new Intl.DisplayNames([locale], { type: 'region' });
 const address = order?.shipping_address ?? null;
+// Picked up at a market: the order has no street, and its "zone" is the market.
+const pickupAt = address && !address.line1 ? (order?.shipping_zone_name ?? null) : null;
 const track =
   order?.carrier === 'correos' && order.tracking_code ? trackingUrl(order.tracking_code, locale) : null;
 // The invoice that counts is the full one that replaced the simplified, if any.
@@ -235,7 +237,18 @@ const showJourney = Boolean(status) && !['refunded', 'review', 'processing', 'ca
 
       <aside class="op__side">
         {
-          address && (
+          pickupAt && (
+            <section class="op__label" aria-labelledby="address-title">
+              <h2 id="address-title" class="op__tag">{locale === 'es' ? 'Se recoge en mano' : 'Picked up in person'}</h2>
+              <address>
+                <strong>{address?.name || order?.customer_name}</strong>
+                {pickupAt}
+              </address>
+            </section>
+          )
+        }
+        {
+          address && !pickupAt && (
             <section class="op__label" aria-labelledby="address-title">
               <h2 id="address-title" class="op__tag">{copy.address}</h2>
               <address>

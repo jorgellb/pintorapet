@@ -153,6 +153,8 @@ export async function createPaypalOrder(
         postal_code: string;
         country: string;
       };
+      /** Picked up at a market: nothing to ship. */
+      pickup?: boolean;
     };
     returnUrl: string;
     cancelUrl: string;
@@ -186,7 +188,7 @@ export async function createPaypalOrder(
             unit_amount: money(line.unitPriceCents),
             category: 'PHYSICAL_GOODS',
           })),
-          ...(input.customer
+          ...(input.customer && !input.customer.pickup
             ? {
                 shipping: {
                   name: { full_name: input.customer.name.slice(0, 300) },
@@ -214,7 +216,11 @@ export async function createPaypalOrder(
             brand_name: input.brandName.slice(0, 127),
             locale: input.locale === 'es' ? 'es-ES' : 'en-GB',
             user_action: 'PAY_NOW',
-            shipping_preference: input.customer ? 'SET_PROVIDED_ADDRESS' : 'GET_FROM_FILE',
+            shipping_preference: input.customer?.pickup
+              ? 'NO_SHIPPING'
+              : input.customer
+                ? 'SET_PROVIDED_ADDRESS'
+                : 'GET_FROM_FILE',
             return_url: input.returnUrl,
             cancel_url: input.cancelUrl,
           },

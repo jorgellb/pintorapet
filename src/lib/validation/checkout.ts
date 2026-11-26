@@ -9,6 +9,8 @@ export const quoteRequestSchema = z
     items: z.array(cartItemSchema).min(1).max(20),
     shippingCountry: z.string().regex(/^[A-Za-z]{2}$/).optional(),
     shippingPostalCode: z.string().trim().max(12).optional(),
+    /** Picked up at this market instead of shipped (Admin › Mercados). */
+    pickupMarketId: z.uuid().optional(),
     /** Present when the customer asks for a full invoice with their tax id. */
     invoice: invoiceCustomerSchema.optional(),
   })
@@ -20,6 +22,7 @@ export const shippingEstimateSchema = z
     items: z.array(cartItemSchema).min(1).max(20),
     country: z.string().regex(/^[A-Za-z]{2}$/),
     postalCode: z.string().trim().max(12).optional(),
+    pickupMarketId: z.uuid().optional(),
   })
   .strict();
 

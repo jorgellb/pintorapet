@@ -236,6 +236,7 @@ export type CheckoutQuotesRow = {
   vat_discount_cents: number;
   shipping_vat_rate: number;
   invoice_customer: unknown | null;
+  pickup_market_id: string | null;
 };
 
 /** public.commission_files (table) */
@@ -550,6 +551,7 @@ export type OrdersRow = {
   is_gift: boolean;
   gift_message: string | null;
   market_id: string | null;
+  pickup: boolean;
 };
 
 /** public.page_views (table) */

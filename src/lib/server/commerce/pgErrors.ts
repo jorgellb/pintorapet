@@ -44,6 +44,7 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   SHIPPING_NO_DESTINATION: { code: 'VALIDATION', status: 400 },
   SHIPPING_POSTAL_CODE_REQUIRED: { code: 'VALIDATION', status: 400 },
   SHIPPING_NO_ZONE: { code: 'UNAVAILABLE', status: 409 },
+  PICKUP_UNAVAILABLE: { code: 'UNAVAILABLE', status: 409 },
   SHIPPING_TOO_HEAVY: { code: 'UNAVAILABLE', status: 409 },
   ZONE_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
 };

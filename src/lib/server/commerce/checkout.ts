@@ -61,6 +61,7 @@ type Quote = {
   shipping_country: string | null;
   shipping_postal_code: string | null;
   shipping_zone_name: string | null;
+  pickup_market_id: string | null;
 };
 
 export function checkoutPaths(locale: 'en' | 'es') {
@@ -104,7 +105,7 @@ export async function createCheckout(
 
   const quote = await dbCall(() => supabase.one<Quote>`
     select lines, subtotal_cents, shipping_cents, tax_cents, total_cents, shipping_country, shipping_postal_code,
-           shipping_zone_name
+           shipping_zone_name, pickup_market_id
     from public.checkout_quotes where id = ${opts.quoteId}`);
   if (!quote) {
     throw new CommerceError('UNAVAILABLE', 'QUOTE_NOT_FOUND', 404);
@@ -116,6 +117,7 @@ export async function createCheckout(
     !destinationMatches(opts.customer, {
       country: quote.shipping_country,
       postalCode: quote.shipping_postal_code,
+      pickupMarketId: quote.pickup_market_id,
     })
   ) {
     throw new CommerceError('VALIDATION', 'ADDRESS_DESTINATION_MISMATCH', 400);
@@ -329,6 +331,7 @@ async function openPaypal(
             email: opts.customer.email,
             name: opts.customer.name,
             address: shippingAddressFrom(opts.customer),
+            pickup: opts.customer.pickup,
           }
         : undefined,
       returnUrl: `${origin}/api/checkout/paypal/return/`,

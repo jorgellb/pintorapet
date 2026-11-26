@@ -1,5 +1,6 @@
 import { CART_EVENT, readCart } from '@/stores/cart';
 import {
+  PICKUP_PREFIX,
   estimateShipping,
   readDestination,
   writeDestination,
@@ -137,10 +138,16 @@ export function initCheckout(root: HTMLElement): void {
   }
   const destination = readDestination();
   if (destination) {
-    field('country').value = destination.country;
+    const wanted = destination.pickupMarketId ? `${PICKUP_PREFIX}${destination.pickupMarketId}` : destination.country;
+    const select = field('country') as HTMLSelectElement;
+    if ([...select.options].some((o) => o.value === wanted)) select.value = wanted;
+    else if (!destination.pickupMarketId) select.value = destination.country;
     field('postalCode').value = destination.postalCode;
   }
-  if (!field('invoiceCountry').value) field('invoiceCountry').value = field('country').value;
+  if (!field('invoiceCountry').value) {
+    const chosen = field('country').value;
+    field('invoiceCountry').value = chosen.startsWith(PICKUP_PREFIX) ? 'ES' : chosen;
+  }
   // A province that came from the postcode keeps following it after a reload.
   {
     const state = field('state') as HTMLInputElement;
@@ -165,7 +172,9 @@ export function initCheckout(root: HTMLElement): void {
   };
 
   /* ——— Validation ——— */
-  const country = () => value('country').toUpperCase();
+  // A market to pick up at sits in the country select as "pickup:<id>": the order stays in Spain.
+  const pickupId = () => (value('country').startsWith(PICKUP_PREFIX) ? value('country').slice(PICKUP_PREFIX.length) : '');
+  const country = () => (pickupId() ? 'ES' : value('country').toUpperCase());
   const postalNeeded = () => country() === 'ES' || !COUNTRIES_WITHOUT_POSTCODES.includes(country());
   const wantsInvoice = () => checked('wantsInvoice');
   const separateInvoiceAddress = () => wantsInvoice() && !checked('invoiceSame');
@@ -176,9 +185,10 @@ export function initCheckout(root: HTMLElement): void {
     name: () => value('name').length >= 2,
     country: () => /^[A-Z]{2}$/.test(country()),
     postalCode: () =>
-      country() === 'ES' ? /^\d{5}$/.test(value('postalCode')) : !postalNeeded() || value('postalCode').length > 0,
-    line1: () => value('line1').length >= 3,
-    city: () => value('city').length >= 2,
+      Boolean(pickupId()) ||
+      (country() === 'ES' ? /^\d{5}$/.test(value('postalCode')) : !postalNeeded() || value('postalCode').length > 0),
+    line1: () => Boolean(pickupId()) || value('line1').length >= 3,
+    city: () => Boolean(pickupId()) || value('city').length >= 2,
     taxId: () => {
       if (!wantsInvoice()) return true;
       const invoiceCountry = separateInvoiceAddress() ? value('invoiceCountry') : country();
@@ -229,7 +239,26 @@ export function initCheckout(root: HTMLElement): void {
     }
   };
 
+  /* ——— Picked up at a market: no address to write ——— */
+  const ADDRESS_FIELDS = ['postalCode', 'line1', 'line2', 'city', 'state'];
+  const paintPickup = () => {
+    const pickup = Boolean(pickupId());
+    for (const name of ADDRESS_FIELDS) {
+      const box = wrap(name);
+      if (box) box.hidden = pickup;
+    }
+    root.classList.toggle('is-pickup', pickup);
+  };
+
   const paintLabel = () => {
+    if (pickupId()) {
+      const select = field('country') as HTMLSelectElement;
+      labelLine('name', value('name'));
+      labelLine('street', locale === 'es' ? 'Recogida en mano' : 'Pick up in person');
+      labelLine('city', select.selectedOptions[0]?.textContent?.trim() ?? '');
+      labelLine('country', '');
+      return;
+    }
     labelLine('name', value('name'));
     labelLine('street', [value('line1'), value('line2')].filter(Boolean).join(', '));
     labelLine('city', [value('postalCode'), value('city')].filter(Boolean).join(' '));
@@ -365,9 +394,14 @@ export function initCheckout(root: HTMLElement): void {
     window.clearTimeout(destTimer);
     destTimer = window.setTimeout(async () => {
       const seq = ++destSeq;
-      const dest: Destination = { country: country(), postalCode: value('postalCode') };
+      const pickup = pickupId();
+      const dest: Destination = pickup
+        ? { country: 'ES', postalCode: '', pickupMarketId: pickup }
+        : { country: country(), postalCode: value('postalCode') };
       const items = readCart().items;
-      const complete = /^[A-Z]{2}$/.test(dest.country) && (dest.country !== 'ES' || /^\d{5}$/.test(dest.postalCode));
+      const complete =
+        Boolean(pickup) ||
+        (/^[A-Z]{2}$/.test(dest.country) && (dest.country !== 'ES' || /^\d{5}$/.test(dest.postalCode)));
       if (!complete || items.length === 0) {
         shippingOk = false;
         quote = null;
@@ -395,8 +429,9 @@ export function initCheckout(root: HTMLElement): void {
             body: JSON.stringify({
               locale,
               items,
-              shippingCountry: dest.country,
-              shippingPostalCode: dest.postalCode || undefined,
+              ...(dest.pickupMarketId
+                ? { pickupMarketId: dest.pickupMarketId }
+                : { shippingCountry: dest.country, shippingPostalCode: dest.postalCode || undefined }),
             }),
           });
           const data = (await res.json()) as Quote & ApiError;
@@ -413,9 +448,18 @@ export function initCheckout(root: HTMLElement): void {
             quote = data;
             const price = estimate.shippingCents === 0 ? (locale === 'es' ? 'gratis' : 'free') : estimate.shippingFormatted;
             shipLine.replaceChildren(
-              Object.assign(document.createElement('strong'), { textContent: estimate.zoneName }),
-              document.createTextNode(estimate.delivery ? ` · ${estimate.delivery}` : ''),
-              document.createTextNode(` · ${price}`),
+              ...(estimate.pickup
+                ? [
+                    Object.assign(document.createElement('strong'), {
+                      textContent: locale === 'es' ? 'Recogida en mano' : 'Pick up in person',
+                    }),
+                    document.createTextNode(` ${estimate.pickup} ${locale === 'es' ? 'Sin gastos de envío.' : 'No shipping cost.'}`),
+                  ]
+                : [
+                    Object.assign(document.createElement('strong'), { textContent: estimate.zoneName }),
+                    document.createTextNode(estimate.delivery ? ` · ${estimate.delivery}` : ''),
+                    document.createTextNode(` · ${price}`),
+                  ]),
             );
           }
         }
@@ -481,6 +525,7 @@ export function initCheckout(root: HTMLElement): void {
       if (wantsInvoice() && target.name === 'wantsInvoice') field('taxId').focus();
     }
     if (target.name === 'country') {
+      paintPickup();
       paintProvince();
       refreshDestination();
       if (touched.has('postalCode')) mark('postalCode');
@@ -571,8 +616,9 @@ export function initCheckout(root: HTMLElement): void {
         body: JSON.stringify({
           locale,
           items,
-          shippingCountry: country(),
-          shippingPostalCode: value('postalCode') || undefined,
+          ...(pickupId()
+            ? { pickupMarketId: pickupId() }
+            : { shippingCountry: country(), shippingPostalCode: value('postalCode') || undefined }),
           invoice: invoicePayload(),
         }),
       });
@@ -602,12 +648,14 @@ export function initCheckout(root: HTMLElement): void {
             email: value('email'),
             name: value('name'),
             phone: value('phone'),
-            line1: value('line1'),
-            line2: value('line2'),
-            city: value('city'),
-            state: value('state'),
-            postalCode: value('postalCode'),
+            // A pickup carries no address.
+            line1: pickupId() ? '' : value('line1'),
+            line2: pickupId() ? '' : value('line2'),
+            city: pickupId() ? '' : value('city'),
+            state: pickupId() ? '' : value('state'),
+            postalCode: pickupId() ? '' : value('postalCode'),
             country: country(),
+            pickup: Boolean(pickupId()),
             note: value('note'),
             gift: checked('gift'),
             giftFrom: checked('gift') ? value('giftFrom') : '',
@@ -655,6 +703,7 @@ export function initCheckout(root: HTMLElement): void {
     mark(name);
   }
   paintInvoice();
+  paintPickup();
   paintProvince();
   paintLabel();
   paintProgress();
