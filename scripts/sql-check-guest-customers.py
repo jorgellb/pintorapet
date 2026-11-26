@@ -307,6 +307,14 @@ try:
     g = order('PD-GST-G1', ' CUENTA.guest@EXAMPLE.com')
     check('(a guest order with the account\'s email too)', sorted(one("select admin_account_order_ids(%s)", (acct,))[0]), sorted([c1, g]))
     check('(and an account with nothing gives an empty list)', one("select admin_account_order_ids(%s)", ('99999999-dddd-4ddd-8ddd-dddddddddddd',))[0], [])
+    # An account that never confirmed its email does not own the guest orders with it.
+    unv = '99999999-eeee-4eee-8eee-eeeeeeeeeeee'
+    as_role('postgres')
+    cur.execute("insert into auth.users (id, name, email, email_verified, email_confirmed_at) values (%s,'Sin confirmar','victima.guest@example.com',false,null)", (unv,))
+    v = order('PD-GST-V1', 'victima.guest@example.com')
+    check('an unverified account does not take the guest orders with its email', one("select admin_account_order_ids(%s)", (unv,))[0], [])
+    cur.execute("update auth.users set email_verified = true, email_confirmed_at = now() where id = %s", (unv,))
+    check('(once verified, it does)', one("select admin_account_order_ids(%s)", (unv,))[0], [v])
 
     # ——— The list in Admin › Clientes: one row per guest, with the key that opens the record ———
     as_role('postgres')
