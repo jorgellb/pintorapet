@@ -419,6 +419,13 @@ export type InvoicesRow = {
   rectification_reason: string | null;
 };
 
+/** public.market_photos (table) */
+export type MarketPhotosRow = {
+  market_id: string;
+  media_asset_id: string;
+  position: number;
+};
+
 /** public.markets (table) */
 export type MarketsRow = {
   id: string;
@@ -566,6 +573,7 @@ export type OrdersRow = {
   market_id: string | null;
   pickup: boolean;
   commission_request_id: string | null;
+  commission_fingerprint: string | null;
 };
 
 /** public.page_views (table) */

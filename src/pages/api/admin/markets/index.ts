@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
+import { asUser } from '@/lib/server/db';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { marketSchema, saveMarket } from '@/lib/server/markets';
 import { audit, failure, forbidden } from '@/lib/server/shipping/http';
@@ -12,7 +13,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   if (!admin) return forbidden();
   try {
     const input = marketSchema.parse(await request.json());
-    const id = await dbCall(() => saveMarket(admin.db, input));
+    const id = await dbCall(() => asUser(admin.user.id, (tx) => saveMarket(tx, input)));
     await audit(admin, input.id ? 'update_market' : 'create_market', 'markets', id, input);
     return Response.json({ ok: true, id });
   } catch (err) {

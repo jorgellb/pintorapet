@@ -14,7 +14,11 @@ export type Market = {
   mapUrl: string | null;
   pickup: boolean;
   published: boolean;
+  /** Photos from Medios, in order (Admin › Mercados). */
+  photos?: MarketPhoto[];
 };
+
+export type MarketPhoto = { id: string; url: string; altEs: string; altEn: string };
 
 const day = (iso: string) => new Date(`${iso}T12:00:00Z`);
 const fmt = (locale: Locale, opts: Intl.DateTimeFormatOptions) =>

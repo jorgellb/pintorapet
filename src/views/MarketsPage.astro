@@ -8,6 +8,7 @@ import { localizedPath } from '@/i18n/routes';
 import { madridDay } from '@/lib/domain/holidays';
 import { countdown, marketDates, marketState } from '@/lib/domain/markets';
 import { jsonLdText } from '@/lib/catalog/productJsonLd';
+import { sizedImage } from '@/lib/catalog/imageSize';
 import { publicMarkets } from '@/lib/server/markets';
 
 interface Props {
@@ -43,6 +44,17 @@ const events = markets.map((m) => ({
   description: (es ? m.notesEs : m.notesEn) || description,
 }));
 const tilts = [-5, 4, -3, 6, -6, 3];
+
+// Photos from the stall, as snapshots taped to the card; the rest open in the viewer.
+const SHOWN = 4;
+const printTilts = [-4, 3, -2, 5, -5, 2];
+const photoAlt = (m: (typeof markets)[number], j: number) => {
+  const ph = m.photos![j]!;
+  const alt = es ? ph.altEs || ph.altEn : ph.altEn || ph.altEs;
+  return alt || (es ? `${m.name}: foto ${j + 1}` : `${m.name}: photo ${j + 1}`);
+};
+const gallery = (m: (typeof markets)[number]) =>
+  JSON.stringify((m.photos ?? []).map((ph, j) => ({ src: sizedImage(ph.url, 1600), alt: photoAlt(m, j) })));
 ---
 
 <PublicLayout locale={locale} title={title} description={description}>
@@ -148,6 +160,44 @@ const tilts = [-5, 4, -3, 6, -6, 3];
                       )}
                     </ul>
                     {notes && <p class="stop__notes">{notes}</p>}
+                    {(m.photos?.length ?? 0) > 0 && (
+                      <ul
+                        class="prints"
+                        aria-label={es ? `Fotos de ${m.name}` : `Photos of ${m.name}`}
+                        data-draw
+                        data-gallery={gallery(m)}
+                      >
+                        {m.photos!.slice(0, SHOWN).map((ph, j) => {
+                          const more = j === SHOWN - 1 ? m.photos!.length - SHOWN : 0;
+                          return (
+                            <li class="print" style={`--r:${printTilts[(i + j) % printTilts.length]}deg;--j:${j}`}>
+                              <button
+                                type="button"
+                                class="print__open"
+                                data-photo={j}
+                                aria-label={
+                                  more > 0
+                                    ? es ? `Ver las ${m.photos!.length} fotos` : `See all ${m.photos!.length} photos`
+                                    : es ? `Ampliar: ${photoAlt(m, j)}` : `Enlarge: ${photoAlt(m, j)}`
+                                }
+                              >
+                                <img
+                                  src={sizedImage(ph.url, 480)}
+                                  srcset={`${sizedImage(ph.url, 320)} 320w, ${sizedImage(ph.url, 480)} 480w, ${sizedImage(ph.url, 720)} 720w`}
+                                  sizes="(max-width: 40rem) 30vw, 10rem"
+                                  alt={photoAlt(m, j)}
+                                  width="480"
+                                  height="480"
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                                {more > 0 && <span class="print__more" aria-hidden="true">+{more}</span>}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                     {m.mapUrl && (
                       <a class="stop__map" href={m.mapUrl} rel="noopener noreferrer" target="_blank">
                         {es ? 'Cómo llegar' : 'Directions'}
@@ -172,6 +222,29 @@ const tilts = [-5, 4, -3, 6, -6, 3];
       </aside>
     </div>
   </section>
+
+  {
+    markets.some((m) => (m.photos?.length ?? 0) > 0) && (
+      <dialog class="viewer" data-viewer aria-label={es ? 'Fotos del mercado' : 'Market photos'}>
+        <figure class="viewer__frame">
+          <img class="viewer__img" data-viewer-img alt="" />
+          <figcaption class="viewer__caption">
+            <span data-viewer-caption />
+            <span class="viewer__count" data-viewer-count />
+          </figcaption>
+        </figure>
+        <button type="button" class="viewer__btn viewer__close" data-viewer-close aria-label={es ? 'Cerrar' : 'Close'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        <button type="button" class="viewer__btn viewer__prev" data-viewer-step="-1" aria-label={es ? 'Foto anterior' : 'Previous photo'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <button type="button" class="viewer__btn viewer__next" data-viewer-step="1" aria-label={es ? 'Foto siguiente' : 'Next photo'}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+        </button>
+      </dialog>
+    )
+  }
 </PublicLayout>
 
 <style>
@@ -433,6 +506,249 @@ const tilts = [-5, 4, -3, 6, -6, 3];
     transition-delay: 0.55s;
   }
 
+  /* ——— Photos from the stall: snapshots taped to the card ——— */
+  .prints {
+    display: flex;
+    margin: 1.6rem 0 0.4rem;
+    padding: 0.4rem 0 0;
+    list-style: none;
+  }
+
+  .print {
+    position: relative;
+    flex: 0 1 10rem;
+    min-width: 0;
+    transform: rotate(var(--r));
+    transition: transform 450ms var(--ease-out);
+  }
+
+  .print + .print {
+    margin-left: -0.6rem;
+  }
+
+  /* a strip of tape holding each one */
+  .print::before {
+    content: '';
+    position: absolute;
+    z-index: 2;
+    top: -0.55rem;
+    left: 50%;
+    width: 3.2rem;
+    height: 1.05rem;
+    background: rgb(226 205 158 / 0.78);
+    box-shadow: 0 1px 1px rgb(80 60 20 / 0.12);
+    transform: translateX(-50%) rotate(calc(var(--r) * -1.6));
+    pointer-events: none;
+  }
+
+  .print:hover,
+  .print:focus-within {
+    z-index: 3;
+    transform: rotate(0deg) translateY(-6px) scale(1.06);
+  }
+
+  .print__open {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.4rem 1.35rem;
+    border: 0;
+    background: #fff;
+    box-shadow:
+      0 1px 2px rgb(40 30 10 / 0.12),
+      0 10px 22px -10px rgb(40 30 10 / 0.35);
+    cursor: zoom-in;
+  }
+
+  .print__open:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .print img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    object-fit: cover;
+    background: var(--paper-deep);
+  }
+
+  .print__more {
+    position: absolute;
+    inset: 0.4rem 0.4rem 1.35rem;
+    display: grid;
+    place-items: center;
+    background: rgb(28 24 18 / 0.55);
+    color: #fff;
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 3vw, 2rem);
+  }
+
+  :global(html.js-draw) .calendar .prints:not(.is-drawn) .print {
+    opacity: 0;
+    transform: translateY(-1.2rem) rotate(calc(var(--r) * 3));
+  }
+
+  .calendar .prints.is-drawn .print {
+    transition:
+      opacity 500ms var(--ease-out) calc(0.5s + var(--j) * 110ms),
+      transform 700ms cubic-bezier(0.34, 1.4, 0.64, 1) calc(0.5s + var(--j) * 110ms);
+  }
+
+  .calendar .prints.is-drawn .print:is(:hover, :focus-within) {
+    transition: transform 450ms var(--ease-out);
+  }
+
+  /* ——— The viewer ——— */
+  .viewer {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: clamp(3.5rem, 7vw, 5rem) clamp(0.75rem, 7vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+    border: 0;
+    background: transparent;
+    color: #f6f1e7;
+    overscroll-behavior: contain;
+  }
+
+  .viewer[open] {
+    display: grid;
+    place-items: center;
+  }
+
+  .viewer::backdrop {
+    background: rgb(22 19 14 / 0.9);
+    backdrop-filter: blur(3px);
+  }
+
+  .viewer__frame {
+    display: grid;
+    justify-items: center;
+    gap: 0.9rem;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0;
+  }
+
+  .viewer__img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100dvh - 11rem);
+    width: auto;
+    height: auto;
+    padding: clamp(0.4rem, 1.2vw, 0.75rem);
+    background: #fff;
+    box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.6);
+    touch-action: pan-y;
+  }
+
+  .viewer__img.is-in {
+    animation: settle 420ms var(--ease-out);
+  }
+
+  .viewer__caption {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem 1rem;
+    max-width: 40rem;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.05rem;
+    text-align: center;
+  }
+
+  .viewer__count {
+    font-family: var(--font-body, inherit);
+    font-style: normal;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    opacity: 0.7;
+  }
+
+  .viewer__btn {
+    position: fixed;
+    display: grid;
+    place-items: center;
+    width: 2.9rem;
+    height: 2.9rem;
+    padding: 0;
+    border: 1px solid rgb(246 241 231 / 0.35);
+    border-radius: 50%;
+    background: rgb(22 19 14 / 0.5);
+    color: inherit;
+    cursor: pointer;
+    transition:
+      background 200ms ease,
+      border-color 200ms ease;
+  }
+
+  .viewer__btn:hover {
+    border-color: rgb(246 241 231 / 0.8);
+    background: rgb(22 19 14 / 0.8);
+  }
+
+  .viewer__btn:focus-visible {
+    outline: 2px solid #f2c66d;
+    outline-offset: 2px;
+  }
+
+  .viewer__btn[hidden] {
+    display: none;
+  }
+
+  .viewer__btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .viewer__close {
+    top: max(0.75rem, env(safe-area-inset-top));
+    right: 0.75rem;
+  }
+
+  .viewer__prev,
+  .viewer__next {
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .viewer__prev {
+    left: 0.75rem;
+  }
+
+  .viewer__next {
+    right: 0.75rem;
+  }
+
+  @media (max-width: 40rem) {
+    .viewer__prev,
+    .viewer__next {
+      top: auto;
+      bottom: max(0.75rem, env(safe-area-inset-bottom));
+      transform: none;
+    }
+
+    .viewer__img {
+      max-height: calc(100dvh - 12rem);
+    }
+  }
+
+  @keyframes settle {
+    from {
+      opacity: 0;
+      transform: scale(0.97) rotate(-1deg);
+    }
+  }
+
   .empty {
     display: grid;
     justify-items: start;
@@ -500,8 +816,86 @@ const tilts = [-5, 4, -3, 6, -6, 3];
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .stop__live::before {
+    .stop__live::before,
+    .viewer__img.is-in {
       animation: none;
+    }
+
+    .print {
+      transition: none;
     }
   }
 </style>
+
+<script>
+  // The viewer: a market's photos, one at a time (arrows, swipe, Escape).
+  type Photo = { src: string; alt: string };
+  const viewer = document.querySelector<HTMLDialogElement>('[data-viewer]');
+  if (viewer) {
+    const img = viewer.querySelector<HTMLImageElement>('[data-viewer-img]')!;
+    const caption = viewer.querySelector<HTMLElement>('[data-viewer-caption]')!;
+    const count = viewer.querySelector<HTMLElement>('[data-viewer-count]')!;
+    const steps = [...viewer.querySelectorAll<HTMLButtonElement>('[data-viewer-step]')];
+    let photos: Photo[] = [];
+    let at = 0;
+    let opener: HTMLElement | null = null;
+
+    const show = (index: number) => {
+      at = (index + photos.length) % photos.length;
+      const photo = photos[at]!;
+      img.classList.remove('is-in');
+      img.src = photo.src;
+      img.alt = photo.alt;
+      void img.offsetWidth;
+      img.classList.add('is-in');
+      caption.textContent = photo.alt;
+      count.textContent = photos.length > 1 ? `${at + 1} / ${photos.length}` : '';
+      for (const step of steps) step.hidden = photos.length < 2;
+      // the next one is ready before it is asked for
+      if (photos.length > 1) new Image().src = photos[(at + 1) % photos.length]!.src;
+    };
+
+    document.querySelectorAll<HTMLElement>('[data-gallery]').forEach((list) => {
+      list.addEventListener('click', (event) => {
+        const button = (event.target as Element).closest<HTMLButtonElement>('[data-photo]');
+        if (!button) return;
+        try {
+          photos = JSON.parse(list.dataset.gallery ?? '[]') as Photo[];
+        } catch {
+          photos = [];
+        }
+        if (photos.length === 0) return;
+        opener = button;
+        show(Number(button.dataset.photo) || 0);
+        viewer.showModal();
+      });
+    });
+
+    for (const step of steps) step.addEventListener('click', () => show(at + Number(step.dataset.viewerStep)));
+    viewer.querySelector('[data-viewer-close]')!.addEventListener('click', () => viewer.close());
+    // a click on the dark around the photo closes it
+    viewer.addEventListener('click', (event) => {
+      if (event.target === viewer) viewer.close();
+    });
+    viewer.addEventListener('keydown', (event) => {
+      if (photos.length < 2) return;
+      if (event.key === 'ArrowRight') show(at + 1);
+      if (event.key === 'ArrowLeft') show(at - 1);
+    });
+    viewer.addEventListener('close', () => {
+      img.removeAttribute('src');
+      opener?.focus();
+    });
+
+    let startX: number | null = null;
+    img.addEventListener('pointerdown', (event) => {
+      startX = event.clientX;
+    });
+    img.addEventListener('pointerup', (event) => {
+      if (startX === null || photos.length < 2) return;
+      const dx = event.clientX - startX;
+      startX = null;
+      if (Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1));
+    });
+  }
+</script>

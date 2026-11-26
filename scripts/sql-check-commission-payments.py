@@ -154,6 +154,40 @@ try:
     denied('a Bizum order cannot be marked paid once the card paid it', "select public.admin_mark_order_paid(%s)", (manual8['order_id'],), contains='COMMISSION_ALREADY_PAID')
     as_role('postgres')
 
+    # ——— Guards (review of 20261126000006): each order keeps the quote it was made at ———
+    c10 = request('CR-PAGO000010', 'token-diez-0123456789')
+    q10 = quote('CR-PAGO000010', 'token-diez-0123456789', 'ES', '46001')
+    body10 = {'reference': 'CR-PAGO000010', 'token_hash': h('token-diez-0123456789'), 'method': 'bizum', 'quote_id': str(q10[0]),
+              'customer': {'name': 'Ana', 'email': 'ana.cpay@example.com', 'phone': '600111222'}, 'address': {'line1': 'C/ 1'}}
+    m10 = one("select public.create_commission_manual_order(%s::jsonb)", (json.dumps(body10),))[0]
+    # Meili quotes again, higher, keeping the same link.
+    cur.execute("update commission_requests set quote_cents = 12000 where id = %s", (c10,))
+    q10b = quote('CR-PAGO000010', 'token-diez-0123456789', 'ES', '46001')
+    m10b = one("select public.create_commission_manual_order(%s::jsonb)", (json.dumps({**body10, 'quote_id': str(q10b[0])}),))[0]
+    check('after quoting again, Bizum makes a new order at the new price',
+          (m10b['order_id'] != m10['order_id'], m10b.get('replay'), one("select total_cents from orders where id = %s", (m10b['order_id'],))[0]),
+          (True, False, 12000))
+    check('and the old waiting order is cancelled', one("select payment_status::text from orders where id = %s", (m10['order_id'],))[0], 'cancelled')
+    body10t = {**body10, 'quote_id': str(q10b[0]), 'method': 'transfer'}
+    m10t = one("select public.create_commission_manual_order(%s::jsonb)", (json.dumps(body10t),))[0]
+    check('switching to transfer replaces the Bizum order too',
+          (m10t['order_id'] != m10b['order_id'], one("select payment_status::text from orders where id = %s", (m10b['order_id'],))[0]),
+          (True, 'cancelled'))
+    cur.execute("update commission_requests set quote_cents = 13000 where id = %s", (c10,))
+    as_role('authenticated', adm)
+    denied('an order made at an older quote cannot be marked paid', "select public.admin_mark_order_paid(%s)", (m10t['order_id'],), contains='COMMISSION_QUOTE_CHANGED')
+    as_role('postgres')
+    check('and the commission stays unpaid', one("select status::text, paid_order_id is null from commission_requests where id = %s", (c10,)), ('quoted', True))
+
+    c11 = request('CR-PAGO000011', 'token-once-0123456789')
+    q11 = quote('CR-PAGO000011', 'token-once-0123456789', 'ES', '46001')
+    r11 = one("select public.reserve_checkout('a1177777-7777-4777-8777-000000000011', %s, %s, 'hash-c11', 'checkout:c11')", (owner, q11[0]))[0]
+    check('a card order remembers its quote', one("select commission_fingerprint is not null from orders where id = %s", (r11['order_id'],))[0], True)
+    cur.execute("update commission_requests set quote_cents = 9900 where id = %s", (c11,))
+    paid11 = one("select public.apply_payment(%s, 'evt_c11', 'cs_c11', 'pi_c11', 9000, 'EUR', null, null, null)", (r11['order_id'],))[0]
+    check('paid by card at a quote no longer current: to review', (paid11['status'], paid11.get('reason')), ('review', 'COMMISSION_QUOTE_CHANGED'))
+    check('and the commission is not accepted by it', one("select status::text, paid_order_id is null from commission_requests where id = %s", (c11,)), ('quoted', True))
+
     # ——— The shop is unchanged: a product still reserves and consumes its stock ———
     cat, = one("select id from categories order by sort_order limit 1")
     mug, = one("insert into products (sku, category_id, motif, status, price_cents, editorial_order, sale_enabled, weight_grams) values ('T-CPAY', %s, 'Pug', 'published', 999, 99004, true, 380) returning id", (cat,))

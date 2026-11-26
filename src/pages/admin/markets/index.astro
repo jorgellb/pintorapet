@@ -1,5 +1,8 @@
 ---
 import AdminLayout from '@/layouts/AdminLayout.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
+import { listMedia } from '@/lib/server/admin/editorial';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasDatabase, settle } from '@/lib/server/db';
 import { euros } from '@/lib/admin/labels';
@@ -13,7 +16,7 @@ if (!hasDatabase()) return Astro.redirect('/admin/login/');
 const admin = await requireAdmin(Astro.cookies, Astro.request);
 if (!admin) return Astro.redirect('/admin/login/');
 
-const [{ data, error }, { data: salesRows }] = await Promise.all([
+const [{ data, error }, { data: salesRows }, media] = await Promise.all([
   settle(allMarkets(admin.db)),
   settle(
     admin.db.rows<{ market_id: string; sales: number; cents: number }>`
@@ -21,7 +24,16 @@ const [{ data, error }, { data: salesRows }] = await Promise.all([
       from public.orders where market_id is not null and payment_status in ('paid', 'partially_refunded')
       group by market_id`,
   ),
+  listMedia(admin.db).catch(() => []),
 ]);
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
 const markets = data ?? [];
 const sales = new Map((salesRows ?? []).map((r) => [r.market_id, r]));
 const today = madridDay();
@@ -40,6 +52,7 @@ const empty: Market = {
   mapUrl: null,
   pickup: false,
   published: true,
+  photos: [],
 };
 ---
 
@@ -75,6 +88,9 @@ const empty: Market = {
                       {marketState(m, today) === 'now' && <span class="chip chip--ok">Hoy</span>}
                       {!m.published && <span class="chip">Borrador</span>}
                       {m.pickup && <span class="chip chip--info">Recogida</span>}
+                      {(m.photos?.length ?? 0) > 0 && (
+                        <span class="chip">{m.photos!.length} {m.photos!.length === 1 ? 'foto' : 'fotos'}</span>
+                      )}
                     </p>
                     <p class="muted">
                       {marketDates(m, 'es')}
@@ -145,6 +161,12 @@ const empty: Market = {
         </label>
         <label>Nota <span class="hint">opcional · se ve en la web</span><textarea name="notesEs" rows="2" maxlength="500" placeholder="Estaré en la caseta 14, junto a la fuente."></textarea></label>
         <label>Nota en inglés<textarea name="notesEn" rows="2" maxlength="500"></textarea></label>
+        <fieldset class="photos">
+          <legend>Fotos <span class="hint">opcional · hasta 12 · salen en «Dónde estaré», no en la tienda</span></legend>
+          <ul class="photos__list" data-photos></ul>
+          <button type="button" class="btn--quiet" data-photo-add>Añadir fotos</button>
+          <p class="hint">La primera es la portada del mercado. El texto alternativo de cada foto se edita en Medios.</p>
+        </fieldset>
         <label class="check"><input type="checkbox" name="published" /> Publicado en la web</label>
         <label class="check">
           <input type="checkbox" name="pickup" /> Se pueden recoger aquí los pedidos de la web
@@ -157,6 +179,7 @@ const empty: Market = {
       </form>
     </section>
   </div>
+  <MediaPicker items={pickerItems} defaultBucket="portfolio-public" />
 </AdminLayout>
 
 <style>
@@ -240,9 +263,96 @@ const empty: Market = {
     display: flex;
     gap: 0.5rem;
   }
+
+  .photos {
+    display: grid;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .photos legend {
+    padding: 0;
+    margin-bottom: 0.4rem;
+    font: inherit;
+    font-weight: 600;
+  }
+
+  .photos > .btn--quiet {
+    justify-self: start;
+  }
+
+  .photos__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .photos__list:empty {
+    display: none;
+  }
+
+  .photos__list :global(li) {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--line);
+  }
+
+  .photos__list :global(li:first-child) {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+  }
+
+  .photos__list :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .photos__list :global(.photo-tools) {
+    position: absolute;
+    inset: auto 0.25rem 0.25rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .photos__list :global(.photo-tools button) {
+    display: grid;
+    place-items: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.65);
+    color: #fff;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .photos__list :global(.photo-tools button:focus-visible) {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  .photos__list :global(li:first-child .photo-first) {
+    visibility: hidden;
+  }
 </style>
 
 <script>
+  import { pickMedia, type PickedMedia } from '@/lib/admin/mediaPicker';
+
+  type Photo = { id: string; url: string; altEs: string };
   type Market = {
     id: string;
     name: string;
@@ -256,8 +366,10 @@ const empty: Market = {
     mapUrl: string | null;
     pickup: boolean;
     published: boolean;
+    photos?: Photo[];
   };
 
+  const MAX_PHOTOS = 12;
   const form = document.querySelector<HTMLFormElement>('[data-market-form]');
   if (form) {
     const status = form.querySelector<HTMLElement>('[data-status]')!;
@@ -269,6 +381,55 @@ const empty: Market = {
       status.dataset.tone = tone;
       status.textContent = text;
     };
+
+    const list = form.querySelector<HTMLUListElement>('[data-photos]')!;
+    const addPhotos = form.querySelector<HTMLButtonElement>('[data-photo-add]')!;
+    const photoIds = () => [...list.children].map((li) => (li as HTMLElement).dataset.id ?? '');
+    const syncPhotos = () => {
+      addPhotos.disabled = list.children.length >= MAX_PHOTOS;
+    };
+    const tool = (label: string, text: string, className: string, onClick: () => void) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = className;
+      button.textContent = text;
+      button.setAttribute('aria-label', label);
+      button.title = label;
+      button.addEventListener('click', onClick);
+      return button;
+    };
+    const photoItem = (photo: Photo) => {
+      const li = document.createElement('li');
+      li.dataset.id = photo.id;
+      const img = document.createElement('img');
+      img.src = photo.url.replace('/c_limit,w_2000/', '/c_limit,w_240/');
+      img.alt = photo.altEs;
+      img.loading = 'lazy';
+      const tools = document.createElement('div');
+      tools.className = 'photo-tools';
+      tools.append(
+        tool('Poner antes', '‹', 'photo-first', () => {
+          li.previousElementSibling?.before(li);
+        }),
+        tool('Quitar la foto', '×', 'photo-remove', () => {
+          li.remove();
+          syncPhotos();
+        }),
+      );
+      li.append(img, tools);
+      return li;
+    };
+    const showPhotos = (photos: Photo[]) => {
+      list.replaceChildren(...photos.map(photoItem));
+      syncPhotos();
+    };
+    addPhotos.addEventListener('click', async () => {
+      const picked: PickedMedia[] = await pickMedia({ multiple: true, exclude: photoIds() });
+      for (const item of picked.slice(0, MAX_PHOTOS - list.children.length)) {
+        list.append(photoItem({ id: item.id, url: item.url, altEs: item.altEs }));
+      }
+      syncPhotos();
+    });
 
     const fill = (m: Market) => {
       input('id').value = m.id;
@@ -283,6 +444,7 @@ const empty: Market = {
       input('notesEn').value = m.notesEn;
       (input('published') as HTMLInputElement).checked = m.published;
       (input('pickup') as HTMLInputElement).checked = m.pickup;
+      showPhotos(m.photos ?? []);
       title.textContent = m.id ? `Editar «${m.name}»` : 'Nuevo mercado';
       reset.hidden = !m.id;
       say('');
@@ -320,6 +482,7 @@ const empty: Market = {
         notesEn: input('notesEn').value,
         published: (input('published') as HTMLInputElement).checked,
         pickup: (input('pickup') as HTMLInputElement).checked,
+        photoIds: photoIds(),
       };
       if (body.name.trim().length < 2 || !body.startsOn || !body.endsOn) {
         say('Faltan el nombre y las fechas.', 'err');
