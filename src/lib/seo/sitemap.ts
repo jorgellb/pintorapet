@@ -19,6 +19,7 @@ export const SITEMAP_PAGES: RouteKey[] = [
   'gallery',
   'commissions',
   'shop',
+  'markets',
   'contact',
   'shipping',
   'accountHelp',

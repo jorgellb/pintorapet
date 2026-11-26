@@ -100,10 +100,14 @@ function renderTemplate(
       text:
         locale === 'es'
           ? `Te hemos devuelto ${amount} del pedido ${payload.reference ?? ''}${full ? ' (el pedido completo)' : ''}.\n\n` +
-            `Lo verás en ${where} en unos días, según tu banco. ` +
+            (payload.provider === 'cash'
+              ? 'Te lo devolvimos en efectivo, en el puesto. '
+              : `Lo verás en ${where} en unos días, según tu banco. `) +
             `La factura rectificativa está en tu cuenta, en el pedido.\n\nGracias.`
           : `We have refunded ${amount} from order ${payload.reference ?? ''}${full ? ' (the whole order)' : ''}.\n\n` +
-            `It will show on ${where} within a few days, depending on your bank. ` +
+            (payload.provider === 'cash'
+              ? 'We gave it back in cash, at the stall. '
+              : `It will show on ${where} within a few days, depending on your bank. `) +
             `The corrective invoice is in your account, with the order.\n\nThank you.`,
     };
   }

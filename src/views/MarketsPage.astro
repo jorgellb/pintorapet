@@ -1,0 +1,265 @@
+---
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { t, type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { madridDay } from '@/lib/domain/holidays';
+import { marketDates, marketState } from '@/lib/domain/markets';
+import { jsonLdText } from '@/lib/catalog/productJsonLd';
+import { publicMarkets } from '@/lib/server/markets';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const es = locale === 'es';
+const dict = t(locale);
+const today = madridDay();
+const markets = await publicMarkets();
+const title = es ? 'Dónde estaré' : 'Where to find me';
+const description = es
+  ? 'Los mercados donde Meili pone su puesto de retratos a lápiz, tarjetas, tazas y posavasos: fechas, horarios y lugar.'
+  : 'The markets where Meili sets up her stall of pencil portraits, cards, mugs and coasters: dates, hours and place.';
+const month = (iso: string) =>
+  new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { month: 'short', timeZone: 'UTC' })
+    .format(new Date(`${iso}T12:00:00Z`))
+    .replace('.', '');
+const dayOf = (iso: string) => String(Number(iso.slice(8, 10)));
+
+// Google can list each market as an event.
+const origin = Astro.site ?? new URL('https://petsdrawings.com');
+const events = markets.map((m) => ({
+  '@context': 'https://schema.org',
+  '@type': 'Event',
+  name: `${m.name} · Pets Drawings`,
+  startDate: m.startsOn,
+  endDate: m.endsOn,
+  eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
+  eventStatus: 'https://schema.org/EventScheduled',
+  location: {
+    '@type': 'Place',
+    name: m.place || m.name,
+    address: { '@type': 'PostalAddress', addressLocality: m.city || undefined, addressCountry: 'ES' },
+  },
+  organizer: { '@type': 'Person', name: 'Meili Stringfellow', url: new URL(localizedPath(locale, 'home'), origin).href },
+  description: (es ? m.notesEs : m.notesEn) || description,
+}));
+---
+
+<PublicLayout locale={locale} title={title} description={description}>
+  {events.length > 0 && <script slot="head" type="application/ld+json" set:html={jsonLdText(events)} />}
+
+  <section class="section markets-page">
+    <div class="site-shell">
+      <header class="head">
+        <p class="eyebrow">{es ? 'Mercados' : 'Markets'}</p>
+        <h1 class="display h1-display">
+          {es ? 'En persona, ' : 'In person, '}<em>{es ? 'en el puesto' : 'at the stall'}</em>
+        </h1>
+        <p class="lead">
+          {es
+            ? 'Meili lleva sus retratos a los mercados: puedes ver las piezas de cerca, elegirlas con calma y hablar con ella de un encargo.'
+            : 'Meili takes her portraits to local markets: see the pieces up close, choose at your own pace and talk to her about a commission.'}
+        </p>
+      </header>
+
+      {
+        markets.length === 0 ? (
+          <div class="empty">
+            <p>
+              {es
+                ? 'Ahora mismo no hay ningún mercado en el calendario. Los anuncia en Instagram en cuanto los confirma.'
+                : 'There are no markets on the calendar right now. She announces them on Instagram as soon as they are confirmed.'}
+            </p>
+            <a class="btn btn--ghost" href="https://www.instagram.com/petsdrawings_meili/" rel="noopener noreferrer" target="_blank">
+              Instagram
+            </a>
+          </div>
+        ) : (
+          <ol class="list">
+            {markets.map((m) => {
+              const notes = es ? m.notesEs : m.notesEn;
+              const now = marketState(m, today) === 'now';
+              return (
+                <li class:list={['market', { 'market--now': now }]}>
+                  <p class="date" aria-hidden="true">
+                    <span class="date__month">{month(m.startsOn)}</span>
+                    <span class="date__day">{dayOf(m.startsOn)}</span>
+                    {m.endsOn !== m.startsOn && <span class="date__to">– {dayOf(m.endsOn)}</span>}
+                  </p>
+                  <div class="market__body">
+                    {now && <p class="now">{es ? 'Hoy estoy aquí' : 'I am here today'}</p>}
+                    <h2 class="display market__name">{m.name}</h2>
+                    <p class="market__when">
+                      {marketDates(m, locale)}
+                      {m.hours && <> · {m.hours}</>}
+                    </p>
+                    {(m.place || m.city) && <p class="market__where">{[m.place, m.city].filter(Boolean).join(', ')}</p>}
+                    {notes && <p class="market__notes">{notes}</p>}
+                    <p class="market__links">
+                      {m.mapUrl && (
+                        <a href={m.mapUrl} rel="noopener noreferrer" target="_blank">
+                          {es ? 'Cómo llegar' : 'Directions'}
+                        </a>
+                      )}
+                      {m.pickup && (
+                        <span class="pickup">{es ? 'Puedes recoger aquí tu pedido de la web' : 'Web orders can be picked up here'}</span>
+                      )}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )
+      }
+
+      <aside class="more">
+        <p>
+          {es ? '¿No puedes venir? Todas las piezas están en la ' : 'Cannot make it? Every piece is in the '}
+          <a href={localizedPath(locale, 'shop')}>{dict.shop.title.toLowerCase()}</a>
+          {es ? ', y los retratos por encargo, en ' : ', and portraits to order in '}
+          <a href={localizedPath(locale, 'commissions')}>{dict.nav.commissions.toLowerCase()}</a>.
+        </p>
+      </aside>
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .head {
+    max-width: 46rem;
+    margin-bottom: clamp(2.5rem, 6vw, 4.5rem);
+  }
+
+  .lead {
+    color: var(--ink-soft);
+    font-size: 1.1rem;
+  }
+
+  .list {
+    display: grid;
+    gap: 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .market {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: clamp(1.25rem, 4vw, 2.5rem);
+    padding: clamp(1.25rem, 3vw, 2rem);
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .market--now {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .date {
+    display: grid;
+    justify-items: center;
+    align-content: start;
+    width: 5.5rem;
+    margin: 0;
+    padding: 0.75rem 0.5rem;
+    border: 1px solid var(--line);
+    text-align: center;
+  }
+
+  .date__month {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .date__day {
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    line-height: 1;
+  }
+
+  .date__to {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .market__body p {
+    margin: 0;
+  }
+
+  .now {
+    width: fit-content;
+    margin-bottom: 0.6rem !important;
+    padding: 0.2rem 0.6rem;
+    background: var(--accent);
+    color: var(--light);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .market__name {
+    margin: 0 0 0.5rem;
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
+    letter-spacing: -0.035em;
+  }
+
+  .market__when {
+    color: var(--ink);
+  }
+
+  .market__where,
+  .market__notes {
+    margin-top: 0.3rem !important;
+    color: var(--ink-soft);
+  }
+
+  .market__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    margin-top: 0.9rem !important;
+    font-size: 0.95rem;
+  }
+
+  .pickup {
+    color: var(--success);
+  }
+
+  .empty {
+    display: grid;
+    justify-items: start;
+    gap: 1.25rem;
+    max-width: 38rem;
+    color: var(--ink-soft);
+  }
+
+  .more {
+    margin-top: clamp(2.5rem, 6vw, 4rem);
+    color: var(--muted);
+  }
+
+  @media (max-width: 30rem) {
+    .market {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .date {
+      grid-auto-flow: column;
+      align-items: baseline;
+      gap: 0.5rem;
+      width: fit-content;
+      padding: 0.4rem 0.75rem;
+    }
+
+    .date__day {
+      font-size: 1.6rem;
+    }
+  }
+</style>

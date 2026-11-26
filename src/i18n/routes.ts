@@ -11,6 +11,7 @@ export const routeMap = {
   commissions: { en: 'commissions', es: 'encargos' },
   contact: { en: 'contact', es: 'contacto' },
   shop: { en: 'shop', es: 'tienda' },
+  markets: { en: 'markets', es: 'mercados' },
   cart: { en: 'cart', es: 'carrito' },
   checkout: { en: 'checkout', es: 'finalizar-compra' },
   checkoutSuccess: { en: 'checkout/success', es: 'compra/confirmacion' },

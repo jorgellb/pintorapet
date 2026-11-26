@@ -47,7 +47,9 @@ const { data: order } = await settle(
            coalesce((select json_agg(json_build_object('id', v.id, 'kind', v.kind, 'full_number', v.full_number,
                                                        'issued_at', v.issued_at, 'replaces_invoice_id', v.replaces_invoice_id,
                                                        'rectifies_invoice_id', v.rectifies_invoice_id, 'total_cents', v.total_cents))
-                     from public.invoices v where v.order_id = o.id), '[]'::json) as invoices
+                     from public.invoices v where v.order_id = o.id), '[]'::json) as invoices,
+           (select json_build_object('name', m.name, 'starts_on', m.starts_on, 'ends_on', m.ends_on)
+            from public.markets m where m.id = o.market_id) as market
     from public.orders o where o.id = ${Astro.params.id ?? ''}`,
 );
 if (!order) return Astro.redirect('/admin/orders/');
@@ -118,8 +120,12 @@ const nothingRefunded = refunds.every((r) => r.status === 'failed');
 const providerName = order.payment_provider === 'paypal' ? 'PayPal' : 'Stripe';
 // Paid by bank transfer: its refunds go back by transfer, done by hand and only recorded here.
 // Paid by transfer or Bizum: refunds go back the same way, done by hand and only recorded here.
-const byTransfer = order.payment_provider === 'transfer' || order.payment_provider === 'bizum';
-const manualWay = order.payment_provider === 'bizum' ? 'Bizum' : 'transferencia';
+const MANUAL_WAYS: Record<string, string> = { transfer: 'transferencia', bizum: 'Bizum', cash: 'efectivo', terminal: 'el datáfono' };
+const byTransfer = order.payment_provider in MANUAL_WAYS;
+const manualWay = MANUAL_WAYS[order.payment_provider] ?? 'transferencia';
+// A sale at the stall (or, later, a pickup at a market).
+const market = ((order as unknown as { market?: { name: string; starts_on: string; ends_on: string } | null }).market ?? null);
+const stallSale = order.payment_provider === 'cash' || order.payment_provider === 'terminal' || (market !== null && !order.shipping_address);
 const refundWhat = (r: RefundRow) =>
   [
     ...r.items.map((i) => `${i.quantity} × ${itemTitle.get(i.order_item_id) ?? 'pieza'}`),
@@ -237,6 +243,7 @@ const carrierName = (value: string | null) =>
       <h1><code>{order.reference}</code></h1>
       <p class="lead">
         {shortDate(order.created_at)} · {providerLabel(order.payment_provider)}
+        {stallSale && <> · Venta en el puesto{market ? ` (${market.name})` : ''}</>}
       </p>
     </div>
     <div class="head-side">
@@ -441,7 +448,12 @@ const carrierName = (value: string | null) =>
   <section class="panel shipping" data-shipping-panel data-id={order.id}>
     <h2>Envío</h2>
     {
-      !paid ? (
+      stallSale ? (
+        <p class="muted">
+          Vendido y entregado en el puesto{market ? `, en ${market.name}` : ''}: no hay nada que enviar. El ticket
+          está en «Factura».
+        </p>
+      ) : !paid ? (
         <p class="muted">
           {awaitingTransfer
             ? `El envío se prepara cuando llegue el pago (${manualWay}) y marques el pedido como pagado.`

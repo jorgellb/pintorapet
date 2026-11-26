@@ -1,0 +1,352 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { euros } from '@/lib/admin/labels';
+import { madridDay } from '@/lib/domain/holidays';
+import { marketDates, marketState, type Market } from '@/lib/domain/markets';
+import { allMarkets } from '@/lib/server/markets';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const [{ data, error }, { data: salesRows }] = await Promise.all([
+  settle(allMarkets(admin.db)),
+  settle(
+    admin.db.rows<{ market_id: string; sales: number; cents: number }>`
+      select market_id, count(*)::int as sales, coalesce(sum(total_cents), 0)::int as cents
+      from public.orders where market_id is not null and payment_status in ('paid', 'partially_refunded')
+      group by market_id`,
+  ),
+]);
+const markets = data ?? [];
+const sales = new Map((salesRows ?? []).map((r) => [r.market_id, r]));
+const today = madridDay();
+const coming = markets.filter((m) => marketState(m, today) !== 'past').reverse();
+const past = markets.filter((m) => marketState(m, today) === 'past');
+const empty: Market = {
+  id: '',
+  name: '',
+  place: '',
+  city: '',
+  startsOn: today,
+  endsOn: today,
+  hours: '',
+  notesEs: '',
+  notesEn: '',
+  mapUrl: null,
+  pickup: false,
+  published: true,
+};
+---
+
+<AdminLayout title="Mercados" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Mercados</h1>
+      <p class="lead">
+        Dónde pones el puesto. Los mercados publicados salen en la web, en «Dónde estaré». Desde «Vender en el
+        puesto» cobras desde el móvil: la venta descuenta el stock al momento, así que la web nunca vende una pieza
+        que ya se llevó alguien en el mercado.
+      </p>
+    </div>
+    <a class="btn" href="/admin/markets/sale/">Vender en el puesto</a>
+  </header>
+
+  {error && <p class="err">{error.message}</p>}
+
+  <div class="layout">
+    <div class="lists">
+      <section class="panel">
+        <h2>Próximos</h2>
+        {
+          coming.length === 0 ? (
+            <p class="muted">No hay ningún mercado en el calendario. Añade el próximo con el formulario.</p>
+          ) : (
+            <ul class="markets">
+              {coming.map((m) => (
+                <li class="market">
+                  <div>
+                    <p class="market__name">
+                      {m.name}
+                      {marketState(m, today) === 'now' && <span class="chip chip--ok">Hoy</span>}
+                      {!m.published && <span class="chip">Borrador</span>}
+                      {m.pickup && <span class="chip chip--info">Recogida</span>}
+                    </p>
+                    <p class="muted">
+                      {marketDates(m, 'es')}
+                      {m.hours && ` · ${m.hours}`}
+                      {(m.place || m.city) && ` · ${[m.place, m.city].filter(Boolean).join(', ')}`}
+                    </p>
+                    {sales.get(m.id) && (
+                      <p class="market__sales">
+                        {sales.get(m.id)!.sales} {sales.get(m.id)!.sales === 1 ? 'venta' : 'ventas'} · {euros(sales.get(m.id)!.cents)}
+                      </p>
+                    )}
+                  </div>
+                  <div class="market__actions">
+                    <button type="button" class="btn--quiet" data-edit={JSON.stringify(m)}>Editar</button>
+                    <button type="button" class="btn--quiet btn--danger" data-delete={m.id} data-name={m.name}>Borrar</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
+
+      {
+        past.length > 0 && (
+          <details class="panel">
+            <summary>Pasados ({past.length})</summary>
+            <ul class="markets">
+              {past.map((m) => (
+                <li class="market">
+                  <div>
+                    <p class="market__name">{m.name}</p>
+                    <p class="muted">{marketDates(m, 'es')}{m.city && ` · ${m.city}`}</p>
+                    <p class="market__sales">
+                      {sales.get(m.id)
+                        ? `${sales.get(m.id)!.sales} ${sales.get(m.id)!.sales === 1 ? 'venta' : 'ventas'} · ${euros(sales.get(m.id)!.cents)}`
+                        : 'Sin ventas registradas'}
+                    </p>
+                  </div>
+                  <div class="market__actions">
+                    <button type="button" class="btn--quiet" data-edit={JSON.stringify(m)}>Editar</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )
+      }
+    </div>
+
+    <section class="panel">
+      <h2 data-form-title>Nuevo mercado</h2>
+      <form class="market-form" data-market-form data-empty={JSON.stringify(empty)} novalidate>
+        <input type="hidden" name="id" />
+        <label>Nombre<input name="name" required maxlength="120" placeholder="Mercado de Navidad de Ruzafa" /></label>
+        <div class="grid">
+          <label>Primer día<input type="date" name="startsOn" required /></label>
+          <label>Último día<input type="date" name="endsOn" required /></label>
+        </div>
+        <label>Horario <span class="hint">opcional</span><input name="hours" maxlength="80" placeholder="10:00–21:00" /></label>
+        <div class="grid">
+          <label>Lugar<input name="place" maxlength="200" placeholder="Plaza del Ayuntamiento" /></label>
+          <label>Ciudad<input name="city" maxlength="100" placeholder="Valencia" /></label>
+        </div>
+        <label>
+          Enlace al mapa <span class="hint">opcional · Google Maps, empieza por https://</span>
+          <input name="mapUrl" maxlength="500" inputmode="url" />
+        </label>
+        <label>Nota <span class="hint">opcional · se ve en la web</span><textarea name="notesEs" rows="2" maxlength="500" placeholder="Estaré en la caseta 14, junto a la fuente."></textarea></label>
+        <label>Nota en inglés<textarea name="notesEn" rows="2" maxlength="500"></textarea></label>
+        <label class="check"><input type="checkbox" name="published" /> Publicado en la web</label>
+        <label class="check">
+          <input type="checkbox" name="pickup" /> Se pueden recoger aquí los pedidos de la web
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn">Guardar</button>
+          <button type="button" class="btn--quiet" data-reset hidden>Cancelar</button>
+        </div>
+        <p class="status" data-status role="status" hidden></p>
+      </form>
+    </section>
+  </div>
+</AdminLayout>
+
+<style>
+  .layout {
+    display: grid;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  @media (min-width: 64rem) {
+    .layout {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    }
+  }
+
+  .lists {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  details > summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .markets {
+    display: grid;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .market {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .market:last-child {
+    border-bottom: 0;
+  }
+
+  .market p {
+    margin: 0;
+  }
+
+  .market__name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
+  .market__sales {
+    margin-top: 0.25rem !important;
+    font-size: 0.88rem;
+  }
+
+  .market__actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-start;
+  }
+
+  .market-form {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+</style>
+
+<script>
+  type Market = {
+    id: string;
+    name: string;
+    place: string;
+    city: string;
+    startsOn: string;
+    endsOn: string;
+    hours: string;
+    notesEs: string;
+    notesEn: string;
+    mapUrl: string | null;
+    pickup: boolean;
+    published: boolean;
+  };
+
+  const form = document.querySelector<HTMLFormElement>('[data-market-form]');
+  if (form) {
+    const status = form.querySelector<HTMLElement>('[data-status]')!;
+    const title = document.querySelector<HTMLElement>('[data-form-title]')!;
+    const reset = form.querySelector<HTMLButtonElement>('[data-reset]')!;
+    const input = (name: string) => form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement;
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      status.hidden = !text;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+
+    const fill = (m: Market) => {
+      input('id').value = m.id;
+      input('name').value = m.name;
+      input('startsOn').value = m.startsOn;
+      input('endsOn').value = m.endsOn;
+      input('hours').value = m.hours;
+      input('place').value = m.place;
+      input('city').value = m.city;
+      input('mapUrl').value = m.mapUrl ?? '';
+      input('notesEs').value = m.notesEs;
+      input('notesEn').value = m.notesEn;
+      (input('published') as HTMLInputElement).checked = m.published;
+      (input('pickup') as HTMLInputElement).checked = m.pickup;
+      title.textContent = m.id ? `Editar «${m.name}»` : 'Nuevo mercado';
+      reset.hidden = !m.id;
+      say('');
+    };
+    const blank = JSON.parse(form.dataset.empty ?? '{}') as Market;
+    fill(blank);
+
+    // The last day follows the first until it is changed by hand.
+    input('startsOn').addEventListener('change', () => {
+      if (!input('endsOn').value || input('endsOn').value < input('startsOn').value) input('endsOn').value = input('startsOn').value;
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((button) =>
+      button.addEventListener('click', () => {
+        fill(JSON.parse(button.dataset.edit ?? '{}') as Market);
+        form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        input('name').focus();
+      }),
+    );
+    reset.addEventListener('click', () => fill(blank));
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const id = input('id').value;
+      const body = {
+        ...(id ? { id } : {}),
+        name: input('name').value,
+        startsOn: input('startsOn').value,
+        endsOn: input('endsOn').value,
+        hours: input('hours').value,
+        place: input('place').value,
+        city: input('city').value,
+        mapUrl: input('mapUrl').value,
+        notesEs: input('notesEs').value,
+        notesEn: input('notesEn').value,
+        published: (input('published') as HTMLInputElement).checked,
+        pickup: (input('pickup') as HTMLInputElement).checked,
+      };
+      if (body.name.trim().length < 2 || !body.startsOn || !body.endsOn) {
+        say('Faltan el nombre y las fechas.', 'err');
+        return;
+      }
+      say('Guardando…');
+      const res = await fetch('/api/admin/markets/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      if (res?.ok) {
+        say('Guardado. Actualizando…', 'ok');
+        location.reload();
+        return;
+      }
+      say(data?.error?.message ?? 'No hubo respuesta del servidor.', 'err');
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach((button) =>
+      button.addEventListener('click', async () => {
+        if (!confirm(`¿Borrar «${button.dataset.name}» del calendario? Sus ventas se conservan.`)) return;
+        const res = await fetch(`/api/admin/markets/${button.dataset.delete}/`, { method: 'DELETE' }).catch(() => null);
+        if (res?.ok) location.reload();
+        else say('No se pudo borrar el mercado.', 'err');
+      }),
+    );
+  }
+</script>

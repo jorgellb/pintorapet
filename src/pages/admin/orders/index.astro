@@ -16,13 +16,13 @@ type ListedOrder = Pick<
   OrdersRow,
   | 'id' | 'reference' | 'payment_status' | 'payment_provider' | 'fulfillment_status' | 'total_cents' | 'customer_name'
   | 'customer_email' | 'created_at' | 'paid_at' | 'archived_at' | 'shipping_zone_name' | 'shipping_country'
-  | 'tracking_code' | 'tracking_status' | 'shipping_destination_ok'
+  | 'tracking_code' | 'tracking_status' | 'shipping_destination_ok' | 'market_id'
 > & { order_items: Array<{ product_title: string; quantity: number }> };
 
 const { data, error } = await settle(admin.db.rows<ListedOrder>`
   select o.id, o.reference, o.payment_status, o.payment_provider, o.fulfillment_status, o.total_cents, o.customer_name,
          o.customer_email, o.created_at, o.paid_at, o.archived_at, o.shipping_zone_name, o.shipping_country,
-         o.tracking_code, o.tracking_status, o.shipping_destination_ok,
+         o.tracking_code, o.tracking_status, o.shipping_destination_ok, o.market_id,
          coalesce((select json_agg(json_build_object('product_title', i.product_title, 'quantity', i.quantity))
                    from public.order_items i where i.order_id = o.id), '[]'::json) as order_items
   from public.orders o order by o.created_at desc limit 300`);
@@ -38,6 +38,7 @@ const charged = (o: Order) => o.payment_status === 'paid' || o.payment_status ==
 const toShip = (o: Order) => charged(o) && (o.fulfillment_status === 'unfulfilled' || o.fulfillment_status === 'preparing');
 const unpaid = (o: Order) => UNPAID.includes(o.payment_status) && !o.paid_at;
 const awaitingTransfer = (o: Order) => o.payment_status === 'awaiting_transfer';
+const atStall = (o: Order) => Boolean(o.market_id) || o.payment_provider === 'cash' || o.payment_provider === 'terminal';
 // What the "Borrar abandonados" button deletes (same rule as admin_delete_abandoned_orders).
 const DAY = 24 * 60 * 60 * 1000;
 const abandoned = all.filter(
@@ -57,6 +58,11 @@ const filters = {
   },
   pagados: { label: 'Pagados', test: charged, list: live },
   transferencias: { label: 'Esperando pago', test: awaitingTransfer, list: live },
+  puesto: {
+    label: 'En el puesto',
+    test: atStall,
+    list: live,
+  },
   'sin-pagar': { label: 'Sin pagar', test: unpaid, list: live },
   revisar: { label: 'Revisar', test: (o: Order) => o.payment_status === 'review', list: live },
   archivados: { label: 'Archivados', test: () => true, list: archived },
@@ -166,7 +172,9 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
                         <span class="muted line">{providerLabel(o.payment_provider)}</span>
                       </td>
                       <td>
-                        {charged(o) ? (
+                        {atStall(o) && o.fulfillment_status === 'completed' ? (
+                          <span class="chip chip--ok">Entregado en el puesto</span>
+                        ) : charged(o) ? (
                           <select data-fulfillment data-id={o.id} aria-label={`Envío del pedido ${o.reference}`}>
                             {fulfillmentSteps.map((step) => (
                               <option value={step} selected={o.fulfillment_status === step}>

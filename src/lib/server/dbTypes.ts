@@ -405,6 +405,24 @@ export type InvoicesRow = {
   rectification_reason: string | null;
 };
 
+/** public.markets (table) */
+export type MarketsRow = {
+  id: string;
+  name: string;
+  place: string;
+  city: string;
+  starts_on: string;
+  ends_on: string;
+  hours: string;
+  notes_es: string;
+  notes_en: string;
+  map_url: string | null;
+  pickup: boolean;
+  published: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 /** public.media_assets (table) */
 export type MediaAssetsRow = {
   id: string;
@@ -531,6 +549,7 @@ export type OrdersRow = {
   tracking_checked_at: string | null;
   is_gift: boolean;
   gift_message: string | null;
+  market_id: string | null;
 };
 
 /** public.page_views (table) */

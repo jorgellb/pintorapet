@@ -1,0 +1,578 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { euros } from '@/lib/admin/labels';
+import { loadPublicCatalog } from '@/lib/catalog/loadProducts';
+import { sizedImage } from '@/lib/catalog/imageSize';
+import { madridDay } from '@/lib/domain/holidays';
+import { marketDates, marketState } from '@/lib/domain/markets';
+import { allMarkets } from '@/lib/server/markets';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const today = madridDay();
+const [catalog, { data: marketRows }, { data: stockRows }, { data: todaySales }] = await Promise.all([
+  loadPublicCatalog('es'),
+  settle(allMarkets(admin.db)),
+  settle(
+    admin.db.rows<{ product_id: string; mode: string; available: number | null }>`
+      select product_id, inventory_mode::text as mode,
+             case when inventory_mode = 'tracked' then stock_on_hand - stock_reserved end as available
+      from public.inventory where inventory_mode <> 'unverified' and verified_at is not null`,
+  ),
+  // Today's sales at the stall (any market), newest first.
+  settle(
+    admin.db.rows<{ id: string; reference: string; total_cents: number; payment_provider: string; created_at: string }>`
+      select id, reference, total_cents, payment_provider, created_at from public.orders
+      where (market_id is not null or payment_provider in ('cash', 'terminal'))
+        and payment_status in ('paid', 'partially_refunded')
+        and (created_at at time zone 'Europe/Madrid')::date = ${today}::date
+      order by created_at desc limit 50`,
+  ),
+]);
+
+// The market on today first, then the next ones.
+const markets = (marketRows ?? []).filter((m) => marketState(m, today) !== 'past').reverse();
+const current = markets.find((m) => marketState(m, today) === 'now') ?? null;
+
+const stock = new Map((stockRows ?? []).map((r) => [r.product_id, r]));
+const pieces = catalog.products
+  .filter((p) => stock.has(p.id))
+  .map((p) => ({
+    id: p.id,
+    sku: p.sku,
+    title: p.title,
+    price: p.priceCents,
+    image: sizedImage(p.coverImageUrl, 240),
+    available: stock.get(p.id)!.available,
+  }))
+  .sort((a, b) => a.title.localeCompare(b.title, 'es'));
+const salesToday = todaySales ?? [];
+const totalToday = salesToday.reduce((sum, s) => sum + s.total_cents, 0);
+const methodName: Record<string, string> = { cash: 'Efectivo', terminal: 'Tarjeta', bizum: 'Bizum' };
+---
+
+<AdminLayout title="Vender en el puesto" email={admin.user.email}>
+  <a class="back" href="/admin/markets/">← Mercados</a>
+  <div class="pos" data-pos data-pieces={JSON.stringify(pieces)}>
+    <header class="pos__head">
+      <h1>Vender en el puesto</h1>
+      <label class="pos__market">
+        <span class="visually-hidden">Mercado</span>
+        <select data-market>
+          <option value="">Sin mercado</option>
+          {
+            markets.map((m) => (
+              <option value={m.id} selected={current?.id === m.id}>
+                {m.name} · {marketDates(m, 'es')}
+              </option>
+            ))
+          }
+        </select>
+      </label>
+    </header>
+
+    <div class="pos__body">
+      <section class="pieces" aria-label="Piezas">
+        <input class="pieces__search" type="search" placeholder="Buscar: taza, pug, llavero…" data-search autocomplete="off" />
+        <ul class="pieces__grid" data-grid>
+          {
+            pieces.map((p) => (
+              <li>
+                <button
+                  type="button"
+                  class="piece"
+                  data-piece={p.id}
+                  data-text={`${p.title} ${p.sku}`.toLowerCase()}
+                  disabled={p.available !== null && p.available <= 0}
+                >
+                  {p.image ? <img src={p.image} alt="" loading="lazy" width="120" height="120" /> : <span class="piece__ph" />}
+                  <span class="piece__title">{p.title}</span>
+                  <span class="piece__meta">
+                    <strong>{euros(p.price)}</strong>
+                    <span data-stock={p.id}>{p.available === null ? 'bajo pedido' : `${p.available} uds.`}</span>
+                  </span>
+                </button>
+              </li>
+            ))
+          }
+        </ul>
+        {pieces.length === 0 && <p class="muted">No hay piezas con el stock verificado.</p>}
+      </section>
+
+      <section class="ticket" aria-label="Venta">
+        <ul class="ticket__lines" data-lines></ul>
+        <p class="muted ticket__empty" data-empty>Toca las piezas para añadirlas.</p>
+        <p class="ticket__total"><span>Total</span><strong data-total>0,00 €</strong></p>
+        <div class="methods" role="radiogroup" aria-label="Cómo paga">
+          <label><input type="radio" name="method" value="cash" checked /><span>Efectivo</span></label>
+          <label><input type="radio" name="method" value="terminal" /><span>Tarjeta</span></label>
+          <label><input type="radio" name="method" value="bizum" /><span>Bizum</span></label>
+        </div>
+        <label class="cash" data-cash>
+          Entrega
+          <input inputmode="decimal" placeholder="20" data-given autocomplete="off" />
+          <span class="cash__change" data-change></span>
+        </label>
+        <details class="receipt">
+          <summary>Enviar el ticket por email</summary>
+          <input type="email" placeholder="email de la clienta (opcional)" data-email autocomplete="off" />
+        </details>
+        <button type="button" class="btn pay" data-pay disabled>Cobrar</button>
+        <p class="status" data-status role="status" hidden></p>
+      </section>
+    </div>
+
+    <section class="today">
+      <h2>Hoy en el puesto</h2>
+      <p class="muted" data-today-summary>
+        {salesToday.length} {salesToday.length === 1 ? 'venta' : 'ventas'} · {euros(totalToday)}
+      </p>
+      <ul class="today__list" data-today>
+        {
+          salesToday.map((s) => (
+            <li>
+              <a href={`/admin/orders/${s.id}/`}><code>{s.reference}</code></a>
+              <span>{methodName[s.payment_provider] ?? s.payment_provider}</span>
+              <strong>{euros(s.total_cents)}</strong>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+  </div>
+</AdminLayout>
+
+<style>
+  .pos {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .pos__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .pos__head h1 {
+    margin: 0;
+  }
+
+  .pos__market select {
+    min-width: 16rem;
+  }
+
+  .pos__body {
+    display: grid;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  @media (min-width: 60rem) {
+    .pos__body {
+      grid-template-columns: minmax(0, 1fr) 22rem;
+    }
+
+    .ticket {
+      position: sticky;
+      top: 1rem;
+    }
+  }
+
+  .pieces__search {
+    width: 100%;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+  }
+
+  .pieces__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .piece {
+    display: grid;
+    gap: 0.35rem;
+    width: 100%;
+    height: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--surface);
+    color: var(--ink);
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  /* Over the admin's button look: a tile stays a tile when touched. */
+  .pieces .piece:hover,
+  .pieces .piece:focus-visible {
+    border-color: var(--ink);
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  .piece:active {
+    transform: scale(0.98);
+  }
+
+  .pieces .piece:disabled {
+    padding: 0.5rem;
+    background: var(--surface);
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .piece img,
+  .piece__ph {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: var(--a-radius-sm);
+    background: var(--a-hover);
+  }
+
+  .piece__title {
+    font-size: 0.85rem;
+    line-height: 1.25;
+  }
+
+  .piece__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .piece__meta strong {
+    color: var(--ink);
+  }
+
+  .ticket {
+    display: grid;
+    gap: 0.8rem;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--surface);
+    box-shadow: var(--a-shadow);
+  }
+
+  .ticket__lines {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ticket__lines :global(li) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  .ticket__lines :global(.qty) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .ticket__lines :global(.qty button) {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .ticket__empty {
+    margin: 0;
+  }
+
+  .ticket__total {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 0;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .ticket__total strong {
+    font-size: 1.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .methods {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+  }
+
+  .methods label {
+    position: relative;
+  }
+
+  .methods input {
+    position: absolute;
+    opacity: 0;
+  }
+
+  .methods span {
+    display: block;
+    padding: 0.7rem 0.4rem;
+    border: 1px solid var(--line-strong, #c9c9c3);
+    border-radius: var(--a-radius-sm);
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .methods input:checked + span {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: #fff;
+  }
+
+  .methods input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .cash {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+  }
+
+  .cash[hidden] {
+    display: none;
+  }
+
+  .cash__change {
+    grid-column: 1 / -1;
+    font-size: 1.05rem;
+    font-weight: 600;
+  }
+
+  .receipt summary {
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .receipt input {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  .pay {
+    min-height: 3.4rem;
+    font-size: 1.15rem;
+  }
+
+  .today h2 {
+    margin-bottom: 0.25rem;
+  }
+
+  .today__list {
+    display: grid;
+    margin: 0.5rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .today__list li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.9rem;
+  }
+</style>
+
+<script>
+  import { changeFor } from '@/lib/domain/markets';
+
+  type Piece = { id: string; sku: string; title: string; price: number; image: string | null; available: number | null };
+
+  const root = document.querySelector<HTMLElement>('[data-pos]');
+  if (root) {
+    const $ = <T extends Element>(s: string) => root.querySelector<T>(s)!;
+    const pieces = new Map((JSON.parse(root.dataset.pieces ?? '[]') as Piece[]).map((p) => [p.id, p]));
+    const lines = new Map<string, number>();
+    const money = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+    const euros = (cents: number) => money.format(cents / 100);
+    const status = $<HTMLElement>('[data-status]');
+    const pay = $<HTMLButtonElement>('[data-pay]');
+    const given = $<HTMLInputElement>('[data-given]');
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      status.hidden = !text;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+    const method = () => root.querySelector<HTMLInputElement>('input[name="method"]:checked')?.value ?? 'cash';
+    const total = () => [...lines].reduce((sum, [id, q]) => sum + (pieces.get(id)?.price ?? 0) * q, 0);
+    const room = (id: string) => {
+      const available = pieces.get(id)?.available;
+      return available === null || available === undefined ? 99 : available;
+    };
+
+    const render = () => {
+      const list = $<HTMLUListElement>('[data-lines]');
+      list.replaceChildren(
+        ...[...lines].map(([id, q]) => {
+          const piece = pieces.get(id)!;
+          const li = document.createElement('li');
+          const name = document.createElement('span');
+          name.textContent = piece.title;
+          const qty = document.createElement('span');
+          qty.className = 'qty';
+          const minus = document.createElement('button');
+          minus.type = 'button';
+          minus.className = 'btn--quiet';
+          minus.textContent = '−';
+          minus.setAttribute('aria-label', `Quitar una ${piece.title}`);
+          minus.addEventListener('click', () => {
+            if (q <= 1) lines.delete(id);
+            else lines.set(id, q - 1);
+            render();
+          });
+          const count = document.createElement('span');
+          count.textContent = String(q);
+          const plus = document.createElement('button');
+          plus.type = 'button';
+          plus.className = 'btn--quiet';
+          plus.textContent = '+';
+          plus.disabled = q >= room(id);
+          plus.setAttribute('aria-label', `Añadir otra ${piece.title}`);
+          plus.addEventListener('click', () => {
+            lines.set(id, Math.min(room(id), q + 1));
+            render();
+          });
+          qty.append(minus, count, plus);
+          const amount = document.createElement('strong');
+          amount.textContent = euros(piece.price * q);
+          li.append(name, qty, amount);
+          return li;
+        }),
+      );
+      $<HTMLElement>('[data-empty]').hidden = lines.size > 0;
+      $<HTMLElement>('[data-total]').textContent = euros(total());
+      pay.disabled = lines.size === 0;
+      pay.textContent = lines.size ? `Cobrar ${euros(total())}` : 'Cobrar';
+      $<HTMLElement>('[data-cash]').hidden = method() !== 'cash';
+      const change = changeFor(total(), given.value);
+      $<HTMLElement>('[data-change]').textContent =
+        method() === 'cash' && given.value.trim() && lines.size
+          ? change === null
+            ? 'No llega al total'
+            : `Cambio: ${euros(change)}`
+          : '';
+    };
+
+    root.querySelectorAll<HTMLButtonElement>('[data-piece]').forEach((button) =>
+      button.addEventListener('click', () => {
+        const id = button.dataset.piece!;
+        const next = (lines.get(id) ?? 0) + 1;
+        if (next > room(id)) {
+          say(`No quedan más de ${pieces.get(id)?.title}.`, 'err');
+          return;
+        }
+        lines.set(id, next);
+        say('');
+        render();
+      }),
+    );
+    $<HTMLInputElement>('[data-search]').addEventListener('input', (event) => {
+      const words = (event.target as HTMLInputElement).value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      root.querySelectorAll<HTMLButtonElement>('[data-piece]').forEach((button) => {
+        button.parentElement!.hidden = !words.every((w) => button.dataset.text!.includes(w));
+      });
+    });
+    root.querySelectorAll('input[name="method"]').forEach((input) => input.addEventListener('change', render));
+    given.addEventListener('input', render);
+
+    pay.addEventListener('click', async () => {
+      if (!lines.size) return;
+      const cents = total();
+      const how = { cash: 'en efectivo', terminal: 'con tarjeta', bizum: 'por Bizum' }[method()] ?? '';
+      if (!confirm(`¿Cobrar ${euros(cents)} ${how}?`)) return;
+      pay.disabled = true;
+      say('Registrando la venta…');
+      const res = await fetch('/api/admin/markets/sale/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          lines: [...lines].map(([productId, quantity]) => ({ productId, quantity })),
+          method: method(),
+          marketId: $<HTMLSelectElement>('[data-market]').value || null,
+          customer: { name: '', email: $<HTMLInputElement>('[data-email]').value.trim() },
+        }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as
+        | { orderId?: string; reference?: string; totalCents?: number; error?: { message?: string } }
+        | null;
+      if (!res?.ok || !data?.orderId) {
+        say(data?.error?.message ?? 'No hubo respuesta. Mira «Hoy en el puesto» antes de repetirla.', 'err');
+        pay.disabled = false;
+        return;
+      }
+      // The pieces sold leave the counts on the screen too.
+      for (const [id, q] of lines) {
+        const piece = pieces.get(id);
+        if (piece && piece.available !== null) {
+          piece.available -= q;
+          const label = root.querySelector<HTMLElement>(`[data-stock="${id}"]`);
+          if (label) label.textContent = `${piece.available} uds.`;
+          if (piece.available <= 0) root.querySelector<HTMLButtonElement>(`[data-piece="${id}"]`)!.disabled = true;
+        }
+      }
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = `/admin/orders/${data.orderId}/`;
+      link.innerHTML = `<code></code>`;
+      link.querySelector('code')!.textContent = data.reference ?? '';
+      const how2 = document.createElement('span');
+      how2.textContent = { cash: 'Efectivo', terminal: 'Tarjeta', bizum: 'Bizum' }[method()] ?? '';
+      const amount = document.createElement('strong');
+      amount.textContent = euros(data.totalCents ?? cents);
+      li.append(link, how2, amount);
+      $<HTMLUListElement>('[data-today]').prepend(li);
+      const summary = $<HTMLElement>('[data-today-summary]');
+      const count = root.querySelectorAll('[data-today] li').length;
+      const sum = [...root.querySelectorAll('[data-today] li strong')].reduce(
+        (s, el) => s + Math.round(Number((el.textContent ?? '0').replace(/[^\d,]/g, '').replace(',', '.')) * 100),
+        0,
+      );
+      summary.textContent = `${count} ${count === 1 ? 'venta' : 'ventas'} · ${euros(sum)}`;
+      lines.clear();
+      given.value = '';
+      $<HTMLInputElement>('[data-email]').value = '';
+      say(`Venta ${data.reference} registrada.`, 'ok');
+      render();
+    });
+
+    render();
+  }
+</script>
