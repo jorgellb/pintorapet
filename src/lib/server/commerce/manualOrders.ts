@@ -4,7 +4,7 @@ import { CommerceError } from './errors';
 import { mapPgError } from './pgErrors';
 
 /**
- * Orders taken by phone and paid by bank transfer (Admin › Pedidos › Nuevo
+ * Orders taken by phone and paid by bank transfer or Bizum (Admin › Pedidos › Nuevo
  * pedido). The database prices them like the web (admin_quote_manual_order),
  * creates them awaiting the transfer with their pieces reserved
  * (admin_create_manual_order) and, when the money arrives, consumes the stock,
@@ -72,6 +72,8 @@ export const manualOrderSchema = z
       .strict(),
     invoiceCustomer: invoiceCustomerSchema.optional().nullable(),
     paid: z.boolean().default(false),
+    /** How the customer pays: bank transfer or Bizum. */
+    method: z.enum(['transfer', 'bizum']).default('transfer'),
   })
   .strict()
   .transform(({ shipping, ...rest }) => ({ ...rest, shippingCents: shipping }));
@@ -117,6 +119,7 @@ const KNOWN: Array<[string, string, number]> = [
   ['MANUAL_ORDER_COUNTRY', 'Elige el país.', 400],
   ['MANUAL_ORDER_QUANTITY', 'Las cantidades van de 1 a 99.', 400],
   ['MANUAL_ORDER_SHIPPING', 'El precio del envío no es válido.', 400],
+  ['MANUAL_ORDER_METHOD', 'Elige cómo paga: transferencia o Bizum.', 400],
   ['MANUAL_ORDER_NAME', 'Escribe el nombre de quien compra.', 400],
   ['MANUAL_ORDER_EMAIL', 'El email no es válido (o déjalo vacío).', 400],
   ['MANUAL_ORDER_ADDRESS', 'Falta la dirección: calle, código postal y ciudad.', 400],
@@ -157,6 +160,7 @@ function payload(input: ManualOrderInput) {
     customer: input.customer,
     address: input.address,
     paid: input.paid,
+    method: input.method,
   };
   if (input.shippingCents !== null) p.shipping_cents = input.shippingCents;
   if (input.invoiceCustomer) p.invoice_customer = input.invoiceCustomer;

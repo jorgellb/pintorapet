@@ -51,7 +51,15 @@ describe('createManualOrder', () => {
       customer: { name: 'Lucía', email: 'Lucia@Example.com', phone: '600 111 222' },
       address: { line1: 'Calle de la Paz 14', city: 'Valencia' },
       paid: false,
+      method: 'transfer',
     });
+  });
+
+  it('can be paid by Bizum', async () => {
+    const { db, call } = fakeDb({ answer: () => ({ data: { order_id: 'o1', reference: 'PD-1', total_cents: 2488 } }) });
+    await createManualOrder(db, manualOrderSchema.parse({ ...form, method: 'bizum' }));
+    expect((call.mock.calls[0][1] as { p: Record<string, unknown> }).p.method).toBe('bizum');
+    expect(() => manualOrderSchema.parse({ ...form, method: 'cash' })).toThrow();
   });
 
   it('explains in Spanish what is missing', async () => {
@@ -73,6 +81,7 @@ describe('providerLabel', () => {
     expect(providerLabel('stripe')).toBe('Stripe');
     expect(providerLabel('paypal')).toBe('PayPal');
     expect(providerLabel('transfer')).toBe('Transferencia');
+    expect(providerLabel('bizum')).toBe('Bizum');
     expect(providerLabel(null)).toBe('—');
   });
 });

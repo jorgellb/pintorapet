@@ -35,9 +35,9 @@ describe('customerStatus with the carrier’s states', () => {
   });
 });
 
-describe('customerStatus for an order paid by transfer', () => {
-  it('says the transfer is awaited, without a journey yet', () => {
-    expect(customerStatus('awaiting_transfer', 'unfulfilled', 'es')).toMatchObject({ key: 'awaiting', label: 'Pendiente de transferencia', step: 0 });
-    expect(customerStatus('awaiting_transfer', 'unfulfilled', 'en').label).toBe('Awaiting bank transfer');
+describe('customerStatus for an order paid by transfer or Bizum', () => {
+  it('says the payment is awaited, without a journey yet', () => {
+    expect(customerStatus('awaiting_transfer', 'unfulfilled', 'es')).toMatchObject({ key: 'awaiting', label: 'Pendiente de pago', step: 0 });
+    expect(customerStatus('awaiting_transfer', 'unfulfilled', 'en').label).toBe('Awaiting payment');
   });
 });

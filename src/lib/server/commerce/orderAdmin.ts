@@ -51,7 +51,7 @@ function explain(err: unknown): CommerceError {
   if (message.includes('ORDER_NOT_AWAITING_TRANSFER')) {
     return new CommerceError(
       'VALIDATION',
-      'Solo se marca a mano como pagado un pedido que espera una transferencia.',
+      'Solo se marca a mano como pagado un pedido que espera una transferencia o un Bizum.',
       409,
     );
   }

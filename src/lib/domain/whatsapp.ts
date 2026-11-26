@@ -3,6 +3,9 @@ import type { Locale } from '@/i18n';
 /** Meili's WhatsApp (also on the contact page and in the footer, +34 636 386 531). */
 export const WHATSAPP_URL = 'https://wa.me/34636386531';
 
+/** Meili's phone as people type it, for Bizum too. */
+export const SHOP_PHONE = '+34 636 386 531';
+
 /** A chat with Meili, with the first message already written when there is one. */
 export function whatsappLink(text?: string): string {
   return text ? `${WHATSAPP_URL}?text=${encodeURIComponent(text)}` : WHATSAPP_URL;

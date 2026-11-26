@@ -88,6 +88,8 @@ function renderTemplate(
         ? locale === 'es' ? 'tu cuenta de PayPal' : 'your PayPal account'
         : payload.provider === 'transfer'
           ? locale === 'es' ? 'tu cuenta bancaria (por transferencia)' : 'your bank account (by bank transfer)'
+          : payload.provider === 'bizum'
+            ? locale === 'es' ? 'tu cuenta (por Bizum)' : 'your account (by Bizum)'
           : locale === 'es' ? 'tu tarjeta' : 'your card';
     const full = payload.full === true;
     return {

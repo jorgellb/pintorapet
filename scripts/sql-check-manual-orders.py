@@ -126,6 +126,19 @@ try:
     cur.execute("select public.admin_delete_order(%s)", (pending['order_id'],))
     check('then it can be deleted', one("select count(*) from orders where id = %s", (pending['order_id'],))[0], 0)
 
+    # ——— Paid by Bizum ———
+    cur.execute("update inventory set stock_on_hand = stock_on_hand + 3 where product_id = %s", (mug,))
+    bizum = one("select public.admin_create_manual_order(%s::jsonb)", (order(qty=1, method='bizum'),))[0]
+    check('created awaiting a Bizum', one("select payment_status::text, payment_provider from orders where id = %s", (bizum['order_id'],)), ('awaiting_transfer', 'bizum'))
+    cur.execute("select public.admin_mark_order_paid(%s)", (bizum['order_id'],))
+    check('a Bizum is marked paid like a transfer', one("select payment_status::text from orders where id = %s", (bizum['order_id'],))[0], 'paid')
+    check('its sale says Bizum', one("select note from stock_movements where order_id = %s and reason = 'sale'", (bizum['order_id'],))[0], 'Pedido por Bizum')
+    bitem, = one("select id from order_items where order_id = %s", (bizum['order_id'],))
+    r = one("select public.admin_begin_refund(%s, %s::jsonb, false, true, 'Devuelto por Bizum', true)",
+            (bizum['order_id'], json.dumps([{'order_item_id': str(bitem), 'quantity': 1}])))[0]
+    check('its refund is registered by hand, as Bizum', (r['status'], one("select provider from order_refunds where order_id = %s", (bizum['order_id'],))[0]), ('succeeded', 'bizum'))
+    denied('only transfer or Bizum', "select public.admin_create_manual_order(%s::jsonb)", (order(method='cash'),), contains='MANUAL_ORDER_METHOD')
+
     # ——— A web order is not a transfer order ———
     as_role('postgres')
     web, = one("""insert into orders (reference, locale, subtotal_cents, shipping_cents, total_cents, access_token_hash, payment_status, payment_provider)

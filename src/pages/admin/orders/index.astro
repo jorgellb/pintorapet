@@ -56,7 +56,7 @@ const filters = {
     list: live,
   },
   pagados: { label: 'Pagados', test: charged, list: live },
-  transferencias: { label: 'Esperando transferencia', test: awaitingTransfer, list: live },
+  transferencias: { label: 'Esperando pago', test: awaitingTransfer, list: live },
   'sin-pagar': { label: 'Sin pagar', test: unpaid, list: live },
   revisar: { label: 'Revisar', test: (o: Order) => o.payment_status === 'review', list: live },
   archivados: { label: 'Archivados', test: () => true, list: archived },
@@ -78,7 +78,7 @@ const paidTotal = all.filter(charged).reduce((sum, o) => sum + o.total_cents, 0)
         Compras de la tienda. Cambia el estado del envío desde la lista o abre un pedido para ver la
         dirección, imprimir la etiqueta, añadir el seguimiento o devolver dinero. Los pedidos sin pagar
         se pueden cancelar y borrar; los pagados, archivar. Los pedidos por teléfono se crean con
-        «Nuevo pedido» y se pagan por transferencia.
+        «Nuevo pedido» y se pagan por transferencia o Bizum.
       </p>
     </div>
     <div class="head-actions">

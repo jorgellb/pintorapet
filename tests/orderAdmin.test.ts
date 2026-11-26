@@ -87,6 +87,6 @@ describe('orders paid by bank transfer', () => {
   it('explain why another order cannot be marked paid by hand', async () => {
     const { client } = fakeClient(awaiting, 'ORDER_NOT_AWAITING_TRANSFER');
     const error = (await markOrderPaid(client, ORDER).catch((err: unknown) => err)) as CommerceError;
-    expect(error.message).toMatch(/transferencia/);
+    expect(error.message).toMatch(/transferencia o un Bizum/);
   });
 });

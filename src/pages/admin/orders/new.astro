@@ -50,8 +50,8 @@ const countries = countryOptions('es');
     <div>
       <h1>Nuevo pedido</h1>
       <p class="lead">
-        Para quien compra por teléfono y paga por transferencia. Los precios y el envío son los de la web
-        (sin IVA donde no se paga, como en Canarias). El pedido queda «Esperando transferencia» con las piezas
+        Para quien compra por teléfono y paga por transferencia o Bizum. Los precios y el envío son los de la web
+        (sin IVA donde no se paga, como en Canarias). El pedido queda «Esperando pago» con las piezas
         reservadas; cuando llegue el dinero, lo marcas como pagado desde el pedido.
       </p>
     </div>
@@ -219,12 +219,17 @@ const countries = countryOptions('es');
             Envío a mano <span class="hint">opcional · en euros, 0 si es gratis</span>
             <input type="text" inputmode="decimal" placeholder="Precio de la zona" data-field="shipping" data-requote />
           </label>
+          <fieldset class="method">
+            <legend>Cómo paga</legend>
+            <label class="check"><input type="radio" name="method" value="transfer" checked data-method /> Transferencia</label>
+            <label class="check"><input type="radio" name="method" value="bizum" data-method /> Bizum</label>
+          </fieldset>
           <label class="check">
             <input type="checkbox" data-field="paid" />
-            La transferencia ya ha llegado
+            <span data-paid-label>El pago ya ha llegado</span>
           </label>
           <p class="hint" data-paid-hint>
-            Se crea esperando la transferencia, con las piezas reservadas.
+            Se crea esperando el pago, con las piezas reservadas.
           </p>
           <button type="submit" class="btn" data-submit disabled>Crear pedido</button>
           <p class="status" data-status role="status" hidden></p>
@@ -303,6 +308,22 @@ const countries = countryOptions('es');
     font-size: 0.82rem;
   }
 
+  .method {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.25rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .method legend {
+    width: 100%;
+    margin-bottom: 0.3rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+  }
+
   .totals {
     display: grid;
     gap: 0.45rem;
@@ -367,6 +388,7 @@ const countries = countryOptions('es');
     const invoiceToggle = $<HTMLInputElement>('[data-invoice-toggle]')!;
     const invoiceBox = $<HTMLElement>('[data-invoice]')!;
     const paid = $<HTMLInputElement>('[data-field="paid"]')!;
+    const method = () => form.querySelector<HTMLInputElement>('[data-method]:checked')?.value ?? 'transfer';
     let lines: Line[] = [];
     let quote: Quote | null = null;
     let asked = 0;
@@ -404,6 +426,7 @@ const countries = countryOptions('es');
           )
         : null,
       paid: paid.checked,
+      method: method(),
     });
 
     const cell = (text: string, className = '') => {
@@ -526,7 +549,7 @@ const countries = countryOptions('es');
     paid.addEventListener('change', () => {
       $<HTMLElement>('[data-paid-hint]')!.textContent = paid.checked
         ? 'Se crea ya pagado: se descuentan las piezas del stock y se emite la factura.'
-        : 'Se crea esperando la transferencia, con las piezas reservadas.';
+        : 'Se crea esperando el pago, con las piezas reservadas.';
     });
 
     form.addEventListener('submit', async (event) => {
@@ -536,9 +559,10 @@ const countries = countryOptions('es');
         say('Faltan datos: nombre, calle, código postal y ciudad.', 'err');
         return;
       }
+      const how = method() === 'bizum' ? 'Bizum' : 'transferencia';
       const question = paid.checked
-        ? `¿Crear el pedido de ${euros(quote.totalCents)} ya pagado por transferencia? Se emite la factura.`
-        : `¿Crear el pedido de ${euros(quote.totalCents)} esperando la transferencia?`;
+        ? `¿Crear el pedido de ${euros(quote.totalCents)} ya pagado por ${how}? Se emite la factura.`
+        : `¿Crear el pedido de ${euros(quote.totalCents)} esperando el pago por ${how}?`;
       if (!confirm(question)) return;
       submit.disabled = true;
       say('Creando el pedido…');

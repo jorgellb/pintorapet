@@ -90,6 +90,17 @@ describe('sendOrderEmails', () => {
     expect(mail.text).toContain('PayPal');
   });
 
+  it('tells a customer who paid by Bizum that the money goes back by Bizum', async () => {
+    send.mockResolvedValue({ error: null });
+    const row = {
+      ...paid('r2', 'order_refunded_customer', 'ana@example.com'),
+      payload: { order_id: 'order-1', reference: 'PD-ABC123', amount_cents: 999, provider: 'bizum', full: true },
+    };
+    const { client } = fakeSupabase([row]);
+    await sendOrderEmails(client, 'order-1');
+    expect(send.mock.calls[0][0].text).toContain('Bizum');
+  });
+
   it('tells a customer who paid by transfer that the money goes back to the bank', async () => {
     send.mockResolvedValue({ error: null });
     const row = {

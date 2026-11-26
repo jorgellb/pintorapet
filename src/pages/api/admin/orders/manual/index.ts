@@ -17,6 +17,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     await audit(admin, 'create_manual_order', 'orders', created.orderId, {
       reference: created.reference,
       paid: input.paid,
+      method: input.method,
       lines: input.lines.length,
       shippingByHand: input.shippingCents !== null,
     });

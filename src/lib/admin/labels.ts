@@ -14,7 +14,7 @@ const commission: Record<string, Label> = {
 const payment: Record<string, Label> = {
   pending_session: { text: 'Sin pagar', tone: 'neutral' },
   checkout_open: { text: 'Pagando', tone: 'info' },
-  awaiting_transfer: { text: 'Esperando transferencia', tone: 'warn' },
+  awaiting_transfer: { text: 'Esperando pago', tone: 'warn' },
   processing: { text: 'Procesando', tone: 'info' },
   paid: { text: 'Pagado', tone: 'ok' },
   expired: { text: 'Caducado', tone: 'neutral' },
@@ -70,7 +70,7 @@ export const commissionLabel = (key: string | null | undefined) => pick(commissi
 export const paymentLabel = (key: string | null | undefined) => pick(payment, key);
 export const fulfillmentLabel = (key: string | null | undefined) => pick(fulfillment, key);
 export const inventoryLabel = (key: string | null | undefined) => pick(inventory, key);
-const provider: Record<string, string> = { stripe: 'Stripe', paypal: 'PayPal', transfer: 'Transferencia' };
+const provider: Record<string, string> = { stripe: 'Stripe', paypal: 'PayPal', transfer: 'Transferencia', bizum: 'Bizum' };
 /** How an order was (or will be) paid. */
 export const providerLabel = (key: string | null | undefined) => (key && provider[key]) || key || '—';
 export const productStatusLabel = (key: string | null | undefined) => pick(productStatus, key);

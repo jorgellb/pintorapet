@@ -18,7 +18,7 @@ export type CustomerStatus = {
 
 const LABELS: Record<CustomerStatus['key'], { es: string; en: string }> = {
   processing: { es: 'Confirmando el pago', en: 'Confirming payment' },
-  awaiting: { es: 'Pendiente de transferencia', en: 'Awaiting bank transfer' },
+  awaiting: { es: 'Pendiente de pago', en: 'Awaiting payment' },
   review: { es: 'En revisión', en: 'Being checked' },
   preparing: { es: 'Meili lo está preparando', en: 'Meili is preparing it' },
   shipped: { es: 'En camino', en: 'On its way' },

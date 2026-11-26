@@ -48,7 +48,8 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
 
     if ('markPaid' in body) {
       await markOrderPaid(admin.db, id);
-      await audit(admin, 'mark_order_paid', 'orders', id, { by: 'transfer' });
+      const how = await admin.db.one<{ payment_provider: string }>`select payment_provider from public.orders where id = ${id}`;
+      await audit(admin, 'mark_order_paid', 'orders', id, { by: how?.payment_provider ?? 'transfer' });
       const service = serviceDb();
       if (service) await sendOrderEmails(service, id);
       return Response.json({ ok: true });
