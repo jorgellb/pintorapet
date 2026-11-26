@@ -36,7 +36,14 @@ const accounts = customers.filter((c) => c.kind === 'account' && !c.is_admin);
 const newThisMonth = accounts.filter((c) => new Date(c.created_at).getTime() > monthAgo).length;
 const spent = customers.reduce((sum, c) => sum + Number(c.spent_cents ?? 0), 0);
 const names = new Intl.DisplayNames(['es'], { type: 'region' });
-const flash = Astro.url.searchParams.get('borrado') ? 'Cliente borrado. Sus pedidos se conservan.' : null;
+const erased = Number(Astro.url.searchParams.get('datos'));
+const flash = Astro.url.searchParams.get('borrado')
+  ? erased > 0
+    ? `Cliente borrado, con sus datos de ${erased} ${erased === 1 ? 'pedido' : 'pedidos'}. Los pedidos y las facturas se conservan.`
+    : 'Cliente borrado. Sus pedidos se conservan.'
+  : Astro.url.searchParams.has('datos')
+    ? `Datos de cliente borrados en ${erased} ${erased === 1 ? 'pedido' : 'pedidos'}. Los pedidos y las facturas se conservan.`
+    : null;
 ---
 
 <AdminLayout title="Clientes" email={admin.user.email}>
@@ -102,9 +109,9 @@ const flash = Astro.url.searchParams.get('borrado') ? 'Cliente borrado. Sus pedi
               </thead>
               <tbody>
                 {visible.map((c) => {
-                  const href = c.id
-                    ? `/admin/customers/${c.id}/`
-                    : `/admin/customers/new/?email=${encodeURIComponent(c.email)}&nombre=${encodeURIComponent(c.full_name ?? '')}`;
+                  // A guest's record is addressed by the key SQL computed for the row, never by their email.
+                  const href = c.id ? `/admin/customers/${c.id}/` : `/admin/customers/guest/${c.key}/`;
+                  const createHref = `/admin/customers/new/?email=${encodeURIComponent(c.email)}&nombre=${encodeURIComponent(c.full_name ?? '')}`;
                   const place = [c.city, c.country ? names.of(c.country) ?? c.country : null].filter(Boolean).join(', ');
                   return (
                     <tr data-search-text={`${c.full_name ?? ''} ${c.email} ${place}`.toLowerCase()}>
@@ -123,7 +130,7 @@ const flash = Astro.url.searchParams.get('borrado') ? 'Cliente borrado. Sus pedi
                           <span class="chip">Sin cuenta</span>
                         )}
                         <span class="muted line">
-                          {c.kind === 'account' ? `Alta ${shortDate(c.created_at)}` : 'Crear cuenta →'}
+                          {c.kind === 'account' ? `Alta ${shortDate(c.created_at)}` : <a href={createHref}>Crear cuenta →</a>}
                         </span>
                       </td>
                       <td class="muted">{place || '—'}</td>

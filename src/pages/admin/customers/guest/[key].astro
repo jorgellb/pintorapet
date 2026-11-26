@@ -1,0 +1,325 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, serviceDb } from '@/lib/server/db';
+import { chipClass, euros, fulfillmentLabel, paymentLabel, shortDate } from '@/lib/admin/labels';
+import { guestNotice } from '@/lib/admin/guestNotice';
+import { getGuest, GUEST_KEY, type AdminGuestDetail } from '@/lib/server/admin/customers';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const key = Astro.params.key ?? '';
+let guest: AdminGuestDetail | null = null;
+let failed = false;
+if (GUEST_KEY.test(key)) {
+  // Their data is in orders, behind functions only the service role runs: this page is behind requireAdmin.
+  try {
+    guest = await getGuest(serviceDb()!, key);
+  } catch (err) {
+    // A database error is not "no such guest": say so instead of sending Meili to the list.
+    console.error('[admin] guest record not loaded', err instanceof Error ? err.message : err);
+    failed = true;
+  }
+}
+// No orders any more (erased, or a made-up key): back to the list.
+if (!guest && !failed) return Astro.redirect('/admin/customers/');
+
+const notice = guest && guestNotice(guest.contact_messages, guest.commission_requests);
+const saved = Astro.url.searchParams.get('guardado') === '1';
+// An edit that moved the page to a new key: how many orders could not keep the phone.
+const skipped = Number(Astro.url.searchParams.get('sintelefono') ?? 0) || 0;
+---
+
+<AdminLayout title={guest ? guest.full_name || guest.email : 'Cliente'} email={admin.user.email}>
+  <a class="back" href="/admin/customers/">← Clientes</a>
+  {failed && <p class="err" data-guest-error>No se pudo cargar la ficha de este cliente. Recarga la página; si sigue igual, vuelve a Clientes.</p>}
+  {guest && (
+  <>
+  <header class="page-head">
+    <div>
+      <h1>{guest.full_name || guest.email}</h1>
+      <p class="lead">
+        {guest.email}
+        <span class="chip">Sin cuenta</span>
+      </p>
+    </div>
+    <a class="btn btn--quiet" href={`/admin/customers/new/?email=${encodeURIComponent(guest.email)}&nombre=${encodeURIComponent(guest.full_name)}`}>
+      Crear cuenta →
+    </a>
+  </header>
+
+  {saved && <p class="status">{skipped > 0 ? `Guardado; el teléfono no se guarda en ${skipped} ${skipped === 1 ? 'pedido sin dirección' : 'pedidos sin dirección'}.` : 'Cambios guardados.'}</p>}
+
+  {
+    notice && (
+      <p class="notice" data-guest-notice>
+        {notice}
+      </p>
+    )
+  }
+
+  <div class="customer">
+    <div class="customer__main">
+      <form class="guest-form" data-guest-form data-key={guest.key} novalidate>
+        <section class="panel">
+          <h2>Contacto</h2>
+          <div class="pair">
+            <label>
+              Nombre y apellidos
+              <input name="full_name" value={guest.full_name} required maxlength="120" autocomplete="off" />
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" value={guest.email} required maxlength="254" autocomplete="off" />
+            </label>
+          </div>
+          <label>
+            Teléfono <span class="hint">opcional</span>
+            <input name="phone" type="tel" value={guest.phone} maxlength="32" autocomplete="off" />
+          </label>
+          <p class="hint">
+            Se cambia en todos sus pedidos. La dirección de envío no se edita aquí, y las facturas ya emitidas
+            conservan los datos con que se emitieron.
+          </p>
+        </section>
+
+        <div class="actions">
+          <button type="submit">Guardar cambios</button>
+          <p class="status" data-guest-status role="status" hidden></p>
+        </div>
+      </form>
+    </div>
+
+    <aside class="customer__side">
+      <section class="panel">
+        <h2>Resumen</h2>
+        <dl class="facts">
+          <div><dt>Pedidos</dt><dd>{guest.orders.length}</dd></div>
+          <div><dt>Comprado</dt><dd>{euros(guest.spent_cents)}</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Pedidos</h2>
+        {
+          guest.orders.length === 0 ? (
+            <p class="muted">Aún no hay pedidos terminados.</p>
+          ) : (
+            <ul class="orders">
+              {guest.orders.map((o) => {
+                const pay = paymentLabel(o.payment_status);
+                return (
+                  <li>
+                    <a href={`/admin/orders/${o.id}/`}><code>{o.reference}</code></a>
+                    <span class="muted">{shortDate(o.created_at)}</span>
+                    <span class={chipClass(pay.tone)}>{pay.text}</span>
+                    {o.payment_status === 'paid' && <span class="muted">{fulfillmentLabel(o.fulfillment_status).text}</span>}
+                    <strong>{euros(o.total_cents)}</strong>
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        }
+      </section>
+
+      <section class="panel danger">
+        <h2>Borrar sus datos</h2>
+        <p class="hint">
+          Se borran su nombre, email, teléfono y dirección de todos sus pedidos, sus mensajes de regalo, sus
+          opiniones con sus fotos y los avisos enviados a su email. Los pedidos se conservan, sin sus datos
+          personales. Las facturas ya emitidas se guardan con sus datos porque la ley obliga a conservarlas.
+        </p>
+        <p class="hint">No se puede deshacer, ni borrar mientras tenga un pedido por cobrar, por enviar o sin factura emitida.</p>
+        <button type="button" class="btn--danger" data-erase-guest data-notice={notice ?? ''}>Borrar sus datos</button>
+        <p class="status" data-erase-status role="status" hidden></p>
+      </section>
+    </aside>
+  </div>
+  </>
+  )}
+</AdminLayout>
+
+<style>
+  .customer {
+    display: grid;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  @media (min-width: 70rem) {
+    .customer {
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    }
+  }
+
+  .customer__side {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .guest-form {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .lead .chip {
+    margin-left: 0.5rem;
+  }
+
+  .notice {
+    margin: 0 0 1.25rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--accent, #a06a2c) 40%, var(--line));
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--accent, #a06a2c) 8%, transparent);
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .facts div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .facts dt {
+    color: var(--muted);
+  }
+
+  .facts dd {
+    margin: 0;
+  }
+
+  .orders {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .orders li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .orders li:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .orders strong {
+    margin-left: auto;
+  }
+
+  .danger {
+    border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  }
+</style>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>('[data-guest-form]');
+  if (form) {
+    const key = form.dataset.key ?? '';
+    const status = form.querySelector<HTMLElement>('[data-guest-status]')!;
+    const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    const say = (text: string) => {
+      status.hidden = false;
+      status.textContent = text;
+    };
+
+    const save = async (confirmMerge: boolean): Promise<void> => {
+      const fd = new FormData(form);
+      const get = (name: string) => String(fd.get(name) ?? '').trim();
+      button.disabled = true;
+      say('Guardando…');
+      const res = await fetch(`/api/admin/customers/guest/${key}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ full_name: get('full_name'), email: get('email'), phone: get('phone'), ...(confirmMerge ? { confirmMerge: true } : {}) }),
+      }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      button.disabled = false;
+      if (res?.ok) {
+        // A new email is a new key, and so a new address for this page.
+        const skipped = Number(data?.phoneSkipped ?? 0);
+        if (data?.key && data.key !== key) {
+          location.assign(`/admin/customers/guest/${data.key}/?guardado=1${skipped > 0 ? `&sintelefono=${skipped}` : ''}`);
+          return;
+        }
+        say(
+          skipped > 0
+            ? `Guardado; el teléfono no se guarda en ${skipped} ${skipped === 1 ? 'pedido sin dirección' : 'pedidos sin dirección'}.`
+            : 'Cambios guardados.',
+        );
+        return;
+      }
+      if (res?.status === 409 && data?.merge) {
+        if (window.confirm(`${data.error.message}\n\n¿Unirlos?`)) await save(true);
+        else say('No se ha cambiado nada.');
+        return;
+      }
+      say(
+        data?.error?.message && !String(data.error.message).startsWith('Revisa')
+          ? data.error.message
+          : 'Revisa los datos: el nombre y un email válido son obligatorios.',
+      );
+    };
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void save(false);
+    });
+
+    const erase = document.querySelector<HTMLButtonElement>('[data-erase-guest]');
+    erase?.addEventListener('click', async () => {
+      const notice = erase.dataset.notice ?? '';
+      const text = [
+        '¿Borrar los datos de este cliente?',
+        'Se borra: su nombre, email, teléfono y dirección en todos sus pedidos, sus mensajes de regalo, sus opiniones con sus fotos y los avisos enviados a su email.',
+        'Se conserva: los pedidos, sin sus datos personales (solo el país y el código postal), y las facturas ya emitidas con sus datos, porque la ley obliga a conservarlas.',
+        ...(notice ? [notice] : []),
+        'No se puede deshacer.',
+      ].join('\n\n');
+      if (!window.confirm(text)) return;
+      const out = document.querySelector<HTMLElement>('[data-erase-status]')!;
+      erase.disabled = true;
+      const res = await fetch(`/api/admin/customers/guest/${key}/`, { method: 'DELETE' }).catch(() => null);
+      const data = await res?.json().catch(() => ({}));
+      if (res?.ok) {
+        if (!data?.warning) {
+          location.assign(`/admin/customers/?datos=${data?.orders ?? 0}`);
+          return;
+        }
+        // The data is gone; the warning is what is left to do, so stay to read it.
+        out.hidden = false;
+        out.innerHTML = '';
+        out.append(`${data.warning} `, Object.assign(document.createElement('a'), { href: '/admin/customers/', textContent: 'Volver a Clientes' }));
+        return;
+      }
+      out.hidden = false;
+      out.textContent = data?.error?.message ?? 'No se pudieron borrar los datos del cliente.';
+      erase.disabled = false;
+    });
+  }
+</script>

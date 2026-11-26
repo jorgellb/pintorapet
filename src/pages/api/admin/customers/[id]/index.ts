@@ -5,6 +5,7 @@ import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
 import {
   accountEmail,
   adminCustomerSchema,
+  anonymizeAccountOrders,
   assertManageable,
   changeAccountEmail,
   deleteAccount,
@@ -17,6 +18,9 @@ import { serviceDb } from '@/lib/server/db';
 export const prerender = false;
 
 const idSchema = z.uuid();
+
+/** The page's checkbox «Borrar también sus datos de los pedidos» (a delete with no body keeps them). */
+const deleteSchema = z.object({ alsoOrders: z.boolean().default(false) }).strict();
 
 /** Edit a customer's email and profile. */
 export const PATCH: APIRoute = async ({ params, cookies, request }) => {
@@ -40,7 +44,10 @@ export const PATCH: APIRoute = async ({ params, cookies, request }) => {
   }
 };
 
-/** Delete the account. Orders stay (accounting); they just lose the link to the account. */
+/**
+ * Delete the account. Orders stay (accounting); they just lose the link to the account.
+ * With `alsoOrders`, their personal data goes too (refused first if an order is still due).
+ */
 export const DELETE: APIRoute = async ({ params, cookies, request }) => {
   const admin = await requireAdmin(cookies, request);
   if (!admin) return forbidden();
@@ -52,6 +59,16 @@ export const DELETE: APIRoute = async ({ params, cookies, request }) => {
       throw new CommerceError('FORBIDDEN', 'No puedes borrar tu propia cuenta desde aquí.', 403);
     }
     if (await isAdminAccount(service, id)) throw new CommerceError('FORBIDDEN', 'Es una cuenta de administración: no se borra desde Clientes.', 403);
+    const { alsoOrders } = deleteSchema.parse(await request.json().catch(() => ({})));
+    if (alsoOrders) {
+      const erased = await anonymizeAccountOrders(id);
+      await audit(admin, 'delete_customer', 'customers', id, {
+        alsoOrders: true,
+        orders: erased.orders,
+        ...(erased.warning ? { leftovers: true } : {}),
+      });
+      return Response.json({ ok: true, ...erased });
+    }
     await deleteAccount(service, id);
     await audit(admin, 'delete_customer', 'customers', id, {});
     return Response.json({ ok: true });

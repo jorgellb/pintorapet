@@ -60,6 +60,36 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   REVIEW_CLOSED: { code: 'CONFLICT', status: 409 },
   REVIEW_PRODUCT: { code: 'VALIDATION', status: 400 },
   REVIEW_PHOTOS_MAX: { code: 'VALIDATION', status: 400 },
+  // Guest customers (Admin › Clientes): these have their own Spanish text, below.
+  GUEST_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
+  GUEST_INVALID_NAME: { code: 'VALIDATION', status: 400 },
+  GUEST_INVALID_EMAIL: { code: 'VALIDATION', status: 400 },
+  GUEST_INVALID_PHONE: { code: 'VALIDATION', status: 400 },
+  GUEST_EMAIL_IS_ACCOUNT: { code: 'CONFLICT', status: 409 },
+  CUSTOMER_HAS_DUE_ORDERS: { code: 'CONFLICT', status: 409 },
+  CUSTOMER_HAS_UNINVOICED_ORDERS: { code: 'CONFLICT', status: 409 },
+  CUSTOMER_HAS_UNFINISHED_ORDERS: { code: 'CONFLICT', status: 409 },
+};
+
+/** What Admin reads for the codes that have a sentence; any other code is its own message. */
+export const dueOrdersMessage = (references: string) => `Tiene pedidos pendientes de cobrar o de enviar: ${references}`;
+
+/** The references after «CODE: » in what PostgreSQL said. */
+const refsAfter = (pg: string, code: string) => pg.slice(pg.indexOf(code) + code.length).replace(/^:\s*/, '').trim();
+
+const TEXT: Record<string, (pg: string) => string> = {
+  GUEST_NOT_FOUND: () => 'Ese cliente ya no tiene pedidos sin cuenta.',
+  GUEST_INVALID_NAME: () => 'El nombre es obligatorio (hasta 120 letras).',
+  GUEST_INVALID_EMAIL: () => 'Ese email no es válido.',
+  GUEST_INVALID_PHONE: () => 'El teléfono es demasiado largo.',
+  GUEST_EMAIL_IS_ACCOUNT: () => 'Ese email es de un cliente con cuenta: usa su ficha.',
+  CUSTOMER_HAS_DUE_ORDERS: (pg) => dueOrdersMessage(refsAfter(pg, 'CUSTOMER_HAS_DUE_ORDERS')),
+  // Charged, but the invoice was never issued: anonymizing would erase what it is issued from.
+  CUSTOMER_HAS_UNINVOICED_ORDERS: (pg) =>
+    `Tiene pedidos cobrados sin factura emitida: emítela desde el pedido («Emitir ahora» en Factura) o con «Emitir facturas pendientes» en Ajustes antes de borrar: ${refsAfter(pg, 'CUSTOMER_HAS_UNINVOICED_ORDERS')}`,
+  // A checkout that never ended is not listed in the guest's record: it is deleted from Pedidos.
+  CUSTOMER_HAS_UNFINISHED_ORDERS: (pg) =>
+    `Tiene pedidos sin terminar (${refsAfter(pg, 'CUSTOMER_HAS_UNFINISHED_ORDERS')}): bórralos en Pedidos antes de borrar sus datos.`,
 };
 
 function extractCode(message: string | undefined): string | null {
@@ -91,7 +121,7 @@ export function mapPgError(err: unknown): CommerceError {
   }
   const code = extractCode(message);
   if (code && MAP[code]) {
-    return new CommerceError(MAP[code].code, code, MAP[code].status, {
+    return new CommerceError(MAP[code].code, TEXT[code]?.(message) ?? code, MAP[code].status, {
       pg: message,
     });
   }
