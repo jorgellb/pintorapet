@@ -45,6 +45,10 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   SHIPPING_POSTAL_CODE_REQUIRED: { code: 'VALIDATION', status: 400 },
   SHIPPING_NO_ZONE: { code: 'UNAVAILABLE', status: 409 },
   PICKUP_UNAVAILABLE: { code: 'UNAVAILABLE', status: 409 },
+  COMMISSION_LINK_INVALID: { code: 'FORBIDDEN', status: 403 },
+  COMMISSION_ALREADY_PAID: { code: 'CONFLICT', status: 409 },
+  COMMISSION_NOT_PAYABLE: { code: 'UNAVAILABLE', status: 409 },
+  MANUAL_ORDER_METHOD: { code: 'VALIDATION', status: 400 },
   SHIPPING_TOO_HEAVY: { code: 'UNAVAILABLE', status: 409 },
   ZONE_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
 };

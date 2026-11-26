@@ -65,6 +65,22 @@ function renderTemplate(
           : `Thank you. Your order ${payload.reference ?? ''} is confirmed.`,
     };
   }
+  if (templateKey === 'commission_quote_customer') {
+    const es = locale === 'es';
+    const note = payload.note ? `\n\n${payload.note}` : '';
+    return {
+      subject: es
+        ? `Tu presupuesto para el retrato ${payload.reference ?? ''}`
+        : `Your quote for the portrait ${payload.reference ?? ''}`,
+      text: es
+        ? `Hola, ${payload.name ?? ''}:\n\nAquí tienes el presupuesto de tu encargo (${payload.reference ?? ''}): ${payload.title ?? ''}, ${payload.price ?? ''}, IVA incluido.${note}\n\n` +
+          `Para aceptarlo y pagarlo, con el envío a tu dirección, entra aquí:\n${payload.link ?? ''}\n\n` +
+          `Puedes pagar con tarjeta, PayPal, Bizum o transferencia. El enlace vale hasta el ${payload.until ?? ''}.\n\nGracias,\nMeili`
+        : `Hello ${payload.name ?? ''},\n\nHere is the quote for your commission (${payload.reference ?? ''}): ${payload.title ?? ''}, ${payload.price ?? ''}, VAT included.${note}\n\n` +
+          `To accept and pay for it, with shipping to your address, go here:\n${payload.link ?? ''}\n\n` +
+          `You can pay by card, PayPal, Bizum or bank transfer. The link is valid until ${payload.until ?? ''}.\n\nThank you,\nMeili`,
+    };
+  }
   if (templateKey === 'order_shipped_customer') {
     const code = String(payload.tracking_code ?? '');
     const link = payload.tracking_url ? `\n${payload.tracking_url}` : '';
@@ -181,6 +197,24 @@ export async function processOutboxBatch(
   const rows = await dbCall(() => supabase.rows<OutboxRow>`
     select * from public.claim_outbox(p_limit => ${limit}, p_lease_seconds => 60, p_worker_id => ${owner})`);
   return { claimed: rows.length, ...(await sendClaimed(supabase, rows, owner)) };
+}
+
+/** Send one queued email now, by its dedupe key (e.g. a commission quote). Never throws. */
+export async function sendOutboxNow(supabase: Db, dedupeKey: string): Promise<boolean> {
+  if (!hasResend()) return false;
+  try {
+    const owner = `key:${Date.now()}`;
+    const rows = await supabase.rows<OutboxRow>`
+      update public.notification_outbox
+      set status = 'leased', lease_owner = ${owner}, lease_until = now() + interval '60 seconds'
+      where dedupe_key = ${dedupeKey} and status in ('pending', 'failed')
+      returning id, recipient, locale, template_key, payload, attempt_count`;
+    const { sent } = await sendClaimed(supabase, rows, owner);
+    return sent > 0;
+  } catch (err) {
+    console.error('email left for the outbox cron', dedupeKey, err);
+    return false;
+  }
 }
 
 /**

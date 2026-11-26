@@ -3,7 +3,8 @@ import AdminLayout from '@/layouts/AdminLayout.astro';
 import ListSearch from '@/components/admin/ListSearch.astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { hasDatabase, settle } from '@/lib/server/db';
-import { chipClass, commissionLabel, shortDate } from '@/lib/admin/labels';
+import { chipClass, commissionLabel, euros, shortDate } from '@/lib/admin/labels';
+import { commissionConfig } from '@/lib/server/commissionQuotes';
 
 export const prerender = false;
 
@@ -24,8 +25,18 @@ const { data, error } = await settle(
     status: string;
     created_at: string;
     photos: Array<{ id: string; filename: string }>;
+    quote_cents: number | null;
+    quote_title: string | null;
+    quote_note: string | null;
+    quote_weight_grams: number | null;
+    quote_sent_at: string | null;
+    quote_until: string | null;
+    paid_order_id: string | null;
+    paid_reference: string | null;
   }>`
     select r.id, r.reference, r.locale, r.contact_name, r.contact_email, r.size_hint, r.subjects, r.message, r.status, r.created_at,
+           r.quote_cents, r.quote_title, r.quote_note, r.quote_weight_grams, r.quote_sent_at, r.quote_until, r.paid_order_id,
+           (select o.reference from public.orders o where o.id = r.paid_order_id) as paid_reference,
            coalesce((select json_agg(json_build_object('id', f.id, 'filename', f.original_filename) order by f.created_at)
                      from public.commission_files f
                      where f.commission_request_id = r.id and f.storage_public_id is not null and f.status = 'accepted'), '[]'::json) as photos
@@ -33,6 +44,14 @@ const { data, error } = await settle(
 );
 
 const rows = data ?? [];
+const config = await commissionConfig(admin.db);
+const day = (iso: string) =>
+  new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', timeZone: 'Europe/Madrid' }).format(new Date(iso));
+const defaultTitle = (size: string | null, subjects: string | null) => {
+  const n = Number(subjects) || 1;
+  const format = size === 'A4' || size === 'A3' ? ` ${size}` : '';
+  return `Retrato a lápiz${format} · ${n} ${n === 1 ? 'mascota' : 'mascotas'}`;
+};
 const statuses = ['received', 'reviewing', 'quoted', 'accepted', 'declined', 'closed'];
 const current = Astro.url.searchParams.get('estado') ?? '';
 const visible = current ? rows.filter((row) => row.status === current) : rows;
@@ -60,6 +79,31 @@ const tabs = [
       </p>
     </div>
   </header>
+
+  <details class="panel settings" data-commission-settings>
+    <summary>Ajustes de los encargos · IVA {config.vatRate} %{config.transferIban ? ' · transferencia activa' : ''}</summary>
+    <form class="settings__form" data-settings-form>
+      <label>
+        IVA del encargo (%)
+        <input type="number" name="vatRate" min="0" max="30" step="0.5" value={config.vatRate} required />
+        <span class="hint">21 % hasta confirmarlo con tu gestoría; una obra original vendida por su autora puede ir al 10 %.</span>
+      </label>
+      <fieldset class="settings__weights">
+        <legend>Peso del dibujo embalado (g), para el envío</legend>
+        <label>A4<input type="number" name="wA4" min="1" max="30000" value={config.weights.A4} required /></label>
+        <label>A3<input type="number" name="wA3" min="1" max="30000" value={config.weights.A3} required /></label>
+        <label>Sin decidir<input type="number" name="wUndecided" min="1" max="30000" value={config.weights.undecided} required /></label>
+      </fieldset>
+      <label>
+        IBAN para transferencias <span class="hint">vacío: no se ofrece transferencia</span>
+        <input name="transferIban" maxlength="42" value={config.transferIban} placeholder="ES00 0000 0000 0000 0000 0000" />
+      </label>
+      <label>Titular de la cuenta<input name="transferHolder" maxlength="120" value={config.transferHolder} /></label>
+      <label>Días que vale un presupuesto<input type="number" name="quoteDays" min="1" max="180" value={config.quoteDays} required /></label>
+      <button type="submit" class="btn">Guardar ajustes</button>
+      <p class="status" data-settings-status hidden></p>
+    </form>
+  </details>
 
   {
     error ? (
@@ -172,6 +216,52 @@ const tabs = [
                         </select>
                       </label>
                       <p class="status" data-commission-feedback hidden />
+
+                      <section class="quote-box" data-quote data-id={row.id}>
+                        <h3>Presupuesto</h3>
+                        {row.paid_order_id ? (
+                          <p class="quote-box__state quote-box__state--paid">
+                            Pagado · <a href={`/admin/orders/${row.paid_order_id}/`}>pedido <code>{row.paid_reference}</code></a>: el envío y la factura van como en cualquier pedido.
+                          </p>
+                        ) : (
+                          <>
+                            {row.quote_sent_at && row.quote_cents && (
+                              <p class="quote-box__state">
+                                Enviado el {day(row.quote_sent_at)} · {euros(row.quote_cents)}
+                                {row.quote_until && ` · el enlace vale hasta el ${day(row.quote_until)}`}
+                              </p>
+                            )}
+                            <form class="quote-box__form" data-quote-form>
+                              <div class="quote-box__row">
+                                <label>
+                                  Precio, IVA incluido (€)
+                                  <input name="price" inputmode="decimal" required value={row.quote_cents ? (row.quote_cents / 100).toFixed(2).replace('.', ',') : ''} placeholder="90,00" />
+                                </label>
+                                <label>
+                                  Peso embalado (g)
+                                  <input
+                                    name="weight"
+                                    type="number"
+                                    min="1"
+                                    max="30000"
+                                    value={row.quote_weight_grams ?? config.weights[(row.size_hint ?? 'undecided') as 'A4' | 'A3' | 'undecided'] ?? config.weights.undecided}
+                                  />
+                                </label>
+                              </div>
+                              <label>
+                                Qué es
+                                <input name="title" maxlength="140" required value={row.quote_title ?? defaultTitle(row.size_hint, row.subjects)} />
+                              </label>
+                              <label>
+                                Nota para la clienta <span class="hint">opcional · sale en el email y en la página de pago</span>
+                                <textarea name="note" rows="2" maxlength="1000">{row.quote_note ?? ''}</textarea>
+                              </label>
+                              <button type="submit" class="btn">{row.quote_sent_at ? 'Enviar de nuevo' : 'Enviar presupuesto'}</button>
+                              <p class="status" data-quote-status hidden></p>
+                            </form>
+                          </>
+                        )}
+                      </section>
                     </div>
                   </details>
                 </li>
@@ -221,6 +311,54 @@ const tabs = [
     gap: 1rem;
     padding: 0 1.25rem 1.25rem;
     border-top: 1px solid var(--line);
+  }
+
+  .settings {
+    margin-bottom: 1.25rem;
+  }
+
+  .settings summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .settings__form,
+  .quote-box__form {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 1rem;
+    max-width: 40rem;
+  }
+
+  .settings__weights {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .quote-box {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .quote-box h3 {
+    margin: 0 0 0.4rem;
+  }
+
+  .quote-box__row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .quote-box__state {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .quote-box__state--paid {
+    color: var(--success, #2f6b52);
   }
 
   .photos__grid {
@@ -292,6 +430,82 @@ const tabs = [
 </style>
 
 <script>
+  const cents = (value: string) => Math.round(Number(value.trim().replace(/\s|€/g, '').replace(',', '.')) * 100);
+  const say = (el: HTMLElement | null, text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+    if (!el) return;
+    el.hidden = !text;
+    el.dataset.tone = tone;
+    el.textContent = text;
+  };
+
+  document.querySelectorAll<HTMLElement>('[data-quote]').forEach((box) => {
+    const form = box.querySelector<HTMLFormElement>('[data-quote-form]');
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const status = form.querySelector<HTMLElement>('[data-quote-status]');
+      const data = new FormData(form);
+      const priceCents = cents(String(data.get('price') ?? ''));
+      if (!Number.isFinite(priceCents) || priceCents < 100) {
+        say(status, 'Escribe el precio, por ejemplo 90,00.', 'err');
+        return;
+      }
+      if (!confirm(`¿Enviar el presupuesto de ${(priceCents / 100).toFixed(2).replace('.', ',')} € con el enlace de pago? Si ya enviaste uno, el enlace anterior deja de valer.`)) return;
+      say(status, 'Enviando…');
+      const res = await fetch(`/api/admin/commissions/${box.dataset.id}/quote/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          priceCents,
+          title: String(data.get('title') ?? ''),
+          note: String(data.get('note') ?? ''),
+          weightGrams: Number(data.get('weight')) || undefined,
+        }),
+      }).catch(() => null);
+      const out = (await res?.json().catch(() => null)) as { link?: string; emailed?: boolean; error?: { message?: string } } | null;
+      if (!res?.ok || !out?.link) {
+        say(status, out?.error?.message ?? 'No se pudo enviar el presupuesto.', 'err');
+        return;
+      }
+      say(
+        status,
+        out.emailed
+          ? 'Presupuesto enviado por email. También puedes copiar el enlace y mandarlo por WhatsApp.'
+          : 'Presupuesto guardado, pero el email no salió (se reintentará). Copia el enlace y mándalo por WhatsApp.',
+        out.emailed ? 'ok' : 'info',
+      );
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn--quiet';
+      copy.textContent = 'Copiar el enlace de pago';
+      copy.addEventListener('click', async () => {
+        await navigator.clipboard?.writeText(out.link!).catch(() => {});
+        copy.textContent = 'Enlace copiado';
+      });
+      status?.after(copy);
+    });
+  });
+
+  const settings = document.querySelector<HTMLFormElement>('[data-settings-form]');
+  settings?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const status = settings.querySelector<HTMLElement>('[data-settings-status]');
+    const data = new FormData(settings);
+    const num = (name: string) => Number(data.get(name));
+    const res = await fetch('/api/admin/commissions/settings/', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        vatRate: num('vatRate'),
+        weights: { A4: num('wA4'), A3: num('wA3'), undecided: num('wUndecided') },
+        transferIban: String(data.get('transferIban') ?? ''),
+        transferHolder: String(data.get('transferHolder') ?? ''),
+        quoteDays: num('quoteDays'),
+      }),
+    }).catch(() => null);
+    const out = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+    say(status, res?.ok ? 'Ajustes guardados. Valen para los presupuestos que envíes a partir de ahora.' : (out?.error?.message ?? 'No se pudieron guardar.'), res?.ok ? 'ok' : 'err');
+  });
+
   document.querySelectorAll<HTMLElement>('[data-photos]').forEach((box) => {
     box.querySelector('[data-delete-photos]')?.addEventListener('click', async () => {
       if (!confirm('¿Borrar todas las fotos de este encargo? No se pueden recuperar.')) return;

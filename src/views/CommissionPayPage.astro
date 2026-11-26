@@ -1,0 +1,601 @@
+---
+import '@/styles/paper-forms.css';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import { type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { countryOptions } from '@/lib/domain/countries';
+import { formatEur } from '@/lib/domain/money';
+import { SHOP_PHONE, WHATSAPP_URL } from '@/lib/domain/whatsapp';
+import { commissionConfig, linkProblem, payableCommission, type PayableCommission } from '@/lib/server/commissionQuotes';
+import { checkoutProviders } from '@/lib/server/payments/config';
+import { serviceDb } from '@/lib/server/db';
+
+/**
+ * The page a quote email links to: the commission, where it goes, and paying
+ * for it (card, PayPal, Bizum or transfer). Not indexed: it is one person's.
+ */
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const es = locale === 'es';
+const reference = Astro.url.searchParams.get('ref') ?? '';
+const token = Astro.url.searchParams.get('k') ?? '';
+const service = serviceDb();
+
+let commission: PayableCommission | null = null;
+let problem: string | null = null;
+if (!service || !/^CR-[A-Z0-9]{10}$/.test(reference) || token.length < 16) {
+  problem = es ? 'Este enlace no está completo. Ábrelo desde el email de Meili.' : 'This link is incomplete. Open it from Meili’s email.';
+} else {
+  try {
+    commission = await payableCommission(service, reference, token);
+  } catch (err) {
+    problem =
+      linkProblem(err, locale) ??
+      (es ? 'No pudimos abrir el presupuesto. Inténtalo de nuevo en un momento.' : 'We could not open the quote. Try again in a moment.');
+  }
+}
+const [providers, config] = await Promise.all([checkoutProviders(), service ? commissionConfig(service) : null]);
+const canTransfer = Boolean(config?.transferIban);
+const countries = countryOptions(locale);
+const until = commission
+  ? new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date(commission.until))
+  : '';
+const title = es ? 'Pagar tu encargo' : 'Pay for your commission';
+---
+
+<PublicLayout locale={locale} title={title} noindex>
+  <section class="section pay">
+    <div class="site-shell">
+      {
+        problem || !commission ? (
+          <div class="paper pay__problem">
+            <h1 class="display pay__title">{es ? 'Este presupuesto no se puede pagar' : 'This quote cannot be paid'}</h1>
+            <p>{problem}</p>
+            <p class="pay__contact">
+              <a class="btn btn--ghost" href={WHATSAPP_URL} target="_blank" rel="noopener">WhatsApp</a>
+              <a class="btn btn--ghost" href={localizedPath(locale, 'contact')}>{es ? 'Contacto' : 'Contact'}</a>
+            </p>
+          </div>
+        ) : (
+          <div
+            class="pay__grid"
+            data-pay-page
+            data-locale={locale}
+            data-reference={commission.reference}
+            data-token={token}
+            data-phone={SHOP_PHONE}
+          >
+            <header class="pay__head">
+              <p class="eyebrow">{es ? `Encargo ${commission.reference}` : `Commission ${commission.reference}`}</p>
+              <h1 class="display pay__title">
+                {es ? 'Tu retrato, ' : 'Your portrait, '}
+                <em>{es ? 'presupuestado' : 'quoted'}</em>
+              </h1>
+              <p class="pay__lead">
+                {es
+                  ? `Hola, ${commission.name}. Aquí tienes el presupuesto de Meili; elige a dónde lo enviamos y cómo pagarlo.`
+                  : `Hello ${commission.name}. Here is Meili’s quote; choose where we send it and how to pay.`}
+              </p>
+            </header>
+
+            <aside class="quote">
+              <p class="quote__label">{es ? 'Presupuesto' : 'Quote'}</p>
+              <p class="display quote__title">{commission.title}</p>
+              {commission.note && <p class="quote__note">{commission.note}</p>}
+              <dl class="quote__sums">
+                <div>
+                  <dt>{es ? 'Retrato' : 'Portrait'}</dt>
+                  <dd data-portrait>{formatEur(commission.priceCents, locale)}</dd>
+                </div>
+                <div>
+                  <dt>{es ? 'Envío' : 'Shipping'} <span class="muted" data-zone></span></dt>
+                  <dd data-ship-cost>{es ? 'Elige el destino' : 'Choose the destination'}</dd>
+                </div>
+                <div class="quote__total">
+                  <dt>Total</dt>
+                  <dd data-total>—</dd>
+                </div>
+              </dl>
+              <p class="quote__small" data-vat-note hidden>
+                {es ? 'Destino sin IVA español: el precio va sin IVA.' : 'Destination without Spanish VAT: the price is shown without it.'}
+              </p>
+              <p class="quote__small">{es ? `IVA incluido · válido hasta el ${until}` : `VAT included · valid until ${until}`}</p>
+            </aside>
+
+            <form class="paper pay__form" data-pay-form novalidate>
+              <h2 class="paper__title">{es ? 'Tus datos y el envío' : 'Your details and delivery'}</h2>
+              <div class="paper__row">
+                <label class="field">
+                  <span class="field__label">Email</span>
+                  <input name="email" type="email" autocomplete="email" required maxlength="254" value={commission.email} />
+                </label>
+                <label class="field">
+                  <span class="field__label">{es ? 'Teléfono' : 'Phone'}</span>
+                  <input name="phone" type="tel" autocomplete="tel" required maxlength="32" />
+                </label>
+              </div>
+              <label class="field">
+                <span class="field__label">{es ? 'Nombre de quien lo recibe' : 'Name of who receives it'}</span>
+                <input name="name" autocomplete="shipping name" required maxlength="120" value={commission.name} />
+              </label>
+              <div class="paper__row">
+                <label class="field">
+                  <span class="field__label">{es ? 'País' : 'Country'}</span>
+                  <select name="country" autocomplete="shipping country" required data-requote>
+                    {countries.map((c) => <option value={c.code}>{c.name}</option>)}
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">{es ? 'Código postal' : 'Postcode'}</span>
+                  <input name="postalCode" autocomplete="shipping postal-code" maxlength="12" inputmode="numeric" data-requote />
+                </label>
+              </div>
+              <label class="field">
+                <span class="field__label">{es ? 'Dirección' : 'Address'}</span>
+                <input name="line1" autocomplete="shipping address-line1" required maxlength="160" />
+              </label>
+              <div class="paper__row">
+                <label class="field">
+                  <span class="field__label">{es ? 'Piso, puerta…' : 'Flat, floor…'} <small>{es ? 'opcional' : 'optional'}</small></span>
+                  <input name="line2" autocomplete="shipping address-line2" maxlength="160" />
+                </label>
+                <label class="field">
+                  <span class="field__label">{es ? 'Ciudad' : 'City'}</span>
+                  <input name="city" autocomplete="shipping address-level2" required maxlength="100" />
+                </label>
+              </div>
+
+              <fieldset class="field methods" data-methods>
+                <legend class="field__label">{es ? 'Cómo pagas' : 'How you pay'}</legend>
+                <div class="methods__list">
+                  {providers.includes('stripe') && (
+                    <label><input type="radio" name="method" value="stripe" checked /><span>{es ? 'Tarjeta' : 'Card'}</span></label>
+                  )}
+                  {providers.includes('paypal') && (
+                    <label><input type="radio" name="method" value="paypal" checked={!providers.includes('stripe')} /><span>PayPal</span></label>
+                  )}
+                  <label><input type="radio" name="method" value="bizum" checked={providers.length === 0} /><span>Bizum</span></label>
+                  {canTransfer && (
+                    <label><input type="radio" name="method" value="transfer" /><span>{es ? 'Transferencia' : 'Bank transfer'}</span></label>
+                  )}
+                </div>
+              </fieldset>
+
+              <button type="submit" class="btn pay__submit" data-pay-submit disabled>{es ? 'Pagar' : 'Pay'}</button>
+              <p class="pay__status" data-pay-status role="status" aria-live="polite"></p>
+            </form>
+
+            <section class="paper pay__done" data-pay-done hidden aria-live="polite">
+              <h2 class="display">{es ? 'Pedido recibido' : 'Order received'}</h2>
+              <p data-done-text></p>
+              <dl class="done__facts" data-done-facts></dl>
+              <p class="quote__small">
+                {es
+                  ? 'Cuando llegue el pago, Meili lo marca como pagado y te llega la confirmación por email, con la factura.'
+                  : 'When the payment arrives, Meili marks it paid and you get the confirmation by email, with the invoice.'}
+              </p>
+            </section>
+          </div>
+        )
+      }
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .pay__grid {
+    display: grid;
+    gap: clamp(1.5rem, 4vw, 2.5rem);
+    align-items: start;
+  }
+
+  @media (min-width: 60rem) {
+    .pay__grid {
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    }
+
+    .pay__head {
+      grid-column: 1 / -1;
+    }
+
+    .quote {
+      grid-column: 2;
+      grid-row: 2;
+      position: sticky;
+      top: 2rem;
+    }
+
+    .pay__form,
+    .pay__done {
+      grid-column: 1;
+      grid-row: 2;
+    }
+  }
+
+  .pay__title {
+    margin: 0 0 0.75rem;
+    font-size: clamp(2.6rem, 6vw, 5rem);
+    line-height: 0.96;
+    letter-spacing: -0.045em;
+  }
+
+  .pay__title em {
+    color: var(--accent);
+  }
+
+  .pay__lead {
+    max-width: 38rem;
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  .quote {
+    padding: clamp(1.5rem, 3vw, 2.25rem);
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .quote__label {
+    margin: 0 0 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .quote__title {
+    margin: 0 0 0.75rem;
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    letter-spacing: -0.035em;
+  }
+
+  .quote__note {
+    margin: 0 0 1.25rem;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--ink-soft);
+    white-space: pre-line;
+  }
+
+  .quote__sums {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .quote__sums div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .quote__sums dt,
+  .quote__sums dd {
+    margin: 0;
+  }
+
+  .quote__total {
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+  }
+
+  .quote__small {
+    margin: 0.75rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .pay__form {
+    display: grid;
+    gap: 1.35rem;
+  }
+
+  /* The country, drawn like the other fields on the paper. */
+  .pay__form select {
+    width: 100%;
+    padding: 0.35rem 1.5rem 0.4rem 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background:
+      linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%) right 0.35rem center / 0.35rem 0.35rem no-repeat,
+      linear-gradient(-45deg, transparent 50%, var(--ink-soft) 50%) right 0 center / 0.35rem 0.35rem no-repeat;
+    background-position:
+      right 0.6rem center,
+      right 0.25rem center;
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    appearance: none;
+  }
+
+  .pay__form select:focus-visible {
+    outline: none;
+    border-bottom-color: var(--accent);
+    box-shadow: 0 1px 0 0 var(--accent);
+  }
+
+  .methods__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .methods__list label {
+    position: relative;
+  }
+
+  .methods__list input {
+    position: absolute;
+    opacity: 0;
+  }
+
+  .methods__list span {
+    display: inline-block;
+    min-width: 7rem;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .methods__list input:checked + span {
+    border-color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
+
+  .methods__list input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .pay__submit {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  .pay__status {
+    min-height: 1.4em;
+    margin: 0.5rem 0 0;
+    color: var(--ink-soft);
+  }
+
+  .pay__status[data-tone='error'] {
+    color: var(--danger);
+  }
+
+  .pay__done[hidden] {
+    display: none;
+  }
+
+  .done__facts {
+    display: grid;
+    gap: 0.5rem;
+    margin: 1rem 0 0;
+  }
+
+  .done__facts :global(div) {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    gap: 1rem;
+  }
+
+  .done__facts :global(dt) {
+    color: var(--muted);
+  }
+
+  .done__facts :global(dd) {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .pay__problem {
+    max-width: 40rem;
+  }
+
+  .pay__contact {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+</style>
+
+<script>
+  type Quote = {
+    quoteId: string;
+    shippingFormatted: string;
+    totalFormatted: string;
+    subtotalFormatted: string;
+    shippingCents: number;
+    noVat: boolean;
+    zoneName: string | null;
+  };
+
+  const root = document.querySelector<HTMLElement>('[data-pay-page]');
+  const form = root?.querySelector<HTMLFormElement>('[data-pay-form]');
+  if (root && form) {
+    const es = root.dataset.locale === 'es';
+    const reference = root.dataset.reference!;
+    const token = root.dataset.token!;
+    const $ = <T extends Element>(s: string) => root.querySelector<T>(s)!;
+    const field = (name: string) => (form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement).value.trim();
+    const status = $<HTMLElement>('[data-pay-status]');
+    const submit = $<HTMLButtonElement>('[data-pay-submit]');
+    const say = (text: string, tone: 'info' | 'error' = 'info') => {
+      status.textContent = text;
+      status.dataset.tone = tone;
+    };
+    let quote: Quote | null = null;
+    let seq = 0;
+
+    const destinationReady = () => {
+      const country = field('country');
+      return country === 'ES' ? /^\d{5}$/.test(field('postalCode')) : /^[A-Z]{2}$/.test(country);
+    };
+
+    const fetchQuote = async (): Promise<Quote | null> => {
+      const res = await fetch('/api/commissions/pay/quote/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ reference, token, locale: es ? 'es' : 'en', country: field('country'), postalCode: field('postalCode') }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as (Quote & { error?: { message?: string } }) | null;
+      if (!res?.ok || !data?.quoteId) {
+        const code = data?.error?.message ?? '';
+        say(
+          code.includes('SHIPPING_')
+            ? es
+              ? 'No enviamos a ese destino con las tarifas de la tienda. Escribe a Meili y lo buscamos.'
+              : 'We do not ship there with the shop’s rates. Write to Meili and we will find a way.'
+            : code.includes('COMMISSION_')
+              ? es
+                ? 'Este presupuesto ya no está disponible. Recarga la página.'
+                : 'This quote is no longer available. Reload the page.'
+              : es
+                ? 'No pudimos calcular el envío. Inténtalo de nuevo.'
+                : 'We could not work out the shipping. Try again.',
+          'error',
+        );
+        return null;
+      }
+      return data;
+    };
+
+    const requote = async () => {
+      const mine = ++seq;
+      quote = null;
+      submit.disabled = true;
+      if (!destinationReady()) {
+        $<HTMLElement>('[data-ship-cost]').textContent = es ? 'Elige el destino' : 'Choose the destination';
+        $<HTMLElement>('[data-total]').textContent = '—';
+        return;
+      }
+      $<HTMLElement>('[data-ship-cost]').textContent = es ? 'Calculando…' : 'Working it out…';
+      const fresh = await fetchQuote();
+      if (mine !== seq || !fresh) return;
+      quote = fresh;
+      say('');
+      $<HTMLElement>('[data-portrait]').textContent = fresh.subtotalFormatted;
+      $<HTMLElement>('[data-ship-cost]').textContent = fresh.shippingCents === 0 ? (es ? 'Gratis' : 'Free') : fresh.shippingFormatted;
+      $<HTMLElement>('[data-zone]').textContent = fresh.zoneName ? `· ${fresh.zoneName}` : '';
+      $<HTMLElement>('[data-total]').textContent = fresh.totalFormatted;
+      $<HTMLElement>('[data-vat-note]').hidden = !fresh.noVat;
+      submit.disabled = false;
+      submit.textContent = `${es ? 'Pagar' : 'Pay'} ${fresh.totalFormatted}`;
+    };
+
+    let timer = 0;
+    form.querySelectorAll('[data-requote]').forEach((el) =>
+      el.addEventListener('input', () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(requote, 350);
+      }),
+    );
+    void requote();
+
+    const customer = () => ({
+      email: field('email'),
+      phone: field('phone'),
+      name: field('name'),
+      line1: field('line1'),
+      line2: field('line2'),
+      city: field('city'),
+      state: '',
+      postalCode: field('postalCode'),
+      country: field('country'),
+      note: '',
+    });
+
+    const fact = (label: string, value: string) => {
+      const div = document.createElement('div');
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      div.append(dt, dd);
+      return div;
+    };
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const method = form.querySelector<HTMLInputElement>('input[name="method"]:checked')?.value ?? 'bizum';
+      submit.disabled = true;
+      say(es ? 'Preparando el pago…' : 'Getting the payment ready…');
+      // A fresh quote: the price and shipping as they are right now.
+      const fresh = await fetchQuote();
+      if (!fresh) {
+        submit.disabled = false;
+        return;
+      }
+      if (method === 'stripe' || method === 'paypal') {
+        const res = await fetch('/api/checkout/create/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ provider: method, locale: es ? 'es' : 'en', quoteId: fresh.quoteId, attemptId: crypto.randomUUID(), customer: customer() }),
+        }).catch(() => null);
+        const data = (await res?.json().catch(() => null)) as { url?: string; reference?: string; accessToken?: string; error?: { message?: string } } | null;
+        if (!res?.ok || !data?.url) {
+          say(es ? 'No se pudo abrir el pago. Inténtalo de nuevo.' : 'The payment could not open. Try again.', 'error');
+          submit.disabled = false;
+          return;
+        }
+        try {
+          sessionStorage.setItem('petsdrawings.commissionPayment.v1', reference);
+          if (data.reference && data.accessToken) {
+            sessionStorage.setItem('petsdrawings.orderAccess.v1', JSON.stringify({ reference: data.reference, accessToken: data.accessToken }));
+          }
+        } catch {
+          // Storage blocked: the confirmation page still finds the order by email link.
+        }
+        location.assign(data.url);
+        return;
+      }
+
+      const res = await fetch('/api/commissions/pay/manual/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ reference, token, method, quoteId: fresh.quoteId, customer: customer() }),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as { reference?: string; totalCents?: number; iban?: string; holder?: string } | null;
+      if (!res?.ok || !data?.reference) {
+        say(es ? 'No se pudo registrar el pedido. Inténtalo de nuevo.' : 'The order could not be recorded. Try again.', 'error');
+        submit.disabled = false;
+        return;
+      }
+      form.hidden = true;
+      const done = $<HTMLElement>('[data-pay-done]');
+      done.hidden = false;
+      const facts = $<HTMLElement>('[data-done-facts]');
+      const amount = fresh.totalFormatted;
+      if (method === 'bizum') {
+        $<HTMLElement>('[data-done-text]').textContent = es
+          ? `Haz un Bizum de ${amount} al ${root.dataset.phone ?? ''} con este concepto:`
+          : `Send a Bizum of ${amount} to ${root.dataset.phone ?? ''} with this reference:`;
+        facts.replaceChildren(fact(es ? 'Importe' : 'Amount', amount), fact(es ? 'Concepto' : 'Reference', data.reference));
+      } else {
+        $<HTMLElement>('[data-done-text]').textContent = es
+          ? `Haz una transferencia de ${amount} con estos datos:`
+          : `Make a bank transfer of ${amount} with these details:`;
+        facts.replaceChildren(
+          fact('IBAN', data.iban ?? ''),
+          fact(es ? 'Titular' : 'Holder', data.holder ?? ''),
+          fact(es ? 'Importe' : 'Amount', amount),
+          fact(es ? 'Concepto' : 'Reference', data.reference),
+        );
+      }
+      done.querySelector('h2')?.setAttribute('tabindex', '-1');
+      (done.querySelector('h2') as HTMLElement | null)?.focus();
+    });
+  }
+</script>

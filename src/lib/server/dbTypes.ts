@@ -237,6 +237,7 @@ export type CheckoutQuotesRow = {
   shipping_vat_rate: number;
   invoice_customer: unknown | null;
   pickup_market_id: string | null;
+  commission_request_id: string | null;
 };
 
 /** public.commission_files (table) */
@@ -269,6 +270,15 @@ export type CommissionRequestsRow = {
   updated_at: string;
   upload_token_hash: string | null;
   upload_until: string | null;
+  quote_cents: number | null;
+  quote_vat_rate: number | null;
+  quote_weight_grams: number | null;
+  quote_title: string | null;
+  quote_note: string | null;
+  quote_sent_at: string | null;
+  quote_until: string | null;
+  pay_token_hash: string | null;
+  paid_order_id: string | null;
 };
 
 /** public.contact_messages (table) */
@@ -555,6 +565,7 @@ export type OrdersRow = {
   gift_message: string | null;
   market_id: string | null;
   pickup: boolean;
+  commission_request_id: string | null;
 };
 
 /** public.page_views (table) */
@@ -718,6 +729,7 @@ export type ShopSettingsRow = {
   created_at: string;
   updated_at: string;
   invoice_config: unknown;
+  commission_config: unknown;
 };
 
 /** public.site_home_hero (table) */

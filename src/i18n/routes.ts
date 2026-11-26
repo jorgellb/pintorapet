@@ -9,6 +9,7 @@ export const routeMap = {
   work: { en: 'work', es: 'obra' },
   gallery: { en: 'gallery', es: 'galeria' },
   commissions: { en: 'commissions', es: 'encargos' },
+  commissionPay: { en: 'commissions/pay', es: 'encargos/pagar' },
   contact: { en: 'contact', es: 'contacto' },
   shop: { en: 'shop', es: 'tienda' },
   markets: { en: 'markets', es: 'mercados' },

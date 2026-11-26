@@ -4,6 +4,8 @@ import { readDestination } from '@/stores/destination';
 
 const ACCESS_KEY = 'petsdrawings.orderAccess.v1';
 const SAVED_FORM_KEY = 'petsdrawings.checkout.v1';
+/** Set by the commission payment page (CommissionPayPage). */
+const COMMISSION_PAYMENT_KEY = 'petsdrawings.commissionPayment.v1';
 
 type Access = { reference: string; accessToken: string };
 
@@ -33,6 +35,15 @@ function readAccess(): Access | null {
 
 /** The order is paid: the cart is done, and so is the note typed for this order. */
 function forgetCheckout(): void {
+  // A commission paid from its link was never in the cart: the cart stays as it was.
+  let commission = false;
+  try {
+    commission = sessionStorage.getItem(COMMISSION_PAYMENT_KEY) !== null;
+    sessionStorage.removeItem(COMMISSION_PAYMENT_KEY);
+  } catch {
+    // Storage blocked: treat it as a shop order.
+  }
+  if (commission) return;
   writeCart(emptyCart());
   try {
     const saved = JSON.parse(localStorage.getItem(SAVED_FORM_KEY) || '{}') as Record<string, unknown>;
