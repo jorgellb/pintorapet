@@ -124,6 +124,17 @@ const copy = es
       editCart: 'Editar',
       vatNote: 'IVA no aplicable a tu destino',
       vatTaken: 'ya descontados',
+      couponToggle: '¿Tienes un cupón?',
+      couponLabel: 'Código del cupón',
+      couponPlaceholder: 'NAVIDAD10',
+      couponApply: 'Aplicar',
+      couponRemove: 'Quitar',
+      couponRow: 'Cupón',
+      couponIncluded: 'ya aplicado',
+      couponChecking: 'Comprobando el cupón…',
+      couponSaved: 'se aplicará al calcular el envío.',
+      priceChanged: 'Ha cambiado algún precio. Revisa el resumen y pulsa de nuevo para pagar.',
+      couponGone: 'Quitamos el cupón. Revisa el total y pulsa de nuevo para pagar.',
       shippingPending: 'Según destino',
       from: 'De',
       to: 'Para',
@@ -211,6 +222,17 @@ const copy = es
       editCart: 'Edit',
       vatNote: 'VAT not applicable to your destination',
       vatTaken: 'already taken off',
+      couponToggle: 'Have a coupon?',
+      couponLabel: 'Coupon code',
+      couponPlaceholder: 'CHRISTMAS10',
+      couponApply: 'Apply',
+      couponRemove: 'Remove',
+      couponRow: 'Coupon',
+      couponIncluded: 'already applied',
+      couponChecking: 'Checking the coupon…',
+      couponSaved: 'it will apply once delivery is worked out.',
+      priceChanged: 'A price has changed. Check the summary and press pay again.',
+      couponGone: 'We removed the coupon. Check the total and press pay again.',
       shippingPending: 'Depends on destination',
       from: 'From',
       to: 'To',
@@ -255,6 +277,12 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
           data-msg-postal-es={copy.postalError}
           data-msg-postal-missing={copy.postalMissing}
           data-msg-vat-taken={copy.vatTaken}
+          data-msg-coupon-row={copy.couponRow}
+          data-msg-coupon-checking={copy.couponChecking}
+          data-msg-coupon-saved={copy.couponSaved}
+          data-msg-price-changed={copy.priceChanged}
+          data-msg-coupon-gone={copy.couponGone}
+          data-msg-remaining={dict.shipping.remaining}
           data-account={accountPrefill}
         >
           <header class="co-head">
@@ -648,10 +676,39 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
                 <a href={localizedPath(locale, 'cart')}>{copy.editCart}</a>
               </header>
               <ul class="ticket__lines" data-lines></ul>
+              <div class="cpn" data-coupon>
+                <details class="cpn__toggle" data-coupon-details>
+                  <summary>{copy.couponToggle}</summary>
+                  <div class="cpn__row">
+                    <label class="visually-hidden" for="co-coupon">{copy.couponLabel}</label>
+                    <input
+                      id="co-coupon"
+                      class="cpn__input"
+                      data-coupon-input
+                      autocomplete="off"
+                      autocapitalize="characters"
+                      spellcheck="false"
+                      maxlength="40"
+                      placeholder={copy.couponPlaceholder}
+                      aria-describedby="co-coupon-msg"
+                    />
+                    <button type="button" class="cpn__apply" data-coupon-apply>{copy.couponApply}</button>
+                  </div>
+                </details>
+                <p class="cpn__msg" id="co-coupon-msg" data-coupon-msg role="status" aria-live="polite" hidden></p>
+              </div>
               <dl class="ticket__sums">
                 <div>
                   <dt>{dict.cart.subtotal}</dt>
                   <dd data-sum="subtotal">—</dd>
+                </div>
+                <div class="ticket__coupon" data-sum-coupon hidden>
+                  <dt>
+                    <span data-sum="coupon-label">{copy.couponRow}</span>
+                    <small>{copy.couponIncluded}</small>
+                    <button type="button" class="cpn__remove" data-coupon-remove>{copy.couponRemove}</button>
+                  </dt>
+                  <dd data-sum="coupon">—</dd>
                 </div>
                 <div>
                   <dt>
@@ -1212,6 +1269,12 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
     font-style: italic;
     font-size: 1.15rem;
     color: var(--ink);
+  }
+
+  .ship-line :global(.ship-line__hint) {
+    flex-basis: 100%;
+    font-size: 0.85rem;
+    color: var(--success);
   }
 
   .ship-line.is-error {
@@ -1837,12 +1900,150 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
   }
 
   .ticket__vat dt,
-  .ticket__vat dd {
+  .ticket__vat dd,
+  .ticket__coupon dt,
+  .ticket__coupon dd {
     color: var(--success);
   }
 
-  .ticket__sums .ticket__vat[hidden] {
+  .ticket__sums .ticket__vat[hidden],
+  .ticket__sums .ticket__coupon[hidden] {
     display: none;
+  }
+
+  .ticket__coupon dt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 0.5rem;
+  }
+
+  .ticket__coupon dt small {
+    font-size: 0.8rem;
+  }
+
+  /* ——— The coupon, written on the ticket like the note ——— */
+  .cpn {
+    margin-top: 1.1rem;
+    padding-top: 0.9rem;
+    border-top: 1px dashed var(--line-strong);
+  }
+
+  .cpn__toggle summary {
+    cursor: pointer;
+    width: fit-content;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.05rem;
+    color: var(--accent-deep);
+    list-style: none;
+  }
+
+  .cpn__toggle summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .cpn__toggle summary::before {
+    content: '+ ';
+  }
+
+  .cpn__toggle[open] summary::before {
+    content: '− ';
+  }
+
+  .cpn__row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+  }
+
+  .cpn__input {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 0.4rem 0 0.5rem;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 0;
+    background: transparent;
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      box-shadow var(--dur-ui) var(--ease-soft);
+  }
+
+  .cpn__input::placeholder {
+    color: var(--muted);
+    opacity: 0.55;
+    font-style: italic;
+  }
+
+  .cpn__input:focus-visible {
+    outline: none;
+    border-bottom-color: var(--accent);
+    box-shadow: 0 1px 0 0 var(--accent);
+  }
+
+  .cpn__apply,
+  .cpn__remove {
+    border: 0;
+    background: transparent;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--accent-deep);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    cursor: pointer;
+  }
+
+  .cpn__apply {
+    min-height: 2.75rem;
+    padding: 0 0.25rem;
+    font-size: 1.05rem;
+  }
+
+  .cpn__remove {
+    padding: 0;
+    font-size: 0.88rem;
+  }
+
+  .cpn__apply:hover,
+  .cpn__remove:hover {
+    color: var(--ink);
+  }
+
+  .cpn__apply:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+
+  .cpn__msg {
+    margin: 0.55rem 0 0;
+    font-size: 0.88rem;
+    color: var(--danger);
+  }
+
+  .cpn__msg[hidden] {
+    display: none;
+  }
+
+  .cpn__msg.is-note {
+    color: var(--ink-soft);
+  }
+
+  .ticket__lines :global(.line__price s) {
+    display: block;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .ticket__lines :global(.line__price) {
+    text-align: right;
   }
 
   .ticket__total {

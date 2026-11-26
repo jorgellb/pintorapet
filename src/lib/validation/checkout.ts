@@ -13,6 +13,10 @@ export const quoteRequestSchema = z
     pickupMarketId: z.uuid().optional(),
     /** Present when the customer asks for a full invoice with their tax id. */
     invoice: invoiceCustomerSchema.optional(),
+    /** A discount code typed at checkout (any case); the database judges it. */
+    couponCode: z.string().trim().max(40).optional(),
+    /** The email typed on the checkout form, for coupons meant for certain customers. */
+    email: z.string().email().max(254).optional(),
   })
   .strict();
 

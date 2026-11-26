@@ -1,0 +1,224 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { euros } from '@/lib/admin/labels';
+import { validity } from '@/lib/admin/couponForm';
+import { couponSummary, type CouponStatus } from '@/lib/domain/coupons';
+import { listCoupons } from '@/lib/server/coupons';
+import { couponOptions } from '@/lib/server/admin/couponOptions';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const [{ data, error }, { data: options }] = await Promise.all([settle(listCoupons(admin.db)), settle(couponOptions(admin.db))]);
+const coupons = data ?? [];
+
+const tabs: Array<{ key: string; label: string; status: CouponStatus }> = [
+  { key: 'activos', label: 'Activos', status: 'active' },
+  { key: 'pausados', label: 'Pausados', status: 'paused' },
+  { key: 'archivados', label: 'Archivados', status: 'archived' },
+];
+const tab = tabs.find((t) => t.key === Astro.url.searchParams.get('estado')) ?? tabs[0]!;
+const shown = coupons.filter((c) => c.status === tab.status);
+const count = (status: CouponStatus) => coupons.filter((c) => c.status === status).length;
+
+const names = {
+  categories: new Map((options?.categories ?? []).map((c) => [c.id, c.name])),
+  collections: new Map((options?.collections ?? []).map((c) => [c.id, c.name])),
+  products: new Map((options?.products ?? []).map((c) => [c.id, c.name])),
+  zones: new Map((options?.zones ?? []).map((c) => [c.id, c.name])),
+};
+const now = Date.now();
+const notice = Astro.url.searchParams.has('borrado')
+  ? 'Cupón borrado.'
+  : Astro.url.searchParams.has('archivado')
+    ? 'Cupón archivado. Ya no se puede usar; lo encuentras en «Archivados».'
+    : null;
+---
+
+<AdminLayout title="Cupones" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Cupones</h1>
+      <p class="lead">
+        Códigos de descuento para la tienda online: el cliente lo escribe al pagar o llega con un enlace
+        <code>?cupon=CODIGO</code>. Cada cupón dice aquí, en una línea, qué hace.
+      </p>
+    </div>
+    <a class="btn" href="/admin/coupons/new/">Nuevo cupón</a>
+  </header>
+
+  {notice && <p class="status">{notice}</p>}
+  {error && <p class="err">{error.message}</p>}
+
+  <ul class="tabs" aria-label="Estado">
+    {
+      tabs.map((t) => (
+        <li>
+          <a href={t.key === 'activos' ? '/admin/coupons/' : `/admin/coupons/?estado=${t.key}`} aria-current={t === tab ? 'page' : undefined}>
+            {t.label}<span class="count">{count(t.status)}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  {
+    shown.length === 0 ? (
+      <p class="empty">
+        {coupons.length === 0
+          ? 'Todavía no hay ningún cupón. Crea el primero con «Nuevo cupón».'
+          : `No hay cupones ${tab.label.toLowerCase()}.`}
+      </p>
+    ) : (
+      <ul class="rows" data-coupon-rows>
+        <li class="rows__head" aria-hidden="true">
+          <span>Código</span><span>Qué hace</span><span>Vigencia</span><span class="num">Usos</span><span class="num">Descontado</span>
+        </li>
+        {shown.map((c) => {
+          const when = validity(c, now);
+          return (
+            <li class="row" data-code={c.code}>
+              <div class="row__code">
+                <a href={`/admin/coupons/${c.id}/`}><code>{c.code}</code></a>
+                <span class="row__chips">
+                  {c.status === 'active' && when.state === 'ended' && <span class="chip chip--danger">Caducado</span>}
+                  {c.status === 'active' && when.state === 'scheduled' && <span class="chip chip--info">Programado</span>}
+                  {c.status === 'active' && (when.state === 'live' || when.state === 'always') && <span class="chip chip--ok">Activo</span>}
+                  {c.status === 'paused' && <span class="chip chip--warn">Pausado</span>}
+                  {c.status === 'archived' && <span class="chip">Archivado</span>}
+                  {c.announce && c.status === 'active' && <span class="chip chip--info">Anunciado</span>}
+                </span>
+              </div>
+              <div class="row__what">
+                <p data-summary>{couponSummary(c, names)}</p>
+                {c.note && <p class="muted">{c.note}</p>}
+              </div>
+              <p class="row__cell" data-label="Vigencia">{when.text}</p>
+              <p class="row__cell num" data-label="Usos">{c.uses}{c.maxUses ? ` / ${c.maxUses}` : ''}</p>
+              <p class="row__cell num" data-label="Descontado">{c.discountCents > 0 ? euros(c.discountCents) : '—'}</p>
+            </li>
+          );
+        })}
+      </ul>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .rows {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--sheet);
+    box-shadow: var(--a-shadow);
+  }
+
+  .rows__head,
+  .row {
+    display: grid;
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) 9rem 5.5rem 6.5rem;
+    gap: 0.5rem 1.25rem;
+    align-items: start;
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rows__head {
+    background: var(--paper);
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row:hover {
+    background: var(--a-hover);
+  }
+
+  .row p {
+    margin: 0;
+  }
+
+  .row__code {
+    display: grid;
+    gap: 0.35rem;
+    justify-items: start;
+  }
+
+  .row__code a {
+    text-decoration: none;
+  }
+
+  .row__code code {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .row__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .row__what {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .row__cell {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .num {
+    text-align: right;
+  }
+
+  @media (max-width: 52rem) {
+    .rows__head {
+      display: none;
+    }
+
+    .row {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .row__code,
+    .row__what {
+      grid-column: 1 / -1;
+    }
+
+    .row__code {
+      grid-template-columns: auto 1fr;
+      align-items: center;
+    }
+
+    .row__cell {
+      display: grid;
+      gap: 0.1rem;
+      text-align: left;
+    }
+
+    .row__cell::before {
+      content: attr(data-label);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+  }
+</style>

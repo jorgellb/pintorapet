@@ -12,6 +12,7 @@ import {
   suggestEmail,
 } from '@/lib/domain/address';
 import { isValidSpanishTaxId, normalizeTaxId } from '@/lib/domain/taxId';
+import { forgetCoupon, normalizeCode, readStoredCoupon, storeCoupon } from '@/scripts/couponLink';
 
 const SAVED_KEY = 'petsdrawings.checkout.v1';
 const ACCESS_KEY = 'petsdrawings.orderAccess.v1';
@@ -41,16 +42,41 @@ type Line = {
   unitAmountCents: number;
 };
 
+type QuoteCoupon = {
+  code: string;
+  discountCents: number;
+  discountFormatted: string;
+  error: string | null;
+  message: string | null;
+};
+
 type Quote = {
   quoteId: string | null;
   subtotalCents: number;
   shippingCents: number;
   totalCents: number;
   vatDiscountCents?: number;
+  vatRegime?: 'es_vat' | 'no_vat' | null;
   shipping?: { zoneName: string } | null;
+  coupon?: QuoteCoupon | null;
+  lines?: Array<{ productId: string; unitAmountCents: number; listUnitCents: number }>;
 };
 
-type ApiError = { error?: { code?: string; message?: string } };
+type ApiError = { error?: { code?: string; message?: string; details?: { couponMessage?: string } } };
+
+/** What the API said when it refused: its code, its message and, for a coupon, the text to show. */
+class ApiRefusal extends Error {
+  constructor(
+    readonly apiCode: string,
+    message: string,
+    readonly couponMessage?: string,
+  ) {
+    super(message);
+  }
+}
+
+/** Codes that will never become valid by waiting: they leave the browser's memory. */
+const GONE_FOR_GOOD = new Set(['COUPON_NOT_FOUND', 'COUPON_EXPIRED']);
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -88,8 +114,25 @@ export function initCheckout(root: HTMLElement): void {
   const stateAuto = root.querySelector<HTMLElement>('[data-state-auto]')!;
 
   let quote: Quote | null = null;
+  /** The coupon priced without a destination, while the address is still being written. */
+  let couponQuote: Quote | null = null;
   let shippingOk = false;
   let busy = false;
+  // The code in play: from a link or an earlier visit, or typed here.
+  let couponCode = readStoredCoupon() ?? '';
+  let couponChecking = false;
+  /** Why a code was taken off, kept under the field until another is tried. */
+  let couponNotice = '';
+
+  const couponDetails = root.querySelector<HTMLDetailsElement>('[data-coupon-details]')!;
+  const couponInput = root.querySelector<HTMLInputElement>('[data-coupon-input]')!;
+  const couponApply = root.querySelector<HTMLButtonElement>('[data-coupon-apply]')!;
+  const couponMsg = root.querySelector<HTMLElement>('[data-coupon-msg]')!;
+  const couponRow = root.querySelector<HTMLElement>('[data-sum-coupon]')!;
+  if (couponCode) {
+    couponInput.value = couponCode;
+    couponDetails.open = true;
+  }
   const touched = new Set<string>();
 
   /* ——— Saved form and destination ——— */
@@ -300,6 +343,24 @@ export function initCheckout(root: HTMLElement): void {
 
   /* ——— Order lines ——— */
   let lines: Line[] = [];
+
+  /** The coupon part of a quote request: the code and, once it looks like one, the email. */
+  const couponParts = (withCoupon = true) =>
+    withCoupon && couponCode
+      ? { couponCode, ...(rules.email() ? { email: value('email') } : {}) }
+      : {};
+
+  const postQuote = (body: Record<string, unknown>) =>
+    fetch('/api/cart/quote/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  /** The quote the summary draws from: the one with the delivery, or the coupon's alone. */
+  const shown = () => quote ?? couponQuote;
+  const couponSaving = (q: Quote | null) => (q?.coupon && !q.coupon.error ? q.coupon.discountCents : 0);
+
   const renderLines = () => {
     const list = root.querySelector<HTMLElement>('[data-lines]')!;
     const items = readCart().items;
@@ -308,6 +369,7 @@ export function initCheckout(root: HTMLElement): void {
       ...items.map((item, i) => {
         const line = byId.get(item.productId);
         const li = document.createElement('li');
+        li.dataset.product = item.productId;
         li.style.animationDelay = `${i * 60}ms`;
         const img = document.createElement('span');
         img.className = 'line__img';
@@ -332,9 +394,32 @@ export function initCheckout(root: HTMLElement): void {
         return li;
       }),
     );
+    paintLinePrices();
     const stamp = root.querySelector<HTMLElement>('[data-parcel-stamp]');
     const first = lines.find((l) => l.imageUrl);
     if (stamp && first?.imageUrl) stamp.style.setProperty('--stamp', `url("${first.imageUrl}")`);
+  };
+
+  /** A piece the coupon lowered shows its old price struck through with the new one under it. */
+  const paintLinePrices = () => {
+    const view = shown();
+    const priced = new Map((view?.lines ?? []).map((l) => [l.productId, l]));
+    const discounted = Boolean(view?.coupon && !view.coupon.error);
+    const byId = new Map(lines.map((l) => [l.productId, l]));
+    for (const item of readCart().items) {
+      const li = root.querySelector<HTMLElement>(`[data-lines] li[data-product="${CSS.escape(item.productId)}"]`);
+      const price = li?.querySelector<HTMLElement>('.line__price');
+      if (!price) continue;
+      const line = byId.get(item.productId);
+      const quoted = priced.get(item.productId);
+      if (discounted && quoted && quoted.listUnitCents !== quoted.unitAmountCents) {
+        const was = document.createElement('s');
+        was.textContent = euros(quoted.listUnitCents * item.quantity);
+        price.replaceChildren(was, document.createTextNode(euros(quoted.unitAmountCents * item.quantity)));
+      } else {
+        price.textContent = line ? euros(line.unitAmountCents * item.quantity) : '';
+      }
+    }
   };
 
   const sums = (key: string, text: string) => {
@@ -350,19 +435,59 @@ export function initCheckout(root: HTMLElement): void {
       0,
     );
     const discount = quote?.vatDiscountCents ?? 0;
-    sums('subtotal', lines.length ? euros(quote ? quote.subtotalCents : itemsCents) : '—');
+    const view = shown();
+    sums('subtotal', lines.length ? euros(view ? view.subtotalCents : itemsCents) : '—');
     if (quote && shippingOk) {
       sums('shipping', quote.shippingCents === 0 ? (locale === 'es' ? 'Gratis' : 'Free') : euros(quote.shippingCents));
       sums('zone', quote.shipping?.zoneName ? `· ${quote.shipping.zoneName}` : '');
       sums('total', euros(quote.totalCents));
       root.querySelector<HTMLElement>('[data-pay-total]')!.textContent = euros(quote.totalCents);
     } else {
-      sums('total', lines.length ? euros(itemsCents) : '—');
+      sums('total', lines.length ? euros(view ? view.subtotalCents : itemsCents) : '—');
       root.querySelector<HTMLElement>('[data-pay-total]')!.textContent = '—';
     }
     const vat = root.querySelector<HTMLElement>('[data-sum-vat]')!;
     vat.hidden = !(quote && discount > 0);
     if (discount > 0) sums('vat', `${euros(discount)} ${msg('msgVatTaken')}`);
+    paintLinePrices();
+    paintCoupon();
+  };
+
+  /* ——— The coupon: its row in the sums and what is said under the field ——— */
+  const paintCoupon = () => {
+    const view = shown();
+    const coupon = view?.coupon ?? null;
+    const saving = couponSaving(view);
+    couponRow.hidden = !(coupon && !coupon.error && saving > 0);
+    if (!couponRow.hidden && coupon) {
+      sums('coupon-label', `${msg('msgCouponRow')} ${coupon.code}`);
+      sums('coupon', `−${coupon.discountFormatted}`);
+    }
+    let text = '';
+    let isNote = false;
+    if (couponChecking) {
+      text = msg('msgCouponChecking');
+      isNote = true;
+    } else if (coupon?.error) {
+      text = coupon.message ?? '';
+    } else if (coupon && saving === 0 && !view?.shipping) {
+      text = `${coupon.code}: ${msg('msgCouponSaved')}`;
+      isNote = true;
+    } else if (!couponCode && couponNotice) {
+      text = couponNotice;
+    }
+    couponMsg.hidden = !text;
+    couponMsg.textContent = text;
+    couponMsg.classList.toggle('is-note', isNote);
+    couponInput.setAttribute('aria-invalid', coupon?.error ? 'true' : 'false');
+    couponApply.disabled = couponChecking;
+    if (coupon?.error && couponCode) couponDetails.open = true;
+  };
+
+  /** Called with each quote that carried the code: a code gone for good is forgotten. */
+  const settleCoupon = (priced: Quote) => {
+    const reason = priced.coupon?.error;
+    if (reason && GONE_FOR_GOOD.has(reason)) forgetCoupon();
   };
 
   const loadLines = async () => {
@@ -390,7 +515,7 @@ export function initCheckout(root: HTMLElement): void {
   /* ——— Shipping price and exact totals for the destination ——— */
   let destTimer = 0;
   let destSeq = 0;
-  const refreshDestination = () => {
+  const refreshDestination = (immediate = false) => {
     window.clearTimeout(destTimer);
     destTimer = window.setTimeout(async () => {
       const seq = ++destSeq;
@@ -405,12 +530,29 @@ export function initCheckout(root: HTMLElement): void {
       if (!complete || items.length === 0) {
         shippingOk = false;
         quote = null;
+        couponQuote = null;
         shipLine.hidden = true;
+        // The code can be checked before there is an address: the pieces alone say most.
+        if (couponCode && items.length > 0) {
+          try {
+            const res = await postQuote({ locale, items, ...couponParts() });
+            const data = (await res.json()) as Quote & ApiError;
+            if (seq !== destSeq) return;
+            if (res.ok) {
+              couponQuote = data;
+              settleCoupon(data);
+            }
+          } catch {
+            if (seq !== destSeq) return;
+          }
+          couponChecking = false;
+        }
         paintSums();
         paintProgress();
         return;
       }
       writeDestination(dest);
+      couponQuote = null;
       shipLine.hidden = false;
       shipLine.classList.remove('is-error');
       shipLine.textContent = locale === 'es' ? 'Calculando el envío…' : 'Working out delivery…';
@@ -423,16 +565,13 @@ export function initCheckout(root: HTMLElement): void {
           shipLine.classList.add('is-error');
           shipLine.textContent = msg('msgShipping');
         } else {
-          const res = await fetch('/api/cart/quote/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-              locale,
-              items,
-              ...(dest.pickupMarketId
-                ? { pickupMarketId: dest.pickupMarketId }
-                : { shippingCountry: dest.country, shippingPostalCode: dest.postalCode || undefined }),
-            }),
+          const res = await postQuote({
+            locale,
+            items,
+            ...(dest.pickupMarketId
+              ? { pickupMarketId: dest.pickupMarketId }
+              : { shippingCountry: dest.country, shippingPostalCode: dest.postalCode || undefined }),
+            ...couponParts(),
           });
           const data = (await res.json()) as Quote & ApiError;
           if (seq !== destSeq) return;
@@ -446,7 +585,11 @@ export function initCheckout(root: HTMLElement): void {
           } else {
             shippingOk = true;
             quote = data;
-            const price = estimate.shippingCents === 0 ? (locale === 'es' ? 'gratis' : 'free') : estimate.shippingFormatted;
+            couponQuote = null;
+            settleCoupon(data);
+            // The estimate knows nothing of the code: with one, the quote's shipping is the price.
+            const shippingCents = couponSaving(data) > 0 ? data.shippingCents : estimate.shippingCents;
+            const price = shippingCents === 0 ? (locale === 'es' ? 'gratis' : 'free') : euros(shippingCents);
             shipLine.replaceChildren(
               ...(estimate.pickup
                 ? [
@@ -461,6 +604,18 @@ export function initCheckout(root: HTMLElement): void {
                     document.createTextNode(` · ${price}`),
                   ]),
             );
+            // "Add X more for free shipping" counts on the subtotal after the coupon (VAT regimes with VAT only:
+            // without VAT the quote's subtotal is net and the threshold is judged on catalogue prices).
+            const left =
+              !estimate.pickup && estimate.freeOverCents != null && data.vatRegime !== 'no_vat' && data.shippingCents > 0
+                ? estimate.freeOverCents - data.subtotalCents
+                : 0;
+            if (left > 0) {
+              const hint = document.createElement('span');
+              hint.className = 'ship-line__hint';
+              hint.textContent = msg('msgRemaining').replace('{amount}', euros(left));
+              shipLine.append(hint);
+            }
           }
         }
       } catch {
@@ -470,9 +625,36 @@ export function initCheckout(root: HTMLElement): void {
         shipLine.classList.add('is-error');
         shipLine.textContent = msg('msgError');
       }
+      couponChecking = false;
       paintSums();
       paintProgress();
-    }, 380);
+    }, immediate ? 0 : 380);
+  };
+
+  /* ——— Apply and take off a coupon ——— */
+  const applyCoupon = () => {
+    const code = normalizeCode(couponInput.value);
+    couponInput.value = code;
+    couponNotice = '';
+    if (!code) {
+      removeCoupon();
+      return;
+    }
+    couponCode = code;
+    storeCoupon(code);
+    couponChecking = true;
+    paintCoupon();
+    refreshDestination(true);
+  };
+
+  const removeCoupon = () => {
+    couponCode = '';
+    couponQuote = null;
+    couponChecking = false;
+    couponInput.value = '';
+    forgetCoupon();
+    paintCoupon();
+    refreshDestination(true);
   };
 
   /* ——— Email typo suggestion ——— */
@@ -545,6 +727,22 @@ export function initCheckout(root: HTMLElement): void {
     true,
   );
 
+  couponApply.addEventListener('click', applyCoupon);
+  couponInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    applyCoupon();
+  });
+  root.querySelector('[data-coupon-remove]')?.addEventListener('click', removeCoupon);
+  // A coupon meant for certain customers is judged on the email: price again once it is typed.
+  let lastEmailPriced = '';
+  field('email').addEventListener('change', () => {
+    const typed = rules.email() ? value('email') : '';
+    if (!couponCode || typed === lastEmailPriced) return;
+    lastEmailPriced = typed;
+    refreshDestination(true);
+  });
+
   window.addEventListener(CART_EVENT, () => {
     void loadLines();
     refreshDestination();
@@ -610,20 +808,38 @@ export function initCheckout(root: HTMLElement): void {
 
     try {
       const items = readCart().items;
-      const quoteRes = await fetch('/api/cart/quote/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
+      // A coupon the customer was already told about does not hold the sale back: it is left out.
+      const toldAboutCoupon = Boolean(shown()?.coupon?.error);
+      const priceNow = async (withCoupon: boolean) => {
+        const res = await postQuote({
           locale,
           items,
           ...(pickupId()
             ? { pickupMarketId: pickupId() }
             : { shippingCountry: country(), shippingPostalCode: value('postalCode') || undefined }),
           invoice: invoicePayload(),
-        }),
-      });
-      const fresh = (await quoteRes.json()) as Quote & ApiError;
-      if (!quoteRes.ok || !fresh.quoteId) throw new Error(fresh.error?.message || 'quote');
+          ...couponParts(withCoupon),
+        });
+        const data = (await res.json()) as Quote & ApiError;
+        if (!res.ok || !data.quoteId) throw new ApiRefusal(data.error?.code ?? '', data.error?.message || 'quote');
+        return data;
+      };
+      let fresh = await priceNow(true);
+      const hadSaving = couponSaving(shown()) > 0;
+      if (fresh.coupon?.error) {
+        if (hadSaving) {
+          // The discount the customer saw is gone (the coupon changed): show the new price and let them decide.
+          quote = fresh;
+          couponQuote = null;
+          settleCoupon(fresh);
+          paintSums();
+          parcel.classList.remove('is-sealed');
+          setBusy(false);
+          say(fresh.coupon.message ?? msg('msgPriceChanged'), true);
+          return;
+        }
+        if (toldAboutCoupon) fresh = await priceNow(false);
+      }
 
       if (preview) {
         await sealed;
@@ -668,7 +884,13 @@ export function initCheckout(root: HTMLElement): void {
         reference?: string;
         accessToken?: string;
       };
-      if (!createRes.ok || !created.url) throw new Error(created.error?.message || 'checkout');
+      if (!createRes.ok || !created.url) {
+        throw new ApiRefusal(
+          created.error?.code ?? '',
+          created.error?.message || 'checkout',
+          created.error?.details?.couponMessage,
+        );
+      }
       if (created.reference && created.accessToken) {
         try {
           sessionStorage.setItem(
@@ -686,7 +908,20 @@ export function initCheckout(root: HTMLElement): void {
       const code = err instanceof Error ? err.message : '';
       parcel.classList.remove('is-sealed');
       setBusy(false);
-      if (code === 'ADDRESS_DESTINATION_MISMATCH') say(msg('msgMismatch'), true);
+      if (err instanceof ApiRefusal && err.apiCode === 'CONFLICT' && code.startsWith('COUPON_')) {
+        // The coupon does not hold any more (the order was cancelled): say why, drop it, price again.
+        couponNotice = err.couponMessage || '';
+        couponCode = '';
+        couponInput.value = '';
+        forgetCoupon();
+        say(`${couponNotice} ${msg('msgCouponGone')}`.trim(), true);
+        paintCoupon();
+        refreshDestination(true);
+      } else if (err instanceof ApiRefusal && err.apiCode === 'PRICE_CHANGED') {
+        // Prices (or the coupon) changed since the quote: price again; the new quote carries any coupon reason.
+        say(msg('msgPriceChanged'), true);
+        refreshDestination(true);
+      } else if (code === 'ADDRESS_DESTINATION_MISMATCH') say(msg('msgMismatch'), true);
       else if (code.startsWith('SHIPPING_')) say(msg('msgShipping'), true);
       else if (/UNAVAILABLE|NOT_FOUND|CART_/.test(code)) say(msg('msgUnavailable'), true);
       else if (code === 'Invalid quote payload') {
@@ -707,6 +942,9 @@ export function initCheckout(root: HTMLElement): void {
   paintProvince();
   paintLabel();
   paintProgress();
+  lastEmailPriced = rules.email() ? value('email') : '';
+  if (couponCode) couponChecking = true;
+  paintCoupon();
   void loadLines();
   refreshDestination();
 }

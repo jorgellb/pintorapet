@@ -7,6 +7,8 @@ export type CheckoutAttemptStatus = 'creating_session' | 'session_open' | 'paid'
 export type CommissionFileStatus = 'pending_validation' | 'accepted' | 'rejected' | 'removed';
 export type CommissionRequestStatus = 'received' | 'reviewing' | 'quoted' | 'accepted' | 'declined' | 'closed';
 export type ContactMessageStatus = 'received' | 'read' | 'archived';
+export type CouponKind = 'percent' | 'fixed' | 'free_shipping' | 'buy_x_get_y' | 'nth_unit';
+export type CouponStatus = 'active' | 'paused' | 'archived';
 export type CurrencyCode = 'EUR';
 export type InventoryMode = 'tracked' | 'made_to_order' | 'unverified';
 export type LocaleCode = 'en' | 'es';
@@ -238,6 +240,12 @@ export type CheckoutQuotesRow = {
   invoice_customer: unknown | null;
   pickup_market_id: string | null;
   commission_request_id: string | null;
+  coupon_id: string | null;
+  coupon_code: string | null;
+  coupon_discount_cents: number;
+  coupon_error: string | null;
+  coupon_missing_cents: number | null;
+  coupon_missing_units: number | null;
 };
 
 /** public.commission_files (table) */
@@ -289,6 +297,54 @@ export type ContactMessagesRow = {
   contact_email: string;
   message: string;
   status: ContactMessageStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+/** public.coupon_redemptions (table) */
+export type CouponRedemptionsRow = {
+  order_id: string;
+  coupon_id: string;
+  email: string | null;
+  payer_email: string | null;
+  customer_id: string | null;
+  discount_cents: number;
+  created_at: string;
+};
+
+/** public.coupons (table) */
+export type CouponsRow = {
+  id: string;
+  code: string;
+  note: string;
+  status: CouponStatus;
+  kind: CouponKind;
+  percent: number | null;
+  amount_cents: number | null;
+  cap_cents: number | null;
+  buy_qty: number | null;
+  get_qty: number | null;
+  nth: number | null;
+  category_ids: string[];
+  collection_ids: string[];
+  product_ids: string[];
+  excluded_product_ids: string[];
+  min_subtotal_cents: number | null;
+  min_units: number | null;
+  zone_ids: string[];
+  allow_shipping: boolean;
+  allow_pickup: boolean;
+  first_order_only: boolean;
+  require_account: boolean;
+  emails: string[];
+  emails_require_account: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  weekdays: unknown[];
+  max_uses: number | null;
+  max_uses_per_customer: number | null;
+  announce: boolean;
+  version: number;
   created_at: string;
   updated_at: string;
 };
@@ -574,6 +630,10 @@ export type OrdersRow = {
   pickup: boolean;
   commission_request_id: string | null;
   commission_fingerprint: string | null;
+  coupon_id: string | null;
+  coupon_code: string | null;
+  coupon_discount_cents: number;
+  coupon_over_limit: boolean;
 };
 
 /** public.page_views (table) */

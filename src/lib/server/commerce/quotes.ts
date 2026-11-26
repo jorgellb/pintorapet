@@ -2,6 +2,7 @@ import { json, type Db } from '@/lib/server/db';
 import type { CartItem } from '@/lib/domain/cart';
 import type { InvoiceCustomer } from '@/lib/domain/checkoutCustomer';
 import { formatEur } from '@/lib/domain/money';
+import { couponMessage, isCouponReason, normalizeCouponCode, type CouponReason } from '@/lib/domain/coupons';
 import { dbCall } from './pgErrors';
 import { CommerceError } from './errors';
 
@@ -9,7 +10,10 @@ export interface QuoteLine {
   productId: string;
   title: string;
   quantity: number;
+  /** What is charged for one piece (after the coupon, net of VAT for no_vat). */
   unitAmountCents: number;
+  /** What one piece cost before the coupon. */
+  listUnitCents?: number;
   lineTotalCents: number;
   priceVersion?: number;
   sku?: string;
@@ -34,6 +38,17 @@ export interface PersistedQuote {
   vatDiscountCents: number;
   /** Picked up at this market (no shipping). */
   pickupMarketId: string | null;
+  /** The code typed with what it saved, or why it was refused; null when none was typed. */
+  coupon: QuoteCoupon | null;
+}
+
+export interface QuoteCoupon {
+  code: string;
+  /** What the customer saves, shipping included, as charged. */
+  discountCents: number;
+  error: CouponReason | null;
+  missingCents: number | null;
+  missingUnits: number | null;
 }
 
 export interface QuoteShipping {
@@ -60,10 +75,16 @@ type QuoteRow = {
   vat_regime?: 'es_vat' | 'no_vat' | null;
   vat_discount_cents?: number | null;
   pickup_market_id?: string | null;
+  coupon_code?: string | null;
+  coupon_discount_cents?: number | null;
+  coupon_error?: string | null;
+  coupon_missing_cents?: number | null;
+  coupon_missing_units?: number | null;
   lines: Array<{
     product_id: string;
     quantity: number;
     unit_price_cents: number;
+    list_unit_cents?: number;
     line_subtotal_cents: number;
     price_version?: number;
     title?: string;
@@ -71,6 +92,21 @@ type QuoteRow = {
     slug?: string;
   }>;
 };
+
+/**
+ * Who is buying, as the quote may know it. The typed email counts only when the
+ * customer is signed in with that same email: for anyone else it would let a
+ * stranger's email ask whether that person has bought or is on a list. A guest's
+ * "who" rules are judged when the order is claimed.
+ */
+export function quoteCouponCtx(
+  account: { id: string; email: string } | null,
+  typedEmail?: string,
+): { email?: string; customer_id?: string } {
+  if (!account) return {};
+  const sameEmail = typedEmail && typedEmail.trim().toLowerCase() === account.email.trim().toLowerCase();
+  return { customer_id: account.id, ...(sameEmail ? { email: typedEmail.trim() } : {}) };
+}
 
 export async function createPersistedQuote(
   supabase: Db,
@@ -83,6 +119,10 @@ export async function createPersistedQuote(
     /** Picked up at a market: no shipping, no destination. */
     pickupMarketId?: string;
     invoice?: InvoiceCustomer;
+    /** The code the customer typed (any case). */
+    couponCode?: string;
+    /** Who is buying, from the server: the typed email and the signed-in account. Nothing else is read. */
+    couponCtx?: { email?: string; customer_id?: string };
   },
 ): Promise<PersistedQuote> {
   const p_lines = opts.items.map((item) => ({
@@ -91,6 +131,9 @@ export async function createPersistedQuote(
   }));
 
   const lineArray = json(p_lines);
+  const couponCode = opts.couponCode ? normalizeCouponCode(opts.couponCode) || null : null;
+  // Only these two keys travel to the database, whatever the caller holds.
+  const couponCtx = json({ email: opts.couponCtx?.email ?? null, customer_id: opts.couponCtx?.customer_id ?? null });
   const data = await dbCall(() =>
     opts.pickupMarketId
       ? supabase.one<QuoteRow>`
@@ -99,7 +142,9 @@ export async function createPersistedQuote(
             p_locale => ${opts.locale}::public.locale_code,
             p_lines => array(select l from jsonb_populate_recordset(null::public.cart_line_input, ${lineArray}) l),
             p_market_id => ${opts.pickupMarketId}::uuid,
-            p_invoice_customer => ${opts.invoice ? json(opts.invoice) : null})`
+            p_invoice_customer => ${opts.invoice ? json(opts.invoice) : null},
+            p_coupon_code => ${couponCode},
+            p_coupon_ctx => ${couponCtx})`
       : supabase.one<QuoteRow>`
     select * from public.create_checkout_quote(
       p_cart_owner_hash => ${opts.cartOwnerHash},
@@ -107,7 +152,9 @@ export async function createPersistedQuote(
       p_lines => array(select l from jsonb_populate_recordset(null::public.cart_line_input, ${json(p_lines)}) l),
       p_country => ${opts.country?.toUpperCase() ?? null},
       p_postal_code => ${opts.postalCode || null},
-      p_invoice_customer => ${opts.invoice ? json(opts.invoice) : null})`);
+      p_invoice_customer => ${opts.invoice ? json(opts.invoice) : null},
+      p_coupon_code => ${couponCode},
+      p_coupon_ctx => ${couponCtx})`);
   if (!data) {
     throw new CommerceError('INTERNAL', 'Quote RPC returned empty', 500);
   }
@@ -118,6 +165,7 @@ export async function createPersistedQuote(
     title: l.title ?? '',
     quantity: l.quantity,
     unitAmountCents: l.unit_price_cents,
+    listUnitCents: l.list_unit_cents,
     lineTotalCents: l.line_subtotal_cents,
     priceVersion: l.price_version,
     sku: l.sku,
@@ -147,6 +195,15 @@ export async function createPersistedQuote(
     vatRegime: row.vat_regime ?? null,
     vatDiscountCents: row.vat_discount_cents ?? 0,
     pickupMarketId: row.pickup_market_id ?? null,
+    coupon: row.coupon_code
+      ? {
+          code: row.coupon_code,
+          discountCents: row.coupon_discount_cents ?? 0,
+          error: row.coupon_error ? (isCouponReason(row.coupon_error) ? row.coupon_error : 'COUPON_NOT_FOUND') : null,
+          missingCents: row.coupon_missing_cents ?? null,
+          missingUnits: row.coupon_missing_units ?? null,
+        }
+      : null,
   };
 }
 
@@ -170,11 +227,28 @@ export function quotePublicPayload(quote: PersistedQuote) {
     vatDiscountFormatted: formatEur(quote.vatDiscountCents, quote.locale),
     pickupMarketId: quote.pickupMarketId,
     expiresAt: quote.expiresAt,
+    coupon: quote.coupon
+      ? {
+          code: quote.coupon.code,
+          discountCents: quote.coupon.discountCents,
+          discountFormatted: formatEur(quote.coupon.discountCents, quote.locale),
+          error: quote.coupon.error,
+          missingCents: quote.coupon.missingCents,
+          missingUnits: quote.coupon.missingUnits,
+          message: quote.coupon.error
+            ? couponMessage(quote.coupon.error, quote.locale, {
+                missingCents: quote.coupon.missingCents,
+                missingUnits: quote.coupon.missingUnits,
+              })
+            : null,
+        }
+      : null,
     lines: quote.lines.map((l) => ({
       productId: l.productId,
       title: l.title,
       quantity: l.quantity,
       unitAmountCents: l.unitAmountCents,
+      listUnitCents: l.listUnitCents ?? l.unitAmountCents,
       lineTotalCents: l.lineTotalCents,
     })),
   };

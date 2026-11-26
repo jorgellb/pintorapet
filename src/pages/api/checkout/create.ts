@@ -64,6 +64,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       items: body.items ? normalizeCartItems(body.items) : undefined,
       customer: body.customer,
       customerId: account?.user.id,
+      customerEmail: account?.user.email,
     });
 
     // A gift's address and name are the recipient's, not the buyer's; a pickup has none: not saved.

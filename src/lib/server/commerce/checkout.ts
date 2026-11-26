@@ -12,7 +12,8 @@ import { siteUrl } from '@/lib/server/env';
 import { loadPaymentConfig, type PaymentProvider } from '@/lib/server/payments/config';
 import { approveUrl, createPaypalOrder } from '@/lib/server/payments/paypal';
 import { CommerceError } from './errors';
-import { dbCall } from './pgErrors';
+import { COUPON_WHO_REASONS, couponMessage, isCouponReason } from '@/lib/domain/coupons';
+import { dbCall, mapPgError } from './pgErrors';
 import { stripeFor } from './stripeClient';
 
 function requestHash(input: {
@@ -84,6 +85,8 @@ export async function createCheckout(
     customer?: CheckoutCustomer;
     /** Signed-in customer placing the order. */
     customerId?: string;
+    /** That customer's account email, from the session (never from the request body). */
+    customerEmail?: string;
   },
 ): Promise<{
   url: string;
@@ -157,6 +160,19 @@ export async function createCheckout(
       where id = ${reserve.order_id} and payment_status in ('pending_session', 'checkout_open')`);
   }
 
+  const stripeKey = payments.stripe?.secretKey;
+  await releaseOwnerCouponOrders(
+    supabase,
+    reserve.order_id,
+    stripeKey ? (sessionId) => stripeFor(stripeKey).checkout.sessions.expire(sessionId) : null,
+  );
+  await claimCoupon(
+    supabase,
+    reserve.order_id,
+    opts.locale,
+    ownEmail(opts.customerId ? opts.customerEmail : undefined, opts.customer?.email),
+  );
+
   const opened = stripe
     ? await openStripe(supabase, stripe.secretKey, opts, reserve, quote, idempotencyKey)
     : await openPaypal(supabase, paypal!, opts, reserve.order_id, reference, quote, idempotencyKey);
@@ -177,6 +193,89 @@ export async function createCheckout(
   };
 }
 
+/**
+ * True when the order's email is the signed-in account's own (case and spaces aside);
+ * with no email typed, the account's is used. A guest has no account email: false.
+ */
+export function ownEmail(accountEmail: string | undefined, orderEmail: string | undefined): boolean {
+  if (!accountEmail) return false;
+  const norm = (email: string) => email.trim().toLowerCase();
+  return !orderEmail || norm(orderEmail) === norm(accountEmail);
+}
+
+/**
+ * Takes the order's coupon use now that its customer is known, before any
+ * payment opens. A coupon that no longer holds cancels the order (its stock goes
+ * back) and answers 409 with the reason; a replayed attempt already holds its use.
+ * Only the customer whose own account email is on the order may learn whether it has
+ * bought or is on a list: for any other email those reasons all become COUPON_EMAIL.
+ */
+export async function claimCoupon(
+  supabase: Db,
+  orderId: string,
+  locale: 'en' | 'es',
+  ownEmail: boolean,
+): Promise<void> {
+  try {
+    await supabase.run`select public.claim_order_coupon(${orderId})`;
+  } catch (err) {
+    const mapped = mapPgError(err);
+    if (!isCouponReason(mapped.message)) throw mapped;
+    await supabase.run`select public.cancel_unpaid_order(${orderId})`.catch((cancelErr: unknown) =>
+      console.error('[checkout] order not cancelled after a coupon refusal', orderId, cancelErr),
+    );
+    const reason = !ownEmail && COUPON_WHO_REASONS.includes(mapped.message) ? 'COUPON_EMAIL' : mapped.message;
+    throw new CommerceError('CONFLICT', reason, 409, { couponMessage: couponMessage(reason, locale) });
+  }
+}
+
+type ReleasedOrder = { order_id: string; stripe_session_id: string | null };
+
+/**
+ * Before the claim: the same cart owner's other unpaid orders holding this
+ * order's coupon (a payment page left behind, «Pagar» pressed again) end as
+ * expired, so their use no longer counts against this one, and their open
+ * Stripe sessions are expired too. Best effort: a failure is logged, and the
+ * claim then judges the uses as before. One of those sessions paid anyway is a
+ * late payment (review, flagged if the limit is full).
+ */
+export async function releaseOwnerCouponOrders(
+  supabase: Db,
+  orderId: string,
+  expireSession: ((sessionId: string) => Promise<unknown>) | null,
+): Promise<void> {
+  let released: ReleasedOrder[];
+  try {
+    released =
+      (await supabase.one<{ result: ReleasedOrder[] }>`
+        select public.release_owner_coupon_orders(${orderId}) as result`)?.result ?? [];
+  } catch (err) {
+    console.error('[checkout] earlier orders with the coupon not released', orderId, err);
+    return;
+  }
+  for (const old of released) {
+    if (!old.stripe_session_id || !expireSession) continue;
+    await expireSession(old.stripe_session_id).catch((err: unknown) =>
+      console.error('[checkout] Stripe session not expired', old.order_id, old.stripe_session_id, err),
+    );
+  }
+}
+
+/**
+ * When a Stripe Checkout session ends, in Unix seconds: with the stock
+ * reservation (and the coupon use it holds) instead of Stripe's default 24 h,
+ * within Stripe's bounds (at least 30 min after creation, a minute added for
+ * the clocks; at most 24 h). Taken from the attempt's reservation, so a
+ * replayed attempt sends the same value under the same idempotency key.
+ */
+export function stripeSessionExpiry(reservedUntil: string | Date | null | undefined, nowMs: number): number {
+  const now = Math.floor(nowMs / 1000);
+  const earliest = now + 31 * 60;
+  const latest = now + 24 * 60 * 60 - 60;
+  const wanted = reservedUntil ? Math.floor(new Date(reservedUntil).getTime() / 1000) : Number.NaN;
+  return Math.min(Math.max(Number.isFinite(wanted) ? wanted : earliest, earliest), latest);
+}
+
 async function orderReference(supabase: Db, orderId: string): Promise<string> {
   const row = await supabase.one<{ reference: string }>`select reference from public.orders where id = ${orderId}`;
   return String(row?.reference ?? '');
@@ -194,6 +293,11 @@ async function openStripe(
   const origin = siteUrl();
   const paths = checkoutPaths(opts.locale);
   const shippingLabel = quote.shipping_zone_name || (opts.locale === 'es' ? 'Envío' : 'Shipping');
+  // A replayed attempt brings no expiry of its own: the one it was reserved with.
+  const reservedUntil =
+    reserve.expires_at ??
+    (await supabase.one<{ until: string | Date | null }>`
+      select session_expires_at as until from public.checkout_attempts where id = ${opts.attemptId}`)?.until;
 
   const session = await stripe.checkout.sessions.create(
     {
@@ -201,6 +305,8 @@ async function openStripe(
       client_reference_id: reserve.order_id,
       success_url: `${origin}${paths.success}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}${paths.cancel}`,
+      // An abandoned session releases its stock and coupon use soon, not after a day.
+      expires_at: stripeSessionExpiry(reservedUntil, Date.now()),
       locale: opts.locale === 'es' ? 'es' : 'en',
       line_items: [
         ...quote.lines.map((l) => ({

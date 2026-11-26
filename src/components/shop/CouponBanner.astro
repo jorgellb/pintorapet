@@ -1,0 +1,133 @@
+---
+import type { Locale } from '@/i18n';
+import type { AnnouncedCoupon } from '@/lib/server/coupons';
+import { formatEur } from '@/lib/domain/money';
+import { formatCouponPercent } from '@/lib/domain/coupons';
+
+interface Props {
+  locale: Locale;
+  coupon: AnnouncedCoupon;
+}
+
+const { locale, coupon } = Astro.props;
+const es = locale === 'es';
+
+const value = (() => {
+  if (coupon.kind === 'percent' && coupon.percent) {
+    const percent = formatCouponPercent(coupon.percent, locale);
+    return es ? `${percent} de descuento` : `${percent} off`;
+  }
+  if (coupon.kind === 'fixed' && coupon.amountCents) {
+    const amount = formatEur(coupon.amountCents, locale);
+    return es ? `${amount} de descuento` : `${amount} off`;
+  }
+  if (coupon.kind === 'free_shipping') return es ? 'envío gratis' : 'free shipping';
+  return es ? 'una ventaja en tu pedido' : 'a saving on your order';
+})();
+
+// The coupon's last day is the day before its end instant.
+const until = coupon.endsAt
+  ? new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(
+      new Date(Date.parse(coupon.endsAt) - 1),
+    )
+  : null;
+
+const copy = es
+  ? { label: 'Cupón', until: 'hasta el', copy: 'Copiar', copied: 'Copiado', copyLabel: `Copiar el código ${coupon.code}` }
+  : { label: 'Coupon', until: 'until', copy: 'Copy', copied: 'Copied', copyLabel: `Copy the code ${coupon.code}` };
+---
+
+<aside class="cpn-banner" aria-label={copy.label} data-coupon-banner>
+  <p class="cpn-banner__text">
+    <span class="cpn-banner__label">{copy.label}</span>
+    <strong class="cpn-banner__code" data-code>{coupon.code}</strong>
+    <span class="cpn-banner__value">{value}</span>
+    {until && <span class="cpn-banner__until">{copy.until} {until}</span>}
+  </p>
+  <button type="button" class="cpn-banner__copy" data-copy aria-label={copy.copyLabel} data-copied-text={copy.copied}>
+    {copy.copy}
+  </button>
+</aside>
+
+<style>
+  .cpn-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    margin-bottom: 2rem;
+    padding: 0.35rem 0.5rem 0.35rem 1rem;
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+
+  .cpn-banner__text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.15rem 0.7rem;
+    margin: 0;
+    min-width: 0;
+  }
+
+  .cpn-banner__label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .cpn-banner__code {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.15rem;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+  }
+
+  .cpn-banner__copy {
+    flex: none;
+    min-height: 2.75rem;
+    padding: 0.25rem 0.75rem;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--accent-deep);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    cursor: pointer;
+  }
+
+  .cpn-banner__copy:hover {
+    color: var(--ink);
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-coupon-banner]').forEach((banner) => {
+    const button = banner.querySelector<HTMLButtonElement>('[data-copy]');
+    const target = banner.querySelector<HTMLElement>('[data-code]');
+    const code = target?.textContent?.trim() ?? '';
+    if (!button || !target || !code) return;
+    const label = button.textContent ?? '';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch {
+        // No clipboard permission: select the code so it can be copied by hand.
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      button.textContent = button.dataset.copiedText ?? label;
+      window.setTimeout(() => (button.textContent = label), 2000);
+    });
+  });
+</script>

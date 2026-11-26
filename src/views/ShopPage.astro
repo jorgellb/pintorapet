@@ -9,6 +9,8 @@ import TypeIcon from '@/components/shop/TypeIcon.astro';
 import { loadProductTypes } from '@/lib/catalog/productTypes';
 import { publicMarkets } from '@/lib/server/markets';
 import NextMarket from '@/components/markets/NextMarket.astro';
+import CouponBanner from '@/components/shop/CouponBanner.astro';
+import { announcedCoupon } from '@/lib/server/coupons';
 
 interface Props {
   locale: Locale;
@@ -17,11 +19,12 @@ interface Props {
 const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const [catalog, collections, types, markets] = await Promise.all([
+const [catalog, collections, types, markets, coupon] = await Promise.all([
   loadPublicCatalogForPages(locale),
   loadShopCollections(locale),
   loadProductTypes(locale),
   publicMarkets(),
+  announcedCoupon(),
 ]);
 // The next market on the calendar (or today's), under the stall's title.
 const nextMarket = markets[0] ?? null;
@@ -80,6 +83,13 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
   </div>
 
   <section class="section stall-head" aria-labelledby="shop-title">
+    {
+      coupon && (
+        <div class="site-shell">
+          <CouponBanner locale={locale} coupon={coupon} />
+        </div>
+      )
+    }
     <div class="site-shell stall-head__grid">
       <div>
         <p class="eyebrow">{dict.shop.title}</p>

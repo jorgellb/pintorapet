@@ -36,8 +36,13 @@ const {
   ogType = 'website',
 } = Astro.props;
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
+// A coupon link (?cupon=) is for the visitor, not for the page's other-language address.
+const otherParams = new URLSearchParams(Astro.url.search);
+otherParams.delete('cupon');
+otherParams.delete('coupon');
+const otherSearch = otherParams.size ? `?${otherParams}` : '';
 const alternateHref =
-  alternateOverride ?? `${alternatePath(Astro.url.pathname, otherLocale)}${Astro.url.search}`;
+  alternateOverride ?? `${alternatePath(Astro.url.pathname, otherLocale)}${otherSearch}`;
 const dict = t(locale);
 const siteTitle = seoTitle?.trim() || `${title} · ${dict.brand.name}`;
 const origin = Astro.site ?? 'https://petsdrawings.com';
@@ -77,3 +82,48 @@ const ogImage = image ? new URL(image, origin).href : null;
     <VisitBeacon locale={locale} />
   </body>
 </html>
+
+<script>
+  import { initCouponLink } from '@/scripts/couponLink';
+
+  initCouponLink();
+</script>
+
+<style is:global>
+  /* The note after a coupon link: a small paper slip over the corner of the page. */
+  .coupon-note {
+    position: fixed;
+    z-index: 200;
+    left: 1rem;
+    right: 1rem;
+    top: 0.75rem;
+    margin: 0 auto;
+    max-width: 26rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.7rem 0.6rem 0.7rem 1rem;
+    background: var(--sheet);
+    border-left: 3px solid var(--accent);
+    box-shadow: var(--shadow-art);
+    font-size: 0.92rem;
+    color: var(--ink);
+  }
+
+  .coupon-note__close {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .coupon-note__close:hover {
+    color: var(--ink);
+  }
+</style>

@@ -8,9 +8,11 @@ import { asCents, mulCents, addCents, formatEur } from '@/lib/domain/money';
 import { ensureCartOwnerHash } from '@/lib/server/commerce/cartOwner';
 import {
   createPersistedQuote,
+  quoteCouponCtx,
   quotePublicPayload,
 } from '@/lib/server/commerce/quotes';
 import { serviceDb } from '@/lib/server/db';
+import { customerSession } from '@/lib/server/account';
 
 export const prerender = false;
 
@@ -49,6 +51,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           503,
         );
       }
+      // Who is buying comes from the session; a typed email only counts if it is the account's own.
+      const account = body.couponCode ? await customerSession(cookies, request) : null;
       const quote = await createPersistedQuote(supabase, {
         cartOwnerHash: hash,
         locale: body.locale,
@@ -57,6 +61,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         postalCode: body.shippingPostalCode,
         pickupMarketId: body.pickupMarketId,
         invoice: body.invoice,
+        couponCode: body.couponCode,
+        couponCtx: quoteCouponCtx(account?.user ?? null, body.email),
       });
       return Response.json(quotePublicPayload(quote));
     }

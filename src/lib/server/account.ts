@@ -84,6 +84,9 @@ export type OrderDetail = Omit<OrderSummary, 'item_count' | 'items'> & {
   subtotal_cents: number;
   shipping_cents: number;
   invoice_customer: Record<string, string> | null;
+  /** The coupon the order was bought with, and what it took off (shipping included). */
+  coupon_code: string | null;
+  coupon_discount_cents: number;
   items: Array<{
     title: string;
     sku: string;

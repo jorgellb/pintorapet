@@ -1,0 +1,1298 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { chipClass, euros, paymentLabel, shortDate } from '@/lib/admin/labels';
+import { couponToValues, emptyValues, validity } from '@/lib/admin/couponForm';
+import { couponOrders, listCoupons } from '@/lib/server/coupons';
+import { couponOptions } from '@/lib/server/admin/couponOptions';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const id = Astro.params.id ?? '';
+const isNew = id === 'new';
+const [{ data: all }, { data: options, error }] = await Promise.all([settle(listCoupons(admin.db)), settle(couponOptions(admin.db))]);
+const coupon = isNew ? null : ((all ?? []).find((c) => c.id === id) ?? null);
+if (!isNew && !coupon) return Astro.redirect('/admin/coupons/');
+
+const orders = coupon ? await couponOrders(admin.db, coupon.id).catch(() => []) : [];
+const announcedOther = (all ?? []).find((c) => c.announce && c.status === 'active' && c.id !== coupon?.id)?.code ?? null;
+const initial = coupon ? couponToValues(coupon) : emptyValues();
+const when = coupon ? validity(coupon) : null;
+const unused = coupon ? coupon.uses === 0 && orders.length === 0 : false;
+
+const choose = options ?? { categories: [], collections: [], products: [], productChoices: [], zones: [] };
+// Without the lists the category, collection and zone boxes are missing: saving
+// would send them empty and turn the coupon into one for the whole shop.
+const optionsFailed = Boolean(error);
+const OPTIONS_FAILED = 'No se han podido cargar las listas de productos; recarga la página antes de guardar.';
+if (error) console.error('[admin/coupons] couponOptions failed', error.message);
+const pageData = {
+  initial,
+  isNew,
+  optionsFailed,
+  announcedOther,
+  names: {
+    categories: choose.categories.map((c) => [c.id, c.name]),
+    collections: choose.collections.map((c) => [c.id, c.name]),
+    products: choose.products.map((c) => [c.id, c.name]),
+    zones: choose.zones.map((c) => [c.id, c.name]),
+  },
+  choices: choose.productChoices,
+};
+const json = JSON.stringify(pageData).replace(/</g, '\\u003c');
+
+const notice = Astro.url.searchParams.has('guardado')
+  ? 'Cupón guardado.'
+  : Astro.url.searchParams.has('duplicado')
+    ? 'Copia creada en pausa. Cámbiale el código y actívala cuando esté lista.'
+    : null;
+
+const KINDS = [
+  { value: 'percent', name: 'Porcentaje', text: 'Un % menos en las piezas elegidas' },
+  { value: 'fixed', name: 'Importe fijo', text: 'Una cantidad en € menos' },
+  { value: 'free_shipping', name: 'Envío gratis', text: 'El envío pasa a costar 0 €' },
+  { value: 'buy_x_get_y', name: 'Compra X, llévate Y', text: '2x1, 3x2…: salen gratis las más baratas' },
+  { value: 'nth_unit', name: 'Unidad N con descuento', text: 'La 2.ª a mitad de precio…' },
+];
+const DAYS = [
+  { value: 1, short: 'L', name: 'lunes' },
+  { value: 2, short: 'M', name: 'martes' },
+  { value: 3, short: 'X', name: 'miércoles' },
+  { value: 4, short: 'J', name: 'jueves' },
+  { value: 5, short: 'V', name: 'viernes' },
+  { value: 6, short: 'S', name: 'sábado' },
+  { value: 7, short: 'D', name: 'domingo' },
+];
+---
+
+<AdminLayout title={coupon ? `Cupón ${coupon.code}` : 'Nuevo cupón'} email={admin.user.email}>
+  <a class="back" href="/admin/coupons/">← Cupones</a>
+  <header class="page-head">
+    <div>
+      <h1>{coupon ? <code>{coupon.code}</code> : 'Nuevo cupón'}</h1>
+      {
+        coupon && (
+          <p class="chips">
+            {coupon.status === 'active' && when?.state === 'ended' && <span class="chip chip--danger">Caducado</span>}
+            {coupon.status === 'active' && when?.state === 'scheduled' && <span class="chip chip--info">Programado</span>}
+            {coupon.status === 'active' && (when?.state === 'live' || when?.state === 'always') && <span class="chip chip--ok">Activo</span>}
+            {coupon.status === 'paused' && <span class="chip chip--warn">Pausado</span>}
+            {coupon.status === 'archived' && <span class="chip">Archivado</span>}
+            {coupon.announce && coupon.status === 'active' && <span class="chip chip--info">Anunciado</span>}
+          </p>
+        )
+      }
+    </div>
+    {
+      coupon && (
+        <div class="head-actions" data-coupon-actions data-id={coupon.id} data-code={coupon.code}>
+          {coupon.status === 'active' && <button type="button" class="btn--quiet" data-action="pause">Pausar</button>}
+          {coupon.status === 'paused' && <button type="button" class="btn" data-action="activate">Activar</button>}
+          {coupon.status === 'archived' && <button type="button" class="btn--quiet" data-action="restore">Restaurar en pausa</button>}
+          <button type="button" class="btn--quiet" data-action="duplicate">Duplicar</button>
+          {coupon.status !== 'archived' && <button type="button" class="btn--quiet" data-action="archive">Archivar</button>}
+          {unused && <button type="button" class="btn--quiet btn--danger" data-action="delete">Borrar</button>}
+        </div>
+      )
+    }
+  </header>
+  {coupon && <p class="status" data-action-status role="status" hidden></p>}
+  {notice && <p class="status">{notice}</p>}
+  {optionsFailed && <p class="err">{OPTIONS_FAILED}</p>}
+
+  {
+    coupon && (
+      <dl class="stats">
+        <div>
+          <dt>Usos</dt>
+          <dd>{coupon.uses}{coupon.maxUses ? <span class="of"> / {coupon.maxUses}</span> : ''}</dd>
+        </div>
+        <div>
+          <dt>Descontado</dt>
+          <dd>{euros(coupon.discountCents)}</dd>
+        </div>
+        <div>
+          <dt>Ventas con el cupón</dt>
+          <dd>{euros(coupon.salesCents)}</dd>
+        </div>
+        <div>
+          <dt>Vigencia</dt>
+          <dd class="small">{when?.text}</dd>
+        </div>
+      </dl>
+    )
+  }
+
+  <form class="coupon-form" data-coupon-form novalidate>
+    <div class="summary" role="status" aria-live="polite" data-summary-box>
+      <p class="summary__label">Así queda</p>
+      <p class="summary__text" data-summary></p>
+    </div>
+
+    <details class="sect" open data-section="identity">
+      <summary><span class="sect__title">Identidad</span><span class="sect__hint" data-hint="identity"></span></summary>
+      <div class="sect__body">
+        <label>
+          Código
+          <input name="code" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="NAVIDAD10" class="code-input" />
+          <span class="hint">Lo que escribe el cliente. De 3 a 30 letras, números, guiones o guiones bajos; da igual mayúsculas o minúsculas.</span>
+        </label>
+        <label>
+          Nota interna <span class="hint">opcional · solo la ves tú</span>
+          <input name="note" maxlength="500" placeholder="Instagram, sorteo de diciembre" />
+        </label>
+        {
+          isNew && (
+            <label>
+              Al guardar
+              <select name="status">
+                <option value="active">Activo: ya se puede usar</option>
+                <option value="paused">En pausa: lo activo más tarde</option>
+              </select>
+            </label>
+          )
+        }
+      </div>
+    </details>
+
+    <details class="sect" open data-section="kind">
+      <summary><span class="sect__title">Tipo de descuento</span><span class="sect__hint" data-hint="kind"></span></summary>
+      <div class="sect__body">
+        <div class="kinds" role="radiogroup" aria-label="Tipo de descuento">
+          {
+            KINDS.map((k) => (
+              <label class="kind">
+                <input type="radio" name="kind" value={k.value} />
+                <span class="kind__name">{k.name}</span>
+                <span class="kind__text">{k.text}</span>
+              </label>
+            ))
+          }
+        </div>
+
+        <div class="values">
+          <label data-kinds="percent nth_unit">
+            <span data-kinds="percent">Porcentaje de descuento</span>
+            <span data-kinds="nth_unit">Descuento de esa unidad</span>
+            <span class="unit"><input name="percent" inputmode="decimal" autocomplete="off" placeholder="10" /><span aria-hidden="true">%</span></span>
+          </label>
+          <label data-kinds="fixed">
+            Importe del descuento
+            <span class="unit"><input name="amount" inputmode="decimal" autocomplete="off" placeholder="5" /><span aria-hidden="true">€</span></span>
+          </label>
+          <label data-kinds="percent free_shipping">
+            <span data-kinds="percent">Tope del descuento <span class="hint">opcional</span></span>
+            <span data-kinds="free_shipping">Tope de envío cubierto <span class="hint">opcional</span></span>
+            <span class="unit"><input name="cap" inputmode="decimal" autocomplete="off" placeholder="sin tope" /><span aria-hidden="true">€</span></span>
+            <span class="hint" data-kinds="percent">El descuento nunca pasa de esta cantidad, aunque el carrito sea grande.</span>
+            <span class="hint" data-kinds="free_shipping">Si el envío cuesta más, el cliente paga la diferencia.</span>
+          </label>
+          <div class="pair" data-kinds="buy_x_get_y">
+            <label>
+              Piezas que compra
+              <input name="buyQty" inputmode="numeric" autocomplete="off" placeholder="2" />
+            </label>
+            <label>
+              Piezas gratis
+              <input name="getQty" inputmode="numeric" autocomplete="off" placeholder="1" />
+            </label>
+            <p class="hint pair__hint">Con 2 y 1 es un 2x1: de cada grupo de 3 piezas, la más barata sale gratis.</p>
+          </div>
+          <label data-kinds="nth_unit">
+            En cada grupo de
+            <span class="unit"><input name="nth" inputmode="numeric" autocomplete="off" placeholder="2" /><span aria-hidden="true">piezas</span></span>
+            <span class="hint">La más barata de cada grupo lleva el descuento. Con 2 y un 50 %, la segunda sale a mitad de precio.</span>
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <details class="sect" data-section="scope">
+      <summary><span class="sect__title">A qué se aplica</span><span class="sect__hint" data-hint="scope"></span></summary>
+      <div class="sect__body">
+        <p class="hint">
+          Sin elegir nada, vale para toda la tienda. Si eliges varias cosas, entra una pieza que esté en cualquiera
+          de ellas. El resto del carrito paga precio normal.
+        </p>
+        {
+          choose.categories.length > 0 && (
+            <fieldset class="group">
+              <legend>Tipos de producto</legend>
+              <div class="checks">
+                {choose.categories.map((c) => (
+                  <label class="check"><input type="checkbox" name="categoryIds" value={c.id} /> {c.name}</label>
+                ))}
+              </div>
+            </fieldset>
+          )
+        }
+        {
+          choose.collections.length > 0 && (
+            <fieldset class="group">
+              <legend>Categorías de la tienda</legend>
+              <div class="checks">
+                {choose.collections.map((c) => (
+                  <label class="check"><input type="checkbox" name="collectionIds" value={c.id} /> {c.name}</label>
+                ))}
+              </div>
+            </fieldset>
+          )
+        }
+        <div class="picker" data-picker="productIds">
+          <span class="picker__label" id="picker-products">Productos concretos</span>
+          <ul class="picker__chosen" data-chosen hidden></ul>
+          <input type="search" class="picker__search" placeholder="Busca un producto por su nombre…" autocomplete="off" aria-labelledby="picker-products" />
+          <ul class="picker__results" data-results hidden></ul>
+        </div>
+        <div class="picker" data-picker="excludedProductIds">
+          <span class="picker__label" id="picker-excluded">Excepto estos productos <span class="hint">siempre se quedan fuera</span></span>
+          <ul class="picker__chosen" data-chosen hidden></ul>
+          <input type="search" class="picker__search" placeholder="Busca un producto por su nombre…" autocomplete="off" aria-labelledby="picker-excluded" />
+          <ul class="picker__results" data-results hidden></ul>
+        </div>
+      </div>
+    </details>
+
+    <details class="sect" data-section="conditions">
+      <summary><span class="sect__title">Condiciones del pedido</span><span class="sect__hint" data-hint="conditions"></span></summary>
+      <div class="sect__body">
+        <div class="pair">
+          <label>
+            Compra mínima <span class="hint">opcional</span>
+            <span class="unit"><input name="minSubtotal" inputmode="decimal" autocomplete="off" placeholder="sin mínimo" /><span aria-hidden="true">€</span></span>
+          </label>
+          <label>
+            Mínimo de piezas <span class="hint">opcional</span>
+            <span class="unit"><input name="minUnits" inputmode="numeric" autocomplete="off" placeholder="sin mínimo" /><span aria-hidden="true">piezas</span></span>
+          </label>
+        </div>
+        <p class="hint">Los dos mínimos se miden sobre las piezas a las que se aplica el cupón, antes del descuento.</p>
+        <label class="switch">
+          <input type="checkbox" role="switch" name="allowShipping" />
+          <span><strong>Vale con envío a domicilio</strong><span class="hint">Apagado: solo vale al recoger en un mercado.</span></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" role="switch" name="allowPickup" />
+          <span><strong>Vale con recogida en mercado</strong><span class="hint">Apagado: no vale al recoger el pedido en un mercado.</span></span>
+        </label>
+        {
+          choose.zones.length > 0 && (
+            <fieldset class="group">
+              <legend>Solo para envíos a <span class="hint">sin marcar: todas las zonas</span></legend>
+              <div class="checks">
+                {choose.zones.map((z) => (
+                  <label class="check"><input type="checkbox" name="zoneIds" value={z.id} /> {z.name}</label>
+                ))}
+              </div>
+            </fieldset>
+          )
+        }
+      </div>
+    </details>
+
+    <details class="sect" data-section="who">
+      <summary><span class="sect__title">Quién puede usarlo</span><span class="sect__hint" data-hint="who"></span></summary>
+      <div class="sect__body">
+        <label class="switch">
+          <input type="checkbox" role="switch" name="firstOrderOnly" />
+          <span><strong>Solo la primera compra de cada cliente</strong><span class="hint">Si ya compró antes con ese email o esa cuenta (por la web, por teléfono o en el puesto), no vale.</span></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" role="switch" name="requireAccount" />
+          <span><strong>Exigir que haya iniciado sesión</strong><span class="hint">Solo pueden usarlo clientes con cuenta.</span></span>
+        </label>
+        <label>
+          Solo para estos emails <span class="hint">opcional · uno por línea</span>
+          <textarea name="emails" rows="4" autocomplete="off" spellcheck="false" placeholder="ana@ejemplo.com&#10;luis@ejemplo.com"></textarea>
+          <span class="hint">Para cupones personales. Si pones alguno, solo esos clientes pueden usarlo.</span>
+        </label>
+        <label class="switch" data-needs-emails>
+          <input type="checkbox" role="switch" name="emailsRequireAccount" />
+          <span><strong>Exigir que haya iniciado sesión con ese email</strong><span class="hint">Sin marcar, basta con escribir uno de esos emails al pagar: otra persona podría usarlo con el email de la amiga.</span></span>
+        </label>
+      </div>
+    </details>
+
+    <details class="sect" data-section="when">
+      <summary><span class="sect__title">Cuándo vale</span><span class="sect__hint" data-hint="when"></span></summary>
+      <div class="sect__body">
+        <div class="pair">
+          <label>
+            Desde el día <span class="hint">opcional</span>
+            <input type="date" name="startDay" />
+          </label>
+          <label>
+            Hasta el día, incluido <span class="hint">opcional</span>
+            <input type="date" name="endDay" />
+          </label>
+        </div>
+        <p class="hint">Hora de España. Sin fechas, vale siempre. «Hasta el 24» vale todo el día 24.</p>
+        <fieldset class="group">
+          <legend>Solo estos días de la semana <span class="hint">sin marcar: todos</span></legend>
+          <div class="days">
+            {
+              DAYS.map((d) => (
+                <label class="day" title={d.name}>
+                  <input type="checkbox" name="weekdays" value={d.value} aria-label={d.name} />
+                  <span aria-hidden="true">{d.short}</span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+      </div>
+    </details>
+
+    <details class="sect" data-section="limits">
+      <summary><span class="sect__title">Límites de uso</span><span class="sect__hint" data-hint="limits"></span></summary>
+      <div class="sect__body">
+        <div class="pair">
+          <label>
+            Usos en total <span class="hint">opcional</span>
+            <input name="maxUses" inputmode="numeric" autocomplete="off" placeholder="sin límite" />
+          </label>
+          <label>
+            Usos por cliente <span class="hint">opcional</span>
+            <input name="maxUsesPerCustomer" inputmode="numeric" autocomplete="off" placeholder="sin límite" />
+          </label>
+        </div>
+        <p class="hint">Un uso es un pedido. Por cliente se cuenta por email y por cuenta.</p>
+      </div>
+    </details>
+
+    <details class="sect" data-section="showcase">
+      <summary><span class="sect__title">Escaparate</span><span class="sect__hint" data-hint="showcase"></span></summary>
+      <div class="sect__body">
+        <label class="switch">
+          <input type="checkbox" role="switch" name="announce" />
+          <span>
+            <strong>Anunciar en la web</strong>
+            <span class="hint">Una franja discreta en la tienda con el código y el descuento, mientras el cupón esté vigente.</span>
+            <span class="hint hint--warn" data-announce-note hidden></span>
+          </span>
+        </label>
+      </div>
+    </details>
+
+    <div class="form-actions">
+      <button type="submit" class="btn" data-save disabled={optionsFailed}>{isNew ? 'Crear cupón' : 'Guardar cambios'}</button>
+      {optionsFailed && <p class="err" data-options-failed>{OPTIONS_FAILED}</p>}
+      <p class="status" data-status role="status" hidden></p>
+    </div>
+  </form>
+
+  {
+    coupon && (
+      <section class="panel orders">
+        <h2>Pedidos con este cupón</h2>
+        {orders.length === 0 ? (
+          <p class="muted">Todavía nadie lo ha usado.</p>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Cliente</th>
+                  <th>Fecha</th>
+                  <th>Estado</th>
+                  <th class="num">Descuento</th>
+                  <th class="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => {
+                  const pay = paymentLabel(o.paymentStatus);
+                  return (
+                    <tr>
+                      <td>
+                        <a href={`/admin/orders/${o.id}/`}><code>{o.reference}</code></a>
+                        {o.overLimit && <span class="chip chip--danger over">Por encima del límite</span>}
+                      </td>
+                      <td>{o.customerEmail ?? '—'}</td>
+                      <td>{shortDate(o.paidAt ?? o.createdAt)}</td>
+                      <td><span class={chipClass(pay.tone)}>{pay.text}</span></td>
+                      <td class="num">−{euros(o.discountCents)}</td>
+                      <td class="num">{euros(o.totalCents)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  <script type="application/json" id="coupon-data" set:html={json}></script>
+</AdminLayout>
+
+<style>
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.5rem 0 0;
+  }
+
+  .head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 0.75rem;
+    margin: 0 0 1.25rem;
+  }
+
+  .stats div {
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--sheet);
+  }
+
+  .stats dt {
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+
+  .stats dd {
+    margin: 0.15rem 0 0;
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+
+  .stats dd.small {
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.9;
+  }
+
+  .of {
+    color: var(--muted);
+    font-size: 1rem;
+  }
+
+  .status[hidden],
+  [data-kinds][hidden],
+  [data-needs-emails][hidden],
+  .picker [hidden],
+  .hint[hidden] {
+    display: none !important;
+  }
+
+  .coupon-form {
+    display: grid;
+    gap: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* The sentence that says what the coupon does: it stays in view while the form is edited. */
+  .summary {
+    position: sticky;
+    top: 0.5rem;
+    z-index: 5;
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.85rem 1.1rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--a-radius);
+    background: var(--accent-soft);
+    box-shadow: var(--a-shadow);
+  }
+
+  .summary__label {
+    margin: 0;
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .summary__text {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .summary[data-ready='false'] {
+    border-color: var(--a-warn);
+    background: var(--a-warn-soft);
+  }
+
+  .summary[data-ready='false'] .summary__label {
+    color: var(--a-warn);
+  }
+
+  .summary[data-ready='false'] .summary__text {
+    font-weight: 400;
+    color: var(--a-warn);
+  }
+
+  /* Collapsible sections, in the order of the rules. */
+  .sect {
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--sheet);
+  }
+
+  .sect > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+    padding: 0.9rem 1.1rem;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .sect > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .sect > summary::before {
+    content: '';
+    flex: none;
+    align-self: center;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform var(--dur-ui) var(--ease-soft);
+  }
+
+  .sect[open] > summary::before {
+    transform: rotate(45deg);
+  }
+
+  .sect > summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--a-radius);
+  }
+
+  .sect__title {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 500;
+  }
+
+  .sect__hint {
+    color: var(--muted);
+    font-size: 0.86rem;
+  }
+
+  .sect__hint[data-set='true'] {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .sect__body {
+    display: grid;
+    gap: 1rem;
+    padding: 0.25rem 1.1rem 1.25rem;
+  }
+
+  .sect__body > p {
+    margin: 0;
+  }
+
+  .code-input {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+
+  .kinds {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+    gap: 0.6rem;
+  }
+
+  .kind {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 0.2rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--a-radius-sm);
+    background: var(--sheet);
+    cursor: pointer;
+  }
+
+  .kind input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .kind__name {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .kind__text {
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 400;
+  }
+
+  .kind:has(input:checked) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .kind:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .values {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .unit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 15rem;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  .pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+    max-width: 42rem;
+  }
+
+  .pair__hint {
+    grid-column: 1 / -1;
+  }
+
+  .group {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .group > legend {
+    padding: 0;
+    margin-bottom: 0.4rem;
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+
+  .checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.15rem 1rem;
+  }
+
+  .checks .check {
+    min-height: 2.25rem;
+  }
+
+  .days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .day {
+    position: relative;
+    display: block;
+  }
+
+  .day input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .day span {
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: var(--sheet);
+    color: var(--ink);
+    font-weight: 600;
+    transition:
+      background var(--dur-ui) var(--ease-soft),
+      color var(--dur-ui) var(--ease-soft);
+  }
+
+  .day input:checked + span {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--light);
+  }
+
+  .day input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .hint--warn {
+    color: var(--a-warn);
+  }
+
+  /* Picker with search for products */
+  .picker {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 42rem;
+  }
+
+  .picker__label {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+
+  .picker__chosen,
+  .picker__results {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .picker__results {
+    display: grid;
+    gap: 0;
+    max-height: 15rem;
+    overflow-y: auto;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--a-radius-sm);
+    background: var(--sheet);
+  }
+
+  .picker :global(.pick-chip) {
+    min-height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    border-color: var(--line-strong);
+    background: var(--paper-deep);
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .picker :global(.pick-chip:hover) {
+    border-color: var(--danger);
+    background: var(--a-danger-soft);
+    color: var(--danger);
+  }
+
+  .picker :global(.pick-result) {
+    justify-content: space-between;
+    justify-self: stretch;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.4rem 0.9rem;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--sheet);
+    color: var(--ink);
+    font-weight: 400;
+    text-align: left;
+  }
+
+  .picker :global(.pick-result:hover),
+  .picker :global(.pick-result:focus-visible) {
+    background: var(--a-hover);
+    color: var(--ink);
+  }
+
+  .picker :global(.pick-sub),
+  .picker :global(.pick-empty) {
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+  .picker :global(.pick-empty) {
+    padding: 0.7rem 0.9rem;
+  }
+
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+  }
+
+  .status[data-tone='err'] {
+    color: var(--danger);
+    font-weight: 500;
+  }
+
+  .status[data-tone='ok'] {
+    color: var(--success);
+  }
+
+  .orders h2 {
+    margin: 0;
+  }
+
+  .orders .over {
+    margin-left: 0.5rem;
+  }
+
+  /* Below 60rem the admin has a sticky top bar (about 4rem): the summary sticks under it. */
+  @media (max-width: 60rem) {
+    .summary {
+      top: 4.6rem;
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .pair {
+      grid-template-columns: 1fr;
+    }
+
+    .pair:has(input[name='buyQty']) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sect > summary {
+      padding: 0.85rem 0.9rem;
+    }
+
+    .sect__body {
+      padding: 0.25rem 0.9rem 1.1rem;
+    }
+
+    .form-actions .btn {
+      width: 100%;
+    }
+
+    .head-actions {
+      width: 100%;
+    }
+  }
+</style>
+
+<script>
+  import { buildCouponBody, liveSummary, type CouponFormValues, type Names } from '@/lib/admin/couponForm';
+  import { normalizeCouponCode, type CouponKind } from '@/lib/domain/coupons';
+
+  type Choice = { id: string; name: string; sub: string; ids: string[] };
+  type Pair = [string, string];
+  type PageData = {
+    initial: CouponFormValues;
+    isNew: boolean;
+    optionsFailed: boolean;
+    announcedOther: string | null;
+    names: { categories: Pair[]; collections: Pair[]; products: Pair[]; zones: Pair[] };
+    choices: Choice[];
+  };
+
+  const dataNode = document.getElementById('coupon-data');
+  const form = document.querySelector<HTMLFormElement>('[data-coupon-form]');
+  if (dataNode && form) {
+    const data = JSON.parse(dataNode.textContent ?? '{}') as PageData;
+    const { initial, isNew } = data;
+    const names: Names = {
+      categories: new Map(data.names.categories),
+      collections: new Map(data.names.collections),
+      products: new Map(data.names.products),
+      zones: new Map(data.names.zones),
+    };
+    const status = form.querySelector<HTMLElement>('[data-status]')!;
+    const summaryBox = form.querySelector<HTMLElement>('[data-summary-box]')!;
+    const summaryText = form.querySelector<HTMLElement>('[data-summary]')!;
+    const say = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      status.hidden = !text;
+      status.dataset.tone = tone;
+      status.textContent = text;
+    };
+    let dirty = false;
+
+    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    const value = (name: string) => field(name).value;
+    const on = (name: string) => (field(name) as HTMLInputElement).checked;
+    const checked = (name: string) =>
+      [...form.querySelectorAll<HTMLInputElement>(`input[name="${name}"]:checked`)].map((input) => input.value);
+    const setChecked = (name: string, wanted: string[]) =>
+      form.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`).forEach((input) => {
+        input.checked = wanted.includes(input.value);
+      });
+
+    // --- pickers: search, add, remove -------------------------------------------------
+    const plain = (text: string) => text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+    const picker = (root: HTMLElement) => {
+      let ids: string[] = [];
+      const chosen = root.querySelector<HTMLElement>('[data-chosen]')!;
+      const search = root.querySelector<HTMLInputElement>('input')!;
+      const results = root.querySelector<HTMLElement>('[data-results]')!;
+      const nameOf = (id: string) => names.products.get(id) ?? 'Producto borrado';
+
+      const matches = () => {
+        const query = plain(search.value.trim());
+        return data.choices
+          .filter((c) => c.ids.some((id) => !ids.includes(id)) && (!query || plain(c.name).includes(query)))
+          .slice(0, 40);
+      };
+      const add = (choice: Choice) => {
+        ids = [...ids, ...choice.ids.filter((id) => !ids.includes(id))];
+        search.value = '';
+        renderChosen();
+        renderResults();
+        form.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const renderChosen = () => {
+        chosen.hidden = ids.length === 0;
+        chosen.replaceChildren(
+          ...ids.map((id) => {
+            const li = document.createElement('li');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'pick-chip btn--quiet';
+            button.textContent = `${nameOf(id)} ×`;
+            button.setAttribute('aria-label', `Quitar ${nameOf(id)}`);
+            button.addEventListener('click', () => {
+              ids = ids.filter((x) => x !== id);
+              renderChosen();
+              renderResults();
+              form.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            li.append(button);
+            return li;
+          }),
+        );
+      };
+      const renderResults = () => {
+        if (document.activeElement !== search) {
+          results.hidden = true;
+          return;
+        }
+        const found = matches();
+        results.hidden = false;
+        if (found.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'pick-empty';
+          li.textContent = search.value.trim() ? 'Ningún producto se llama así.' : 'No quedan más productos que añadir.';
+          results.replaceChildren(li);
+          return;
+        }
+        results.replaceChildren(
+          ...found.map((choice) => {
+            const li = document.createElement('li');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'pick-result';
+            const label = document.createElement('span');
+            label.textContent = choice.name;
+            button.append(label);
+            if (choice.sub) {
+              const sub = document.createElement('span');
+              sub.className = 'pick-sub';
+              sub.textContent = choice.sub;
+              button.append(sub);
+            }
+            // The click must not take the focus away from the search box, or the list would close first.
+            button.addEventListener('mousedown', (event) => event.preventDefault());
+            button.addEventListener('click', () => add(choice));
+            li.append(button);
+            return li;
+          }),
+        );
+      };
+      search.addEventListener('input', renderResults);
+      search.addEventListener('focus', renderResults);
+      search.addEventListener('blur', () => {
+        results.hidden = true;
+      });
+      search.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          const first = matches()[0];
+          if (first) add(first);
+        } else if (event.key === 'Escape') {
+          results.hidden = true;
+        } else if (event.key === 'Backspace' && !search.value && ids.length > 0) {
+          ids = ids.slice(0, -1);
+          renderChosen();
+          form.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+      return {
+        get: () => ids,
+        set: (next: string[]) => {
+          ids = [...next];
+          renderChosen();
+        },
+      };
+    };
+    const pickers = {
+      productIds: picker(form.querySelector<HTMLElement>('[data-picker="productIds"]')!),
+      excludedProductIds: picker(form.querySelector<HTMLElement>('[data-picker="excludedProductIds"]')!),
+    };
+
+    // --- the form <-> values ------------------------------------------------------
+    const read = (): CouponFormValues => ({
+      id: initial.id,
+      code: value('code'),
+      note: value('note'),
+      status: isNew ? (value('status') as CouponFormValues['status']) : initial.status,
+      kind: (form.querySelector<HTMLInputElement>('input[name="kind"]:checked')?.value ?? 'percent') as CouponKind,
+      percent: value('percent'),
+      amount: value('amount'),
+      cap: value('cap'),
+      buyQty: value('buyQty'),
+      getQty: value('getQty'),
+      nth: value('nth'),
+      categoryIds: checked('categoryIds'),
+      collectionIds: checked('collectionIds'),
+      productIds: pickers.productIds.get(),
+      excludedProductIds: pickers.excludedProductIds.get(),
+      minSubtotal: value('minSubtotal'),
+      minUnits: value('minUnits'),
+      zoneIds: checked('zoneIds'),
+      allowShipping: on('allowShipping'),
+      allowPickup: on('allowPickup'),
+      firstOrderOnly: on('firstOrderOnly'),
+      requireAccount: on('requireAccount'),
+      emails: value('emails'),
+      emailsRequireAccount: on('emailsRequireAccount'),
+      startDay: value('startDay'),
+      endDay: value('endDay'),
+      weekdays: checked('weekdays').map(Number),
+      maxUses: value('maxUses'),
+      maxUsesPerCustomer: value('maxUsesPerCustomer'),
+      announce: on('announce'),
+    });
+
+    const fill = (v: CouponFormValues) => {
+      const set = (name: string, text: string) => {
+        field(name).value = text;
+      };
+      const tick = (name: string, state: boolean) => {
+        (field(name) as HTMLInputElement).checked = state;
+      };
+      set('code', v.code);
+      set('note', v.note);
+      if (isNew) set('status', v.status);
+      form.querySelectorAll<HTMLInputElement>('input[name="kind"]').forEach((input) => {
+        input.checked = input.value === v.kind;
+      });
+      set('percent', v.percent);
+      set('amount', v.amount);
+      set('cap', v.cap);
+      set('buyQty', v.buyQty);
+      set('getQty', v.getQty);
+      set('nth', v.nth);
+      setChecked('categoryIds', v.categoryIds);
+      setChecked('collectionIds', v.collectionIds);
+      pickers.productIds.set(v.productIds);
+      pickers.excludedProductIds.set(v.excludedProductIds);
+      set('minSubtotal', v.minSubtotal);
+      set('minUnits', v.minUnits);
+      setChecked('zoneIds', v.zoneIds);
+      tick('allowShipping', v.allowShipping);
+      tick('allowPickup', v.allowPickup);
+      tick('firstOrderOnly', v.firstOrderOnly);
+      tick('requireAccount', v.requireAccount);
+      set('emails', v.emails);
+      tick('emailsRequireAccount', v.emailsRequireAccount);
+      set('startDay', v.startDay);
+      set('endDay', v.endDay);
+      setChecked('weekdays', v.weekdays.map(String));
+      set('maxUses', v.maxUses);
+      set('maxUsesPerCustomer', v.maxUsesPerCustomer);
+      tick('announce', v.announce);
+    };
+
+    // --- what is on screen follows the values ---------------------------------------
+    const KIND_NAMES: Record<CouponKind, string> = {
+      percent: 'Porcentaje',
+      fixed: 'Importe fijo',
+      free_shipping: 'Envío gratis',
+      buy_x_get_y: 'Compra X, llévate Y',
+      nth_unit: 'Unidad N con descuento',
+    };
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    /** What each section says on its closed header: how many choices are set in it. */
+    const hints = (v: CouponFormValues): Record<string, { text: string; set: boolean }> => {
+      const pieces = v.categoryIds.length + v.collectionIds.length + v.productIds.length;
+      const scope = pieces > 0 ? plural(pieces, 'elegido', 'elegidos') : 'Toda la tienda';
+      const conditions =
+        [v.minSubtotal, v.minUnits].filter((x) => x.trim()).length +
+        (v.zoneIds.length > 0 ? 1 : 0) +
+        (v.allowShipping ? 0 : 1) +
+        (v.allowPickup ? 0 : 1);
+      const who = [v.firstOrderOnly, v.requireAccount, v.emails.trim() !== ''].filter(Boolean).length;
+      const when = [v.startDay, v.endDay].filter(Boolean).length + (v.weekdays.length > 0 && v.weekdays.length < 7 ? 1 : 0);
+      const limits = [v.maxUses, v.maxUsesPerCustomer].filter((x) => x.trim()).length;
+      return {
+        identity: { text: v.code.trim() ? normalizeCouponCode(v.code) : 'Sin código todavía', set: false },
+        kind: { text: KIND_NAMES[v.kind], set: false },
+        scope: {
+          text: v.excludedProductIds.length > 0 ? `${scope}, salvo ${v.excludedProductIds.length}` : scope,
+          set: pieces > 0 || v.excludedProductIds.length > 0,
+        },
+        conditions: { text: conditions ? plural(conditions, 'condición', 'condiciones') : 'Ninguna', set: conditions > 0 },
+        who: { text: who ? plural(who, 'regla', 'reglas') : 'Cualquier cliente', set: who > 0 },
+        when: { text: when ? 'Con fechas o días' : 'Siempre', set: when > 0 },
+        limits: { text: limits ? plural(limits, 'límite', 'límites') : 'Sin límite', set: limits > 0 },
+        showcase: { text: v.announce ? 'Anunciado en la web' : 'No se anuncia', set: v.announce },
+      };
+    };
+
+    const refresh = () => {
+      const v = read();
+      const live = liveSummary(v, names);
+      summaryText.textContent = live.text;
+      summaryBox.dataset.ready = String(live.ready);
+
+      form.querySelectorAll<HTMLElement>('[data-kinds]').forEach((node) => {
+        node.hidden = !(node.dataset.kinds ?? '').split(' ').includes(v.kind);
+      });
+      const needsEmails = form.querySelector<HTMLElement>('[data-needs-emails]')!;
+      needsEmails.hidden = v.emails.trim() === '';
+
+      const note = form.querySelector<HTMLElement>('[data-announce-note]')!;
+      note.hidden = !(v.announce && data.announcedOther);
+      if (data.announcedOther) note.textContent = `Ahora se anuncia ${data.announcedOther}: al guardar este, ${data.announcedOther} deja de anunciarse.`;
+
+      for (const [key, hint] of Object.entries(hints(v))) {
+        const node = form.querySelector<HTMLElement>(`[data-hint="${key}"]`);
+        if (node) {
+          node.textContent = hint.text;
+          node.dataset.set = String(hint.set);
+        }
+      }
+    };
+
+    fill(initial);
+    // A saved coupon opens the sections that have something set; a new one only the first two.
+    if (!isNew) {
+      form.querySelectorAll<HTMLElement>('[data-hint]').forEach((node) => {
+        const section = node.closest('details');
+        if (section && node.dataset.hint) section.open = section.open || hints(initial)[node.dataset.hint]?.set === true;
+      });
+    }
+    refresh();
+    form.addEventListener('input', () => {
+      dirty = true;
+      refresh();
+    });
+    form.addEventListener('change', refresh);
+    field('code').addEventListener('blur', () => {
+      const input = field('code') as HTMLInputElement;
+      input.value = normalizeCouponCode(input.value);
+      refresh();
+    });
+
+    // --- save -----------------------------------------------------------------------
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      // The lists did not load: read() would send no categories, collections or zones.
+      if (data.optionsFailed) return;
+      const { body, problem } = buildCouponBody(read());
+      if (problem) {
+        say(problem, 'err');
+        return;
+      }
+      const save = form.querySelector<HTMLButtonElement>('[data-save]')!;
+      save.disabled = true;
+      say('Guardando…');
+      const res = await fetch('/api/admin/coupons/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      const reply = (await res?.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+      if (res?.ok && reply?.id) {
+        say('Guardado. Actualizando…', 'ok');
+        location.assign(`/admin/coupons/${reply.id}/?guardado=1`);
+        return;
+      }
+      save.disabled = false;
+      say(reply?.error?.message ?? 'No hubo respuesta del servidor.', 'err');
+    });
+
+    // --- pause, activate, duplicate, archive, delete -----------------------------------
+    const actions = document.querySelector<HTMLElement>('[data-coupon-actions]');
+    const actionStatus = document.querySelector<HTMLElement>('[data-action-status]');
+    if (actions && actionStatus) {
+      const { id, code } = actions.dataset;
+      const tell = (text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+        actionStatus.hidden = !text;
+        actionStatus.dataset.tone = tone;
+        actionStatus.textContent = text;
+      };
+      const call = async (method: 'PATCH' | 'DELETE', body?: unknown) => {
+        const res = await fetch(`/api/admin/coupons/${id}/`, {
+          method,
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: body ? JSON.stringify(body) : undefined,
+        }).catch(() => null);
+        const reply = (await res?.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+        return { ok: Boolean(res?.ok), id: reply?.id, message: reply?.error?.message ?? 'No hubo respuesta del servidor.' };
+      };
+      const lose = () => !dirty || confirm('Tienes cambios sin guardar en el formulario y se perderán. ¿Seguir?');
+
+      actions.addEventListener('click', async (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+        if (!button || !lose()) return;
+        const action = button.dataset.action;
+        if (action === 'archive' && !confirm(`¿Archivar ${code}? Dejará de funcionar, pero conserva sus pedidos y estadísticas.`)) return;
+        if (action === 'delete' && !confirm(`¿Borrar ${code}? No se puede deshacer.`)) return;
+        button.disabled = true;
+        tell('Un momento…');
+        const result =
+          action === 'delete'
+            ? await call('DELETE')
+            : action === 'duplicate'
+              ? await call('PATCH', { duplicate: true })
+              : await call('PATCH', { status: action === 'pause' || action === 'restore' ? 'paused' : action === 'archive' ? 'archived' : 'active' });
+        if (!result.ok) {
+          button.disabled = false;
+          tell(result.message, 'err');
+          return;
+        }
+        dirty = false;
+        if (action === 'delete') location.assign('/admin/coupons/?borrado=1');
+        else if (action === 'archive') location.assign('/admin/coupons/?archivado=1');
+        else if (action === 'duplicate' && result.id) location.assign(`/admin/coupons/${result.id}/?duplicado=1`);
+        else location.assign(`/admin/coupons/${id}/`);
+      });
+    }
+  }
+</script>

@@ -254,6 +254,7 @@ const carrierName = (value: string | null) =>
         {order.archived_at && <span class="chip">Archivado</span>}
         <span class={chipClass(pay.tone)}>{pay.text}</span>
         <span class={chipClass(fulfillment.tone)}>{fulfillment.text}</span>
+        {order.coupon_over_limit && <span class="chip chip--danger">Cupón por encima del límite</span>}
       </div>
       <div class="actions" data-order-actions data-id={order.id} data-reference={order.reference} data-total={euros(order.total_cents)} data-way={manualWay}>
         {awaitingTransfer && (
@@ -339,6 +340,17 @@ const carrierName = (value: string | null) =>
       </table>
       <dl class="totals">
         <div><dt>Subtotal</dt><dd>{euros(order.subtotal_cents)}</dd></div>
+        {
+          order.coupon_code && (
+            <div class="coupon-line">
+              <dt>
+                Cupón{' '}
+                {order.coupon_id ? <a href={`/admin/coupons/${order.coupon_id}/`}><code>{order.coupon_code}</code></a> : <code>{order.coupon_code}</code>}
+              </dt>
+              <dd>−{euros(order.coupon_discount_cents)}<span class="muted line">ya descontado en los precios</span></dd>
+            </div>
+          )
+        }
         <div><dt>Envío{order.shipping_zone_name ? ` · ${order.shipping_zone_name}` : ''}</dt><dd>{order.shipping_cents ? euros(order.shipping_cents) : 'Gratis'}</dd></div>
         <div class="totals__grand"><dt>Total</dt><dd>{euros(order.total_cents)}</dd></div>
       </dl>
@@ -953,6 +965,17 @@ const carrierName = (value: string | null) =>
     display: flex;
     justify-content: space-between;
     gap: 1rem;
+  }
+
+  .coupon-line dt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+  }
+
+  .coupon-line dd .line {
+    display: block;
   }
 
   .totals dt,

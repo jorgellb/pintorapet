@@ -1,3 +1,4 @@
+import { COUPON_REASONS } from '@/lib/domain/coupons';
 import { CommerceError } from './errors';
 
 const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
@@ -51,6 +52,9 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   MANUAL_ORDER_METHOD: { code: 'VALIDATION', status: 400 },
   SHIPPING_TOO_HEAVY: { code: 'UNAVAILABLE', status: 409 },
   ZONE_NOT_FOUND: { code: 'UNAVAILABLE', status: 404 },
+  // A coupon that does not apply (the message is the reason), and one that cannot be deleted.
+  ...Object.fromEntries(COUPON_REASONS.map((reason) => [reason, { code: 'CONFLICT', status: 409 }])),
+  COUPON_IN_USE: { code: 'CONFLICT', status: 409 },
 };
 
 function extractCode(message: string | undefined): string | null {
@@ -68,6 +72,7 @@ const UNIQUE: Array<[string, string]> = [
   ['categories_code_unique', 'Esa dirección ya la usa otro tipo de producto.'],
   ['categories_slug_es_unique', 'Esa dirección ya la usa otro tipo de producto.'],
   ['categories_slug_en_unique', 'Esa dirección ya la usa otro tipo de producto.'],
+  ['coupons_code_unique', 'Ya existe un cupón con ese código.'],
 ];
 
 export function mapPgError(err: unknown): CommerceError {

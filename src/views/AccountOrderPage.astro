@@ -66,6 +66,8 @@ const copy = es
       trackCode: 'Número de seguimiento',
       pieces: 'Piezas',
       subtotal: 'Subtotal',
+      coupon: 'Cupón',
+      couponIncluded: 'ya aplicado',
       shipping: 'Envío',
       free: 'Gratis',
       total: 'Total',
@@ -118,6 +120,8 @@ const copy = es
       trackCode: 'Tracking number',
       pieces: 'Pieces',
       subtotal: 'Subtotal',
+      coupon: 'Coupon',
+      couponIncluded: 'already applied',
       shipping: 'Shipping',
       free: 'Free',
       total: 'Total',
@@ -227,6 +231,16 @@ const showJourney = Boolean(status) && !['refunded', 'review', 'processing', 'ca
         </ul>
         <dl class="op__sums">
           <div><dt>{copy.subtotal}</dt><dd>{formatEur(order.subtotal_cents, locale)}</dd></div>
+          {
+            order.coupon_code && order.coupon_discount_cents > 0 && (
+              <div class="op__coupon">
+                <dt>
+                  {copy.coupon} {order.coupon_code} <small>{copy.couponIncluded}</small>
+                </dt>
+                <dd>−{formatEur(order.coupon_discount_cents, locale)}</dd>
+              </div>
+            )
+          }
           <div>
             <dt>{copy.shipping} {order.shipping_zone_name && <small>· {order.shipping_zone_name}</small>}</dt>
             <dd>{order.shipping_cents === 0 ? copy.free : formatEur(order.shipping_cents, locale)}</dd>
@@ -605,6 +619,15 @@ const showJourney = Boolean(status) && !['refunded', 'review', 'processing', 'ca
   .op__sums dd {
     margin: 0;
     font-variant-numeric: tabular-nums;
+  }
+
+  .op__coupon dt,
+  .op__coupon dd {
+    color: var(--success);
+  }
+
+  .op__coupon dt small {
+    font-size: 0.8rem;
   }
 
   .op__total {
