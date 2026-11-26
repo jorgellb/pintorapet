@@ -529,6 +529,8 @@ export type OrdersRow = {
   tracking_status: string | null;
   tracking_events: unknown;
   tracking_checked_at: string | null;
+  is_gift: boolean;
+  gift_message: string | null;
 };
 
 /** public.page_views (table) */
@@ -656,6 +658,7 @@ export type ShippingZonesRow = {
   customs: boolean;
   created_at: string;
   updated_at: string;
+  holiday_deadline: string | null;
 };
 
 /** public.shop_collections (table) */

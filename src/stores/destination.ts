@@ -18,6 +18,9 @@ export type ShippingEstimate =
       freeOverCents: number | null;
       remainingForFreeCents: number | null;
       remainingForFreeFormatted: string | null;
+      freeReached?: boolean;
+      /** "Pide hasta el…" for this zone in the Christmas season. */
+      holiday?: { late: boolean; text: string } | null;
     }
   | { available: false; reason: string };
 

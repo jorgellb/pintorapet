@@ -29,6 +29,8 @@ export type PrintableOrder = {
   createdAt: string;
   weightGrams: number | null;
   note: string;
+  /** A gift: the buyer's message and name go in the box, the order note does not. */
+  gift?: { message: string; from: string } | null;
   address: PrintableAddress | null;
   items: Array<{ title: string; sku: string; quantity: number }>;
 };
@@ -195,6 +197,9 @@ const SLIP = {
     ref: 'Referencia',
     qty: 'Uds.',
     note: 'Nota del pedido',
+    giftMessage: 'Un mensaje para ti',
+    gift: 'Un regalo para ti',
+    from: 'De parte de',
     thanks: 'Gracias por tu compra. Cada pieza nace de un retrato a lápiz hecho a mano.',
   },
   en: {
@@ -206,9 +211,26 @@ const SLIP = {
     ref: 'Reference',
     qty: 'Qty',
     note: 'Order note',
+    giftMessage: 'A message for you',
+    gift: 'A gift for you',
+    from: 'From',
     thanks: 'Thank you for your order. Every piece starts as a hand-drawn pencil portrait.',
   },
 } as const;
+
+/** What the slip says under the pieces: the gift message, or the order note. */
+export function slipMessage(order: PrintableOrder): { heading: string; lines: string[]; from: string | null } | null {
+  const t = SLIP[order.locale === 'en' ? 'en' : 'es'];
+  if (order.gift) {
+    const message = order.gift.message.trim();
+    return {
+      heading: message ? t.giftMessage : t.gift,
+      lines: message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+      from: order.gift.from.trim() ? `${t.from} ${order.gift.from.trim()}` : null,
+    };
+  }
+  return order.note.trim() ? { heading: t.note, lines: [order.note.trim()], from: null } : null;
+}
 
 /** A4 packing slip: what is in the box (no prices) and a thank-you. */
 export async function renderPackingSlip(order: PrintableOrder, brand: string): Promise<Uint8Array> {
@@ -283,12 +305,22 @@ export async function renderPackingSlip(order: PrintableOrder, brand: string): P
     y -= parts.length * 14 + 10;
   }
 
-  if (order.note.trim()) {
+  const message = slipMessage(order);
+  if (message) {
     y -= 10;
-    text(t.note.toUpperCase(), margin, y, 7.5, bold, MUTED);
-    y -= 14;
-    for (const part of wrap(regular, order.note, 10, right - margin)) {
-      text(part, margin, y, 10, regular, SOFT);
+    text(message.heading.toUpperCase(), margin, y, 7.5, bold, MUTED);
+    y -= order.gift ? 20 : 14;
+    // A gift message reads like a handwritten card: larger, in the serif.
+    const [font, size, lead] = order.gift ? [serif, 14, 19] : [regular, 10, 13];
+    for (const line of message.lines) {
+      for (const part of wrap(font, line, size, right - margin)) {
+        text(part, margin, y, size, font, order.gift ? INK : SOFT);
+        y -= lead;
+      }
+    }
+    if (message.from) {
+      y -= 4;
+      text(message.from, margin, y, 10, regular, SOFT);
       y -= 13;
     }
   }

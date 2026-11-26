@@ -350,6 +350,17 @@ const carrierName = (value: string | null) =>
           </p>
         )
       }
+      {
+        order.is_gift && (
+          <div class="gift-note">
+            <p>
+              <strong>Es un regalo</strong> de {order.customer_name || 'la clienta'} para {address?.name || '—'}. El
+              albarán lleva el mensaje en lugar de la nota y nunca lleva precios.
+            </p>
+            {order.gift_message && <blockquote>{order.gift_message}</blockquote>}
+          </div>
+        )
+      }
       <dl class="facts">
         <div><dt>Zona cobrada</dt><dd>{order.shipping_zone_name ?? '—'}</dd></div>
         <div>
@@ -814,6 +825,26 @@ const carrierName = (value: string | null) =>
     border-radius: var(--a-radius-sm);
     background: color-mix(in srgb, var(--danger) 10%, transparent);
     color: var(--danger);
+  }
+
+  .gift-note {
+    margin: 1rem 0 0;
+    padding: 0.8rem 1rem;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: var(--a-radius-sm);
+  }
+
+  .gift-note p {
+    margin: 0;
+  }
+
+  .gift-note blockquote {
+    margin: 0.6rem 0 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.05rem;
+    white-space: pre-line;
   }
 
   .alert--info {

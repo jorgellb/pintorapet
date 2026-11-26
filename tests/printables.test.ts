@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { packingSlipLines, renderAddressLabel, renderPackingSlip, type PrintableOrder } from '../src/lib/server/shipping/printables';
+import { packingSlipLines, renderAddressLabel, renderPackingSlip, slipMessage, type PrintableOrder } from '../src/lib/server/shipping/printables';
 
 const MM = 72 / 25.4;
 
@@ -64,5 +64,35 @@ describe('packing slip', () => {
       ],
     );
     expect(lines).toEqual([{ title: 'Taza Pug', sku: 'PD-2051', quantity: 1 }]);
+  });
+});
+
+describe('a gift in the box', () => {
+  const gift = { ...order, gift: { message: '¡Feliz Navidad, Marta!', from: 'Ana García' } };
+
+  it('carries the message and who sends it, not the order note', () => {
+    expect(slipMessage(gift)).toEqual({
+      heading: 'Un mensaje para ti',
+      lines: ['¡Feliz Navidad, Marta!'],
+      from: 'De parte de Ana García',
+    });
+  });
+
+  it('says it is a gift even without a message', () => {
+    expect(slipMessage({ ...gift, gift: { message: '', from: 'Ana García' } })).toEqual({
+      heading: 'Un regalo para ti',
+      lines: [],
+      from: 'De parte de Ana García',
+    });
+  });
+
+  it('keeps the order note on an ordinary order', () => {
+    expect(slipMessage(order)).toEqual({ heading: 'Nota del pedido', lines: [order.note], from: null });
+    expect(slipMessage({ ...order, note: '' })).toBeNull();
+  });
+
+  it('still prints', async () => {
+    const doc = await PDFDocument.load(await renderPackingSlip(gift, 'Pets Drawings'));
+    expect(doc.getPageCount()).toBe(1);
   });
 });

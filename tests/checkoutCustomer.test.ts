@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buyerName,
   checkoutCustomerSchema,
   destinationMatches,
   invoiceCustomerSchema,
@@ -141,5 +142,30 @@ describe('postcodes outside Spain', () => {
   it('is optional where the country has none', () => {
     const parsed = checkoutCustomerSchema.parse({ ...customer, country: 'HK', postalCode: '' });
     expect(parsed.postalCode).toBe('');
+  });
+});
+
+describe('a gift', () => {
+  it('goes to the name on the parcel; who sends it and the message travel apart', () => {
+    const parsed = checkoutCustomerSchema.parse({
+      ...customer,
+      name: 'Marta López',
+      gift: true,
+      giftFrom: '  Ana García ',
+      giftMessage: ' ¡Feliz Navidad! ',
+    });
+    expect(parsed.giftFrom).toBe('Ana García');
+    expect(parsed.giftMessage).toBe('¡Feliz Navidad!');
+    expect(shippingAddressFrom(parsed).name).toBe('Marta López');
+    expect(buyerName(parsed)).toBe('Ana García');
+  });
+
+  it('is bought by the name on the parcel when it is not a gift, whatever was typed', () => {
+    const parsed = checkoutCustomerSchema.parse({ ...customer, gift: false, giftFrom: 'Otra persona' });
+    expect(buyerName(parsed)).toBe('Ana García');
+  });
+
+  it('keeps the message short enough for the card', () => {
+    expect(() => checkoutCustomerSchema.parse({ ...customer, gift: true, giftMessage: 'x'.repeat(301) })).toThrow();
   });
 });

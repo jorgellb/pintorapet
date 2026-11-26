@@ -66,7 +66,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       customerId: account?.user.id,
     });
 
-    if (account && body.customer && body.saveToProfile) {
+    // A gift's address and name are the recipient's, not the buyer's: not saved to the account.
+    if (account && body.customer && body.saveToProfile && !body.customer.gift) {
       // Best effort: a failed profile save never blocks the payment.
       const profile = await loadProfile(account).catch(() => null);
       if (profile) {

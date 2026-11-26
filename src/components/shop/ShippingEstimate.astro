@@ -1,6 +1,7 @@
 ---
 import { t, type Locale } from '@/i18n';
 import { countryOptions } from '@/lib/domain/countries';
+import { shippingHighlights } from '@/lib/server/shipping/highlights';
 
 interface Props {
   locale: Locale;
@@ -13,12 +14,15 @@ const dict = t(locale);
 const countries = countryOptions(locale);
 const names = Object.fromEntries(countries.map((c) => [c.code, c.name]));
 const uid = Math.random().toString(36).slice(2, 8);
+// Before a destination is chosen: free shipping and Christmas in the main zone.
+const highlights = await shippingHighlights(locale);
 const labels = {
   choose: dict.shipping.choose,
   calculating: dict.shipping.calculating,
   free: dict.shipping.free,
   freeOver: dict.shipping.freeOver,
   remaining: dict.shipping.remaining,
+  freeReached: dict.shipping.freeReached,
   delivery: dict.shipping.delivery,
   unavailable: dict.shipping.unavailable,
   tooHeavy: dict.shipping.tooHeavy,
@@ -34,6 +38,7 @@ const labels = {
   data-expanded={String(expanded)}
   data-labels={JSON.stringify(labels)}
   data-names={JSON.stringify(names)}
+  data-teaser={JSON.stringify([highlights.freeShipping, highlights.holiday].filter(Boolean))}
 >
   <div class="ship__row">
     <span class="ship__label">{dict.shipping.label}</span>
@@ -227,6 +232,19 @@ const labels = {
     font-weight: 600;
   }
 
+  .ship__note :global(.ship__ok) {
+    color: var(--success, #2f6b52);
+    font-weight: 600;
+  }
+
+  .ship__note :global(.ship__holiday) {
+    color: var(--ink-soft, #3a3d44);
+  }
+
+  .ship__note :global(.ship__holiday--late) {
+    color: #8a4a1c;
+  }
+
   .ship__note :global(.ship__progress) {
     display: block;
     height: 3px;
@@ -276,6 +294,9 @@ const labels = {
     let run = 0;
 
     const fill = (text: string, amount: string) => text.replace('{amount}', amount);
+    const esc = (text: string) =>
+      text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    const teaser = (JSON.parse(root.dataset.teaser ?? '[]') as string[]).map(esc).join('<br />');
 
     function setOpen(open: boolean) {
       if (expanded) return;
@@ -318,7 +339,7 @@ const labels = {
         delete value.dataset.free;
         delete value.dataset.pending;
         if (destText) destText.textContent = labels.choose;
-        setNote('');
+        setNote(items.length ? teaser : '');
         emit({ ready: false });
         return;
       }
@@ -355,6 +376,10 @@ const labels = {
 
         const lines: string[] = [];
         if (estimate.delivery) lines.push(labels.delivery.replace('{days}', estimate.delivery));
+        if (estimate.freeReached) lines.push(`<span class="ship__ok">${labels.freeReached}</span>`);
+        if (estimate.holiday) {
+          lines.push(`<span class="ship__holiday${estimate.holiday.late ? ' ship__holiday--late' : ''}">${esc(estimate.holiday.text)}</span>`);
+        }
         if (estimate.remainingForFreeFormatted && estimate.freeOverCents) {
           const done = Math.max(0, Math.min(1, 1 - (estimate.remainingForFreeCents ?? 0) / estimate.freeOverCents));
           lines.push(

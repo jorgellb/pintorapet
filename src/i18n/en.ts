@@ -89,6 +89,7 @@ export const en = {
     free: 'Free',
     freeOver: 'Free shipping from {amount}',
     remaining: 'Add {amount} more for free shipping',
+    freeReached: 'You have free shipping!',
     delivery: 'Arrives in {days}',
     unavailable: 'We do not ship to this destination yet. Write to us and we will find a way.',
     tooHeavy: 'This order is above our shipping weights. Write to us and we will prepare the parcel.',

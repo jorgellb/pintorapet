@@ -77,6 +77,12 @@ export function initCheckout(root: HTMLElement): void {
   const route = root.querySelector<HTMLElement>('[data-route]')!;
   const payButtons = [...root.querySelectorAll<HTMLButtonElement>('[data-pay]')];
   const invoiceBox = root.querySelector<HTMLElement>('[data-invoice]')!;
+  const giftFields = root.querySelector<HTMLElement>('[data-gift-fields]');
+  root.querySelector<HTMLInputElement>('[data-gift-toggle]')?.addEventListener('change', (event) => {
+    if (!giftFields) return;
+    giftFields.hidden = !(event.target as HTMLInputElement).checked;
+    if (!giftFields.hidden) field('giftFrom')?.focus();
+  });
   const invoiceAddress = root.querySelector<HTMLElement>('[data-invoice-address]')!;
   const stateAuto = root.querySelector<HTMLElement>('[data-state-auto]')!;
 
@@ -603,6 +609,9 @@ export function initCheckout(root: HTMLElement): void {
             postalCode: value('postalCode'),
             country: country(),
             note: value('note'),
+            gift: checked('gift'),
+            giftFrom: checked('gift') ? value('giftFrom') : '',
+            giftMessage: checked('gift') ? value('giftMessage') : '',
           },
         }),
       });

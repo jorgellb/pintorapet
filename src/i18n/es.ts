@@ -91,6 +91,7 @@ export const es: Dictionary = {
     free: 'Gratis',
     freeOver: 'Envío gratis desde {amount}',
     remaining: 'Te faltan {amount} para el envío gratis',
+    freeReached: '¡Ya tienes el envío gratis!',
     delivery: 'Llega en {days}',
     unavailable: 'Todavía no enviamos a este destino. Escríbenos y buscamos la manera.',
     tooHeavy: 'El pedido supera el peso de nuestras tarifas. Escríbenos y te preparamos el envío.',

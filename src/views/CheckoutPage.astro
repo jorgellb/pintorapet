@@ -81,6 +81,13 @@ const copy = es
       state: 'Provincia o región',
       stateAuto: 'según tu código postal',
       noteToggle: 'Añadir una nota para Meili',
+      giftToggle: 'Es un regalo',
+      giftLead: 'Escribe arriba el nombre y la dirección de quien lo recibe. El paquete nunca lleva precios.',
+      giftFrom: 'De parte de',
+      giftFromPlaceholder: 'Tu nombre, como quieras que aparezca',
+      giftMessage: 'Mensaje para la tarjeta',
+      giftMessagePlaceholder: '¡Feliz Navidad! Con todo el cariño…',
+      giftMessageHint: 'Lo imprimimos en la nota que va dentro del paquete (300 caracteres).',
       note: 'Nota',
       notePlaceholder: 'Indicaciones para la entrega o lo que quieras contarle.',
       invoiceTitle: 'Factura',
@@ -161,6 +168,13 @@ const copy = es
       state: 'County, state or region',
       stateAuto: 'from your postcode',
       noteToggle: 'Add a note for Meili',
+      giftToggle: 'This is a gift',
+      giftLead: 'Write the name and address of the person receiving it above. The parcel never carries prices.',
+      giftFrom: 'From',
+      giftFromPlaceholder: 'Your name, as you would like it to appear',
+      giftMessage: 'Message for the card',
+      giftMessagePlaceholder: 'Merry Christmas! With love…',
+      giftMessageHint: 'We print it on the note inside the parcel (300 characters).',
       note: 'Note',
       notePlaceholder: 'Delivery instructions, or anything you would like to tell her.',
       invoiceTitle: 'Invoice',
@@ -425,6 +439,33 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
                   <textarea id="co-note" name="note" rows="3" maxlength="500" placeholder={copy.notePlaceholder}></textarea>
                 </div>
               </details>
+
+              <div class="gift" data-gift>
+                <label class="switch">
+                  <input type="checkbox" name="gift" data-gift-toggle />
+                  <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+                  <span>{copy.giftToggle}</span>
+                </label>
+                <div class="gift__fields" data-gift-fields hidden>
+                  <p class="co-step__lead co-step__lead--small">{copy.giftLead}</p>
+                  <div class="fld" data-field="giftFrom">
+                    <label for="co-gift-from">{copy.giftFrom}</label>
+                    <input id="co-gift-from" name="giftFrom" maxlength="120" autocomplete="name" placeholder={copy.giftFromPlaceholder} />
+                  </div>
+                  <div class="fld" data-field="giftMessage">
+                    <label for="co-gift-msg">{copy.giftMessage}</label>
+                    <textarea
+                      id="co-gift-msg"
+                      name="giftMessage"
+                      rows="3"
+                      maxlength="300"
+                      placeholder={copy.giftMessagePlaceholder}
+                      aria-describedby="co-gift-msg-hint"
+                    ></textarea>
+                    <p class="gift__hint" id="co-gift-msg-hint">{copy.giftMessageHint}</p>
+                  </div>
+                </div>
+              </div>
             </fieldset>
 
             <!-- Invoice (optional) -->
@@ -1163,6 +1204,34 @@ const payLabels = { stripe: copy.card, paypal: copy.paypal } as const;
   .ship-line.is-error {
     background: rgb(156 59 69 / 0.07);
     color: var(--danger);
+  }
+
+  .gift {
+    display: grid;
+    gap: 0.9rem;
+    margin-top: 1.25rem;
+  }
+
+  .gift__fields {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .gift__fields[hidden] {
+    display: none;
+  }
+
+  .gift__fields .co-step__lead {
+    margin: 0;
+  }
+
+  .gift__hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.82rem;
+    color: var(--muted);
   }
 
   .note summary {

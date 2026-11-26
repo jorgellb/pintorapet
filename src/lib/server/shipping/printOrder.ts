@@ -18,9 +18,13 @@ export async function printableOrder(
       payment_status: OrderPaymentStatus;
       shipping_weight_grams: number | null;
       shipping_address: Record<string, string> | null;
+      customer_name: string | null;
+      is_gift: boolean | null;
+      gift_message: string | null;
       order_items: Array<{ id: string; product_title: string; product_sku: string; quantity: number; created_at: string }>;
     }>`
       select o.reference, o.locale, o.created_at, o.payment_status, o.shipping_weight_grams, o.shipping_address,
+             o.customer_name, o.is_gift, o.gift_message,
              coalesce((select json_agg(json_build_object('id', i.id, 'product_title', i.product_title,
                                                          'product_sku', i.product_sku, 'quantity', i.quantity,
                                                          'created_at', i.created_at))
@@ -45,6 +49,7 @@ export async function printableOrder(
       createdAt: String(data.created_at),
       weightGrams: data.shipping_weight_grams == null ? null : Number(data.shipping_weight_grams),
       note: String(address?.note ?? ''),
+      gift: data.is_gift ? { message: String(data.gift_message ?? ''), from: String(data.customer_name ?? '') } : null,
       address,
       items: packingSlipLines(items, (left as { items?: Array<{ order_item_id: string; quantity: number }> } | null)?.items ?? null),
     },

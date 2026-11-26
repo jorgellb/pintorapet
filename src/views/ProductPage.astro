@@ -11,6 +11,7 @@ import { sizedImage } from '@/lib/catalog/imageSize';
 import { productDetails } from '@/lib/catalog/productDetails';
 import { jsonLdText, productJsonLd } from '@/lib/catalog/productJsonLd';
 import { productQuestion, whatsappLink } from '@/lib/domain/whatsapp';
+import { shippingHighlights } from '@/lib/server/shipping/highlights';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
@@ -26,11 +27,12 @@ const { product, options, selected } = page;
 
 // Product slugs are translated, so find this option's slug in the other locale.
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
-const [catalog, otherCatalog, collections, types] = await Promise.all([
+const [catalog, otherCatalog, collections, types, highlights] = await Promise.all([
   loadPublicCatalogForPages(locale),
   loadPublicCatalogForPages(otherLocale),
   loadShopCollections(locale),
   loadProductTypes(locale),
+  shippingHighlights(locale),
 ]);
 const otherSlug = otherCatalog.products.find((p) => p.id === selected.id)?.slug;
 const alternate = otherSlug ? productPath(otherLocale, otherSlug) : localizedPath(otherLocale, 'shop');
@@ -121,9 +123,11 @@ const structured = productJsonLd({
   breadcrumbs,
 });
 
-const assurances = es
-  ? ['Dibujo original a lápiz de Meili Stringfellow', 'Envío con Correos desde España', 'Pago seguro con tarjeta o PayPal']
-  : ['Original pencil drawing by Meili Stringfellow', 'Shipped with Correos from Spain', 'Secure payment by card or PayPal'];
+const assurances = [
+  es ? 'Dibujo original a lápiz de Meili Stringfellow' : 'Original pencil drawing by Meili Stringfellow',
+  highlights.freeShipping ?? (es ? 'Envío con Correos desde España' : 'Shipped with Correos from Spain'),
+  es ? 'Pago seguro con tarjeta o PayPal' : 'Secure payment by card or PayPal',
+];
 ---
 
 <PublicLayout
@@ -277,6 +281,17 @@ const assurances = es
           </span>
           <svg class="ask__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>
         </a>
+
+        {
+          highlights.holiday && (
+            <p class="holiday">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5 12 7l2.5-2.5M9.5 19.5 12 17l2.5 2.5" />
+              </svg>
+              {highlights.holiday}
+            </p>
+          )
+        }
 
         <ul class="assure">
           {assurances.map((text) => (
@@ -818,6 +833,28 @@ const assurances = es
   .ask:hover .ask__arrow {
     stroke: var(--ink);
     transform: translate(2px, -2px);
+  }
+
+  .holiday {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1.25rem 0 0;
+    padding: 0.65rem 0.9rem;
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    font-size: 0.92rem;
+  }
+
+  .holiday svg {
+    flex: none;
+    width: 1.1rem;
+    height: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .assure {

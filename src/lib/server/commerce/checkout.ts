@@ -3,6 +3,7 @@ import { json, setColumns, type Db } from '@/lib/server/db';
 import type Stripe from 'stripe';
 import type { CartItem } from '@/lib/domain/cart';
 import {
+  buyerName,
   destinationMatches,
   shippingAddressFrom,
   type CheckoutCustomer,
@@ -141,8 +142,10 @@ export async function createCheckout(
       ...(opts.customer
         ? {
             customer_email: opts.customer.email,
-            customer_name: opts.customer.name,
+            customer_name: buyerName(opts.customer),
             shipping_address: JSON.stringify(shippingAddressFrom(opts.customer)),
+            is_gift: opts.customer.gift,
+            gift_message: opts.customer.gift && opts.customer.giftMessage ? opts.customer.giftMessage : null,
           }
         : {}),
       ...(opts.customerId ? { customer_id: opts.customerId } : {}),

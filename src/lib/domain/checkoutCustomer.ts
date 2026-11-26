@@ -23,6 +23,13 @@ export const checkoutCustomerSchema = z
       .regex(/^[A-Za-z]{2}$/)
       .transform((value) => value.toUpperCase()),
     note: text(500).default(''),
+    /**
+     * A gift: the parcel goes to `name`; who sends it (`giftFrom`, the buyer)
+     * and the message are printed on the packing slip.
+     */
+    gift: z.boolean().default(false),
+    giftFrom: text(120).default(''),
+    giftMessage: text(300).default(''),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -72,6 +79,11 @@ export function shippingAddressFrom(customer: CheckoutCustomer) {
     phone: customer.phone,
     note: customer.note,
   };
+}
+
+/** Who buys: the gift's sender, or the person on the parcel. */
+export function buyerName(customer: CheckoutCustomer): string {
+  return (customer.gift && customer.giftFrom) || customer.name;
 }
 
 /** The address must be in the destination the shipping price was quoted for. */

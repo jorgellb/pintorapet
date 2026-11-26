@@ -24,6 +24,7 @@ type Zone = {
   active: boolean;
   position: number;
   free_over_cents: number | null;
+  holiday_deadline: string | null;
   delivery_es: string;
   delivery_en: string;
   correos_product: string | null;
@@ -40,6 +41,10 @@ const [{ data: zoneRows, error }, { data: settingsRow }] = await Promise.all([
   ),
   settle(admin.db.one<{ shipping_config: unknown }>`select shipping_config from public.shop_settings where id = 1`),
 ]);
+
+/** "18 dic" for a YYYY-MM-DD date. */
+const shortDay = (day: string) =>
+  new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`));
 
 const zones = ((zoneRows ?? []) as Zone[]).map((z) => ({
   ...z,
@@ -81,6 +86,7 @@ const blankZone: Zone = {
   active: true,
   position: 0,
   free_over_cents: null,
+  holiday_deadline: null,
   delivery_es: '',
   delivery_en: '',
   correos_product: 'S0107',
@@ -132,6 +138,7 @@ const blankZone: Zone = {
                   <span class="chip">desde {euros(zone.shipping_rates[0].price_cents)}</span>
                 )}
                 {zone.free_over_cents && <span class="chip chip--ok">gratis desde {euros(zone.free_over_cents)}</span>}
+                {zone.holiday_deadline && <span class="chip">Navidad: hasta el {shortDay(zone.holiday_deadline)}</span>}
                 {zone.customs && <span class="chip chip--warn">aduana</span>}
                 {!zone.active && <span class="chip chip--danger">pausada</span>}
               </span>
@@ -243,6 +250,14 @@ const blankZone: Zone = {
                   <input name="deliveryEn" value={zone.delivery_en} maxlength="80" placeholder="2–3 working days" />
                 </label>
               </div>
+              <label class="holiday">
+                Último día para que llegue antes de Navidad
+                <input type="date" name="holidayDeadline" value={zone.holiday_deadline ?? ''} />
+                <span class="hint">
+                  Desde el 1 de noviembre la tienda avisa «pide hasta el…» a quien envía a esta zona, y después de esa
+                  fecha, que puede no llegar a tiempo. Vacío: sin aviso.
+                </span>
+              </label>
 
               <div class="grid-3">
                 <label>
@@ -401,6 +416,11 @@ const blankZone: Zone = {
           <label>Plazo de entrega<input name="deliveryEs" maxlength="80" placeholder="5–10 días laborables" /></label>
           <label>Plazo en inglés<input name="deliveryEn" maxlength="80" placeholder="5–10 working days" /></label>
         </div>
+        <label class="holiday">
+          Último día para que llegue antes de Navidad
+          <input type="date" name="holidayDeadline" />
+          <span class="hint">Vacío: sin aviso de Navidad.</span>
+        </label>
         <div class="grid-3">
           <label>
             Producto de Correos
@@ -747,6 +767,7 @@ const blankZone: Zone = {
           deliveryEn: String(fd.get('deliveryEn') ?? ''),
           correosProduct: String(fd.get('correosProduct') ?? '') || null,
           customs: fd.get('customs') === 'on',
+          holidayDeadline: String(fd.get('holidayDeadline') ?? '') || null,
         },
         rates: rateRows.sort((a, b) => a.maxGrams - b.maxGrams),
       };

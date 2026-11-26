@@ -22,6 +22,8 @@ const zoneSchema = z
         deliveryEn: z.string().trim().max(80),
         correosProduct: z.string().trim().max(10).nullable(),
         customs: z.boolean(),
+        /** Last day to order for Christmas (YYYY-MM-DD), or none. */
+        holidayDeadline: z.iso.date().nullable().default(null),
       })
       .strict(),
     rates: z
@@ -49,8 +51,11 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const admin = await requireAdmin(cookies, request);
     if (!admin) return forbidden();
     const body = zoneSchema.parse(await request.json());
-    const data = await dbCall(() => admin.db.call<string>('admin_save_shipping_zone', { p_zone: body.zone, p_rates: body.rates }));
+    const { holidayDeadline, ...zone } = body.zone;
+    const data = await dbCall(() => admin.db.call<string>('admin_save_shipping_zone', { p_zone: zone, p_rates: body.rates }));
     const id = String(data);
+    await dbCall(() => admin.db.run`
+      update public.shipping_zones set holiday_deadline = ${holidayDeadline}::date where id = ${id}`);
     await audit(admin, body.zone.id ? 'update_shipping_zone' : 'create_shipping_zone', 'shipping_zones', id, body);
     return Response.json({ ok: true, id });
   } catch (err) {
