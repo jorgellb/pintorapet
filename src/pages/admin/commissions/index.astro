@@ -28,7 +28,7 @@ const { data, error } = await settle(
     select r.id, r.reference, r.locale, r.contact_name, r.contact_email, r.size_hint, r.subjects, r.message, r.status, r.created_at,
            coalesce((select json_agg(json_build_object('id', f.id, 'filename', f.original_filename) order by f.created_at)
                      from public.commission_files f
-                     where f.commission_request_id = r.id and f.storage_public_id is not null), '[]'::json) as photos
+                     where f.commission_request_id = r.id and f.storage_public_id is not null and f.status = 'accepted'), '[]'::json) as photos
     from public.commission_requests r order by r.created_at desc limit 200`,
 );
 

@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type { Db } from '@/lib/server/db';
+import { transaction, type Db } from '@/lib/server/db';
 import {
   destroyPrivateImage,
   parseCloudinaryUrl,
@@ -49,29 +49,42 @@ export async function addPhoto(
   client: Db,
   input: { reference: string; token: string; file: File },
 ): Promise<{ id: string; count: number }> {
-  const request = await client.one<{ id: string; upload_token_hash: string | null; open: boolean; count: number }>`
-    select r.id, r.upload_token_hash, coalesce(r.upload_until > now(), false) as open,
-           (select count(*)::int from public.commission_files f where f.commission_request_id = r.id) as count
-    from public.commission_requests r where r.reference = ${input.reference}`;
-  // Same answer for an unknown reference and a wrong key: nothing to learn from it.
-  if (!request || !request.upload_token_hash || !request.open || request.upload_token_hash !== hash(input.token)) {
-    throw new CommerceError('FORBIDDEN', 'UPLOAD_CLOSED', 403);
-  }
-  if (request.count >= MAX_PHOTOS) throw new CommerceError('VALIDATION', 'TOO_MANY_PHOTOS', 400);
   if (input.file.size <= 0 || input.file.size > MAX_PHOTO_BYTES) throw new CommerceError('VALIDATION', 'PHOTO_TOO_LARGE', 400);
-
   const bytes = new Uint8Array(await input.file.arrayBuffer());
   const type = photoType(bytes);
   if (!type || !TYPES.has(type)) throw new CommerceError('VALIDATION', 'NOT_A_PHOTO', 400);
 
+  // Take a place first, with the request locked: uploads sent together cannot
+  // all see "fewer than ten" and pass. The place is given back if the upload fails.
   const publicId = `commissions/${input.reference}/${randomUUID()}`;
-  await uploadPrivateImage(cloudinary(), { bytes, contentType: type, publicId });
-  const row = await client.one<{ id: string }>`
-    insert into public.commission_files
-      (commission_request_id, original_filename, mime_type, byte_size, status, storage_public_id)
-    values (${request.id}, ${input.file.name.slice(0, 200) || 'foto.jpg'}, ${type}, ${bytes.byteLength}, 'accepted', ${publicId})
-    returning id`;
-  return { id: row!.id, count: request.count + 1 };
+  const slot = await transaction(async (tx) => {
+    const request = await tx.one<{ id: string; upload_token_hash: string | null; open: boolean }>`
+      select id, upload_token_hash, coalesce(upload_until > now(), false) as open
+      from public.commission_requests where reference = ${input.reference} for update`;
+    // Same answer for an unknown reference and a wrong key: nothing to learn from it.
+    if (!request || !request.upload_token_hash || !request.open || request.upload_token_hash !== hash(input.token)) {
+      throw new CommerceError('FORBIDDEN', 'UPLOAD_CLOSED', 403);
+    }
+    const taken = await tx.one<{ count: number }>`
+      select count(*)::int as count from public.commission_files where commission_request_id = ${request.id}`;
+    if ((taken?.count ?? 0) >= MAX_PHOTOS) throw new CommerceError('VALIDATION', 'TOO_MANY_PHOTOS', 400);
+    const row = await tx.one<{ id: string }>`
+      insert into public.commission_files
+        (commission_request_id, original_filename, mime_type, byte_size, status, storage_public_id)
+      values (${request.id}, ${input.file.name.slice(0, 200) || 'foto.jpg'}, ${type}, ${bytes.byteLength},
+              'pending_validation', ${publicId})
+      returning id`;
+    return { id: row!.id, count: (taken?.count ?? 0) + 1 };
+  });
+
+  try {
+    await uploadPrivateImage(cloudinary(), { bytes, contentType: type, publicId });
+  } catch (err) {
+    await client.run`delete from public.commission_files where id = ${slot.id}`.catch(() => 0);
+    throw err;
+  }
+  await client.run`update public.commission_files set status = 'accepted' where id = ${slot.id}`;
+  return slot;
 }
 
 export type CommissionPhoto = { id: string; filename: string; bytes: number; createdAt: string };
@@ -79,7 +92,7 @@ export type CommissionPhoto = { id: string; filename: string; bytes: number; cre
 export async function photosOf(client: Db, commissionId: string): Promise<CommissionPhoto[]> {
   const rows = await client.rows<{ id: string; original_filename: string; byte_size: number; created_at: string }>`
     select id, original_filename, byte_size, created_at from public.commission_files
-    where commission_request_id = ${commissionId} and storage_public_id is not null
+    where commission_request_id = ${commissionId} and storage_public_id is not null and status = 'accepted'
     order by created_at`;
   return rows.map((r) => ({ id: r.id, filename: r.original_filename, bytes: Number(r.byte_size), createdAt: r.created_at }));
 }
@@ -88,7 +101,8 @@ export async function photosOf(client: Db, commissionId: string): Promise<Commis
 export async function photoFile(client: Db, commissionId: string, fileId: string): Promise<Response> {
   const row = await client.one<{ storage_public_id: string }>`
     select storage_public_id from public.commission_files
-    where id = ${fileId} and commission_request_id = ${commissionId} and storage_public_id is not null`;
+    where id = ${fileId} and commission_request_id = ${commissionId} and storage_public_id is not null
+      and status = 'accepted'`;
   if (!row) throw new CommerceError('UNAVAILABLE', 'Foto no encontrada.', 404);
   const res = await fetch(privateDownloadUrl(cloudinary(), row.storage_public_id, { ttlSeconds: 120 }));
   if (!res.ok) throw new CommerceError('UNAVAILABLE', 'Cloudinary no devolvió la foto.', 502);
