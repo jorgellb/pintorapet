@@ -91,6 +91,57 @@ export async function uploadImage(
   return { publicId: String(body.public_id), bytes: Number(body.bytes) };
 }
 
+/**
+ * A private image (a customer's photos): uploaded as `authenticated`, so no
+ * public URL serves it; it is read through privateDownloadUrl, signed and short-lived.
+ */
+export async function uploadPrivateImage(
+  config: CloudinaryConfig,
+  image: { bytes: Uint8Array<ArrayBuffer>; contentType: string; publicId: string },
+  { fetchImpl = fetch, now = Date.now }: Deps = {},
+): Promise<{ publicId: string; bytes: number }> {
+  const form = signedForm(config, { overwrite: 'false', public_id: image.publicId, type: 'authenticated' }, now);
+  form.set('file', new Blob([image.bytes], { type: image.contentType }));
+  const response = await fetchImpl(`${API}/${config.cloudName}/image/upload`, { method: 'POST', body: form });
+  const body = await readJson(response);
+  return { publicId: String(body.public_id), bytes: Number(body.bytes) };
+}
+
+/** A signed, expiring link to download a private image (as JPEG). */
+export function privateDownloadUrl(
+  config: CloudinaryConfig,
+  publicId: string,
+  { now = Date.now, ttlSeconds = 600 }: { now?: () => number; ttlSeconds?: number } = {},
+): string {
+  const timestamp = Math.floor(now() / 1000);
+  const params: Record<string, string> = {
+    public_id: publicId,
+    type: 'authenticated',
+    format: 'jpg',
+    expires_at: String(timestamp + ttlSeconds),
+    timestamp: String(timestamp),
+  };
+  const query = new URLSearchParams({
+    ...params,
+    api_key: config.apiKey,
+    signature: signCloudinaryParams(params, config.apiSecret),
+  });
+  return `${API}/${config.cloudName}/image/download?${query}`;
+}
+
+/** Deletes a private image (a customer's photo). */
+export async function destroyPrivateImage(
+  config: CloudinaryConfig,
+  publicId: string,
+  { fetchImpl = fetch, now = Date.now }: Deps = {},
+): Promise<'ok' | 'not found'> {
+  const form = signedForm(config, { invalidate: 'true', public_id: publicId, type: 'authenticated' }, now);
+  const response = await fetchImpl(`${API}/${config.cloudName}/image/destroy`, { method: 'POST', body: form });
+  const body = await readJson(response);
+  if (body.result === 'ok' || body.result === 'not found') return body.result;
+  throw new CloudinaryError(`Cloudinary could not delete ${publicId}: ${String(body.result)}`, response.status);
+}
+
 /** Deletes the image and purges it from the CDN. An image that is already gone counts as deleted. */
 export async function destroyImage(
   config: CloudinaryConfig,

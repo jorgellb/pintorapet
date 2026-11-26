@@ -251,6 +251,7 @@ export type CommissionFilesRow = {
   status: CommissionFileStatus;
   temporary_owner_token_hash: string | null;
   created_at: string;
+  storage_public_id: string | null;
 };
 
 /** public.commission_requests (table) */
@@ -266,6 +267,8 @@ export type CommissionRequestsRow = {
   status: CommissionRequestStatus;
   created_at: string;
   updated_at: string;
+  upload_token_hash: string | null;
+  upload_until: string | null;
 };
 
 /** public.contact_messages (table) */

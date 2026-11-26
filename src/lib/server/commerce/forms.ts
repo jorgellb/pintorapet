@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { insertValues, upsert, type Db } from '@/lib/server/db';
 import { Resend } from 'resend';
-import { emailAdmin, emailFrom, hasResend } from '@/lib/server/env';
+import { emailAdmin, emailFrom, hasResend, siteUrl } from '@/lib/server/env';
 import { hasDatabase } from '@/lib/server/db';
 import { serviceDb } from '@/lib/server/db';
 import { CommerceError } from './errors';
 import { dbCall } from './pgErrors';
+import { openUploads } from '@/lib/server/commissionPhotos';
 
 function requireService(): Db {
   const client = serviceDb();
@@ -176,7 +177,7 @@ export async function submitCommission(
     message: string;
   },
   { emailNow = true }: Delivery = {},
-): Promise<{ id: string; reference: string }> {
+): Promise<{ id: string; reference: string; uploadToken: string }> {
   const supabase = requireService();
   const reference = `CR-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
 
@@ -218,7 +219,9 @@ export async function submitCommission(
           body.locale === 'es'
             ? `Encargo ${reference} — ${body.name}`
             : `Commission ${reference} — ${body.name}`,
-        text: `Reference: ${reference}\nFrom: ${body.name} <${body.email}>\nSize: ${body.size}\nSubjects: ${body.subjects}\n\n${body.message}`,
+        text:
+          `Reference: ${reference}\nFrom: ${body.name} <${body.email}>\nSize: ${body.size}\nSubjects: ${body.subjects}\n\n${body.message}` +
+          `\n\n${body.locale === 'es' ? 'Las fotos que envíe están en' : 'Any photos sent are in'} ${siteUrl()}/admin/commissions/`,
       });
       await supabase.run`
         update public.notification_outbox set status = 'sent', sent_at = now()
@@ -228,5 +231,7 @@ export async function submitCommission(
     }
   }
 
-  return { id, reference };
+  // The pet's photos come next, one by one, with this key (commissionPhotos.ts).
+  const uploadToken = await openUploads(supabase, id);
+  return { id, reference, uploadToken };
 }

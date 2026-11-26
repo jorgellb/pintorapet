@@ -47,7 +47,7 @@ export const POST: APIRoute = async (context) => {
     }
     if (verdict === 'block') {
       // Bots get the answer a person would get, so they learn nothing.
-      const fake = { ok: true, id: randomUUID(), reference: fakeReference() };
+      const fake = { ok: true, id: randomUUID(), reference: fakeReference(), uploadToken: randomUUID().replace(/-/g, '') };
       if (wantsHtml(request)) return backToForm(request, body.locale, { sent: '1', ref: fake.reference });
       return Response.json(fake);
     }
@@ -75,6 +75,8 @@ export const POST: APIRoute = async (context) => {
       ok: true,
       id: result.id,
       reference: result.reference,
+      // For the pet's photos, uploaded next (api/commissions/photos).
+      uploadToken: result.uploadToken,
     });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);

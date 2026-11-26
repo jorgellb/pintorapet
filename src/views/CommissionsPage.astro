@@ -345,6 +345,52 @@ const sizeChoices = [
               placeholder={copy.messagePlaceholder}>{startMessage}</textarea>
           </label>
 
+          <div
+            class="field photos"
+            data-photo-picker
+            data-max="10"
+            data-labels={JSON.stringify(
+              locale === 'es'
+                ? {
+                    uploading: 'Subiendo las fotos: {n} de {total}…',
+                    failed: '',
+                    tooMany: 'Caben hasta {max} fotos: elige las mejores.',
+                    remove: 'Quitar',
+                  }
+                : {
+                    uploading: 'Uploading the photos: {n} of {total}…',
+                    failed: '',
+                    tooMany: 'Up to {max} photos: choose the best ones.',
+                    remove: 'Remove',
+                  },
+            )}
+          >
+            <span class="field__label" id="photos-label">
+              {locale === 'es' ? 'Fotos de tu mascota' : 'Photos of your pet'}
+              <small>{locale === 'es' ? 'opcional, hasta 10' : 'optional, up to 10'}</small>
+            </span>
+            <ul class="photos__list" data-photo-list aria-labelledby="photos-label"></ul>
+            <label class="photos__drop" data-photo-drop>
+              <input class="photos__input" type="file" accept="image/*" multiple data-photo-input aria-labelledby="photos-label" />
+              <svg viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="6" y="11" width="36" height="28" rx="3" />
+                <circle cx="18" cy="21" r="3.5" />
+                <path d="M6 34l10-9 8 7 6-5 12 10" />
+                <path class="photos__plus" d="M38 4v10M33 9h10" />
+              </svg>
+              <span class="photos__drop-text">
+                <strong>{locale === 'es' ? 'Añadir fotos' : 'Add photos'}</strong>
+                <span>{locale === 'es' ? 'Del móvil o del ordenador; también puedes arrastrarlas aquí.' : 'From your phone or computer, or drag them here.'}</span>
+              </span>
+            </label>
+            <p class="field__hint" data-photo-note aria-live="polite"></p>
+            <p class="field__hint">
+              {locale === 'es'
+                ? 'Mejor con buena luz y la mirada a cámara. Solo las ve Meili, para tu retrato.'
+                : 'Best in good light, looking at the camera. Only Meili sees them, for your portrait.'}
+            </p>
+          </div>
+
           <AntiBot form="commission" locale={locale} />
 
           <div class="paper__actions">
@@ -361,6 +407,7 @@ const sizeChoices = [
           </svg>
           <h3 tabindex="-1">{copy.sentTitle}</h3>
           <p>{copy.sentBody}</p>
+          <p class="photos__failed" data-photo-failed hidden></p>
           <p class="reference" data-form-reference-row hidden={!sentReference}>
             <span class="field__label">{copy.sentReference}</span>
             <strong data-form-reference>{sentReference}</strong>
@@ -1021,6 +1068,146 @@ const sizeChoices = [
     font-variant-numeric: tabular-nums;
   }
 
+  /* ——— The pet's photos ——— */
+  .photos__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+    gap: 0.6rem;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .photos__list:empty {
+    display: none;
+  }
+
+  .photos__list :global(li) {
+    position: relative;
+    aspect-ratio: 1;
+    animation: photo-in 420ms var(--ease-out) both;
+  }
+
+  .photos__list :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border: 0.3rem solid var(--sheet);
+    border-radius: 0;
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12), 0 8px 16px -10px rgb(22 23 26 / 0.35);
+  }
+
+  .photos__list :global(li:nth-child(odd)) {
+    rotate: -1.5deg;
+  }
+
+  .photos__list :global(li:nth-child(even)) {
+    rotate: 1.2deg;
+  }
+
+  .photos__list :global(button) {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .photos__drop {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.4rem;
+    padding: 1rem 1.1rem;
+    border: 1.5px dashed var(--line-strong);
+    background: rgb(255 255 255 / 0.55);
+    cursor: pointer;
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      background var(--dur-ui) var(--ease-soft);
+  }
+
+  .photos__drop[hidden] {
+    display: none;
+  }
+
+  .photos__drop:hover,
+  .photos__drop.is-over,
+  .photos__drop:focus-within {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .photos__input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .photos__drop svg {
+    flex: none;
+    width: 2.6rem;
+    height: 2.6rem;
+    fill: none;
+    stroke: var(--accent-deep);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .photos__plus {
+    stroke: var(--accent);
+  }
+
+  .photos__drop-text {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  .photos__drop-text strong {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 400;
+    color: var(--ink);
+  }
+
+  .photos__failed {
+    color: #8a4a1c;
+  }
+
+  .photos__failed[hidden] {
+    display: none;
+  }
+
+  @keyframes photo-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.96);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .photos__list :global(li) {
+      animation: none;
+    }
+  }
+
   .reference {
     display: grid;
     gap: 0.2rem;
@@ -1098,10 +1285,36 @@ const sizeChoices = [
 
 <script>
   import { enhanceForm } from '@/scripts/enhanceForm';
-
-  document.querySelectorAll<HTMLFormElement>('form[data-enhance]').forEach(enhanceForm);
+  import { photoPicker } from '@/scripts/commissionPhotos';
 
   const form = document.querySelector<HTMLFormElement>('[data-commission-form]');
+  const pickerRoot = form?.querySelector<HTMLElement>('[data-photo-picker]');
+  const picker = pickerRoot ? photoPicker(pickerRoot) : null;
+  const es = form?.dataset.locale === 'es';
+
+  document.querySelectorAll<HTMLFormElement>('form[data-enhance]').forEach((f) =>
+    enhanceForm(
+      f,
+      f === form && picker
+        ? {
+            // Once the request is in, its photos follow, one by one.
+            afterSend: async (payload, say) => {
+              const reference = String(payload.reference ?? '');
+              const token = String(payload.uploadToken ?? '');
+              if (!reference || !token) return;
+              const failed = await picker.upload(reference, token, say);
+              const box = form.querySelector<HTMLElement>('[data-photo-failed]');
+              if (box && failed > 0) {
+                box.hidden = false;
+                box.textContent = es
+                  ? `No se pudo subir ${failed === 1 ? '1 foto' : `${failed} fotos`}. Envíala${failed === 1 ? '' : 's'} por WhatsApp o email con tu referencia.`
+                  : `${failed === 1 ? '1 photo' : `${failed} photos`} could not be uploaded. Send ${failed === 1 ? 'it' : 'them'} by WhatsApp or email with your reference.`;
+              }
+            },
+          }
+        : undefined,
+    ),
+  );
   const output = form?.querySelector<HTMLOutputElement>('[data-estimate]');
   const subjects = form?.querySelector<HTMLInputElement>('input[name="subjects"]');
 

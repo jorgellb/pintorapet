@@ -14,7 +14,14 @@ import { waitForAntibot } from '@/scripts/antibot';
  *   [data-form-reference] optional, filled with the reference returned by the API
  *   [data-form-reset]   optional button that brings the empty form back
  */
-export function enhanceForm(form: HTMLFormElement): void {
+export type EnhanceOptions = {
+  /** Runs once the form is sent, before the thank-you panel (e.g. the commission's photos). */
+  afterSend?: (payload: Record<string, unknown>, say: (text: string) => void) => Promise<void>;
+};
+
+export function enhanceForm(form: HTMLFormElement, options?: EnhanceOptions | number): void {
+  // Called straight from forEach, the second argument is the index.
+  const afterSend = typeof options === 'object' ? options.afterSend : undefined;
   const fields = form.querySelector<HTMLElement>('[data-form-fields]');
   const done = form.querySelector<HTMLElement>('[data-form-done]');
   const status = form.querySelector<HTMLElement>('[data-form-status]');
@@ -67,6 +74,7 @@ export function enhanceForm(form: HTMLFormElement): void {
       };
 
       if (response.ok) {
+        if (afterSend) await afterSend(payload as Record<string, unknown>, (text) => setStatus(text, 'info'));
         form.reset();
         form.dispatchEvent(new Event('input'));
         showDone(payload.reference);

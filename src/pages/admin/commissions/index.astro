@@ -23,9 +23,13 @@ const { data, error } = await settle(
     message: string;
     status: string;
     created_at: string;
+    photos: Array<{ id: string; filename: string }>;
   }>`
-    select id, reference, locale, contact_name, contact_email, size_hint, subjects, message, status, created_at
-    from public.commission_requests order by created_at desc limit 200`,
+    select r.id, r.reference, r.locale, r.contact_name, r.contact_email, r.size_hint, r.subjects, r.message, r.status, r.created_at,
+           coalesce((select json_agg(json_build_object('id', f.id, 'filename', f.original_filename) order by f.created_at)
+                     from public.commission_files f
+                     where f.commission_request_id = r.id and f.storage_public_id is not null), '[]'::json) as photos
+    from public.commission_requests r order by r.created_at desc limit 200`,
 );
 
 const rows = data ?? [];
@@ -99,10 +103,40 @@ const tabs = [
                       <span class={chipClass(label.tone)} data-chip>
                         {label.text}
                       </span>
+                      {row.photos.length > 0 && (
+                        <span class="chip chip--info">
+                          {row.photos.length} {row.photos.length === 1 ? 'foto' : 'fotos'}
+                        </span>
+                      )}
                       <span class="muted">{shortDate(row.created_at)}</span>
                     </summary>
                     <div class="body">
                       <p class="message">{row.message}</p>
+                      {row.photos.length > 0 && (
+                        <div class="photos" data-photos data-id={row.id}>
+                          <ul class="photos__grid">
+                            {row.photos.map((photo) => (
+                              <li>
+                                <a href={`/api/admin/commissions/${row.id}/photos/${photo.id}/`} target="_blank" rel="noopener" title={photo.filename}>
+                                  <img
+                                    src={`/api/admin/commissions/${row.id}/photos/${photo.id}/`}
+                                    alt={`Foto enviada: ${photo.filename}`}
+                                    loading="lazy"
+                                    width="160"
+                                    height="160"
+                                  />
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                          <p class="photos__note">
+                            Privadas: solo se ven desde aquí.
+                            <button type="button" class="btn--quiet btn--danger" data-delete-photos>
+                              Borrar las fotos
+                            </button>
+                          </p>
+                        </div>
+                      )}
                       <dl>
                         <div>
                           <dt>Correo</dt>
@@ -189,6 +223,34 @@ const tabs = [
     border-top: 1px solid var(--line);
   }
 
+  .photos__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .photos__grid img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: var(--a-radius-sm);
+    background: var(--a-hover);
+  }
+
+  .photos__note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
   .message {
     margin: 1rem 0 0;
     max-width: 44rem;
@@ -230,6 +292,15 @@ const tabs = [
 </style>
 
 <script>
+  document.querySelectorAll<HTMLElement>('[data-photos]').forEach((box) => {
+    box.querySelector('[data-delete-photos]')?.addEventListener('click', async () => {
+      if (!confirm('¿Borrar todas las fotos de este encargo? No se pueden recuperar.')) return;
+      const res = await fetch(`/api/admin/commissions/${box.dataset.id}/photos/`, { method: 'DELETE' }).catch(() => null);
+      if (res?.ok) box.remove();
+      else alert('No se pudieron borrar las fotos.');
+    });
+  });
+
   import { chipClass, commissionLabel } from '@/lib/admin/labels';
 
   document.querySelectorAll<HTMLSelectElement>('[data-commission-status]').forEach((select) => {

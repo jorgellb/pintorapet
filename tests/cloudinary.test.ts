@@ -7,8 +7,10 @@ import {
   listImagePublicIds,
   mediaPublicId,
   parseCloudinaryUrl,
+  privateDownloadUrl,
   signCloudinaryParams,
   uploadImage,
+  uploadPrivateImage,
 } from '../src/lib/server/media/cloudinary';
 
 const config = { cloudName: 'demo-cloud', apiKey: '1234', apiSecret: 'shh' };
@@ -156,5 +158,47 @@ describe('listImagePublicIds', () => {
     expect(firstUrl).toContain('/resources/image/upload?prefix=p%2F&max_results=500');
     expect(new Headers(firstInit.headers).get('authorization')).toBe(`Basic ${btoa('1234:shh')}`);
     expect(fetchImpl.mock.calls[1]?.[0]).toContain('next_cursor=c1');
+  });
+});
+
+describe('private images (a customer’s photos)', () => {
+  it('are uploaded as authenticated, never public', async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const form = init!.body as FormData;
+      expect(form.get('type')).toBe('authenticated');
+      expect(form.get('public_id')).toBe('commissions/CR-1/a');
+      // The signature covers the type, so it cannot be changed on the way.
+      expect(form.get('signature')).toBe(
+        signCloudinaryParams({ overwrite: 'false', public_id: 'commissions/CR-1/a', timestamp: 1_700_000_000, type: 'authenticated' }, 'shh'),
+      );
+      return jsonResponse({ public_id: 'commissions/CR-1/a', bytes: 12 });
+    });
+    const out = await uploadPrivateImage(
+      config,
+      { bytes: new Uint8Array([1, 2, 3]), contentType: 'image/jpeg', publicId: 'commissions/CR-1/a' },
+      { fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow },
+    );
+    expect(out).toEqual({ publicId: 'commissions/CR-1/a', bytes: 12 });
+    expect(fetchImpl.mock.calls[0]![0]).toBe('https://api.cloudinary.com/v1_1/demo-cloud/image/upload');
+  });
+
+  it('are read through a signed download link that expires', () => {
+    const url = new URL(privateDownloadUrl(config, 'commissions/CR-1/a', { now: fixedNow, ttlSeconds: 300 }));
+    expect(url.origin + url.pathname).toBe('https://api.cloudinary.com/v1_1/demo-cloud/image/download');
+    const params = Object.fromEntries(url.searchParams);
+    expect(params).toMatchObject({ public_id: 'commissions/CR-1/a', type: 'authenticated', format: 'jpg', api_key: '1234' });
+    expect(params.expires_at).toBe(String(1_700_000_000 + 300));
+    const { api_key: _key, signature, ...signed } = params;
+    expect(signature).toBe(signCloudinaryParams(signed, 'shh'));
+  });
+});
+
+describe('photoType', () => {
+  it('knows a photo by its bytes, not its name', async () => {
+    const { photoType } = await import('../src/lib/server/commissionPhotos');
+    expect(photoType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(photoType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d]))).toBe('image/png');
+    expect(photoType(new TextEncoder().encode('RIFF....WEBPVP8 '))).toBe('image/webp');
+    expect(photoType(new TextEncoder().encode('<svg onload=alert(1)>'))).toBeNull();
   });
 });
