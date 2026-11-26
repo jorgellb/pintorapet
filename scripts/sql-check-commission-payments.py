@@ -114,6 +114,46 @@ try:
     as_role('postgres')
     check('marked paid: the commission is accepted', one("select status::text from commission_requests where id = %s", (c5,))[0], 'accepted')
 
+    # ——— Guards (review of 20261126000005) ———
+    c6 = request('CR-PAGO000006', 'token-seis-0123456789')
+    old = quote('CR-PAGO000006', 'token-seis-0123456789', 'ES', '46001')
+    # Meili quotes again, higher, with a new link: what was worked out before is gone.
+    cur.execute("update commission_requests set quote_cents = 15000, pay_token_hash = %s where id = %s", (h('token-seis-nuevo-0123456789'), c6))
+    denied('an old quote cannot be reserved after quoting again', "select public.reserve_checkout('e6777777-7777-4777-8777-000000000006', %s, %s, 'hash-c6', 'checkout:c6')", (owner, old[0]), contains='PRICE_CHANGED')
+    old_manual = json.dumps({'reference': 'CR-PAGO000006', 'token_hash': h('token-seis-nuevo-0123456789'), 'method': 'bizum', 'quote_id': str(old[0]),
+                             'customer': {'name': 'Ana', 'email': 'ana.cpay@example.com', 'phone': '600111222'}, 'address': {'line1': 'C/ 1'}})
+    denied('nor paid by Bizum at the old price', "select public.create_commission_manual_order(%s::jsonb)", (old_manual,), contains='PRICE_CHANGED')
+    new = quote('CR-PAGO000006', 'token-seis-nuevo-0123456789', 'ES', '46001')
+    check('the new quote has the new price', new[1], 15000)
+
+    # Two tabs, two payments: the second goes to review.
+    tab1 = one("select public.reserve_checkout('f1777777-7777-4777-8777-000000000071', %s, %s, 'hash-t1', 'checkout:t1')", (owner, new[0]))[0]
+    new2 = quote('CR-PAGO000006', 'token-seis-nuevo-0123456789', 'ES', '46001')
+    tab2 = one("select public.reserve_checkout('f2777777-7777-4777-8777-000000000072', %s, %s, 'hash-t2', 'checkout:t2')", (owner, new2[0]))[0]
+    one("select public.apply_payment(%s, 'evt_t1', 'cs_t1', 'pi_t1', 15000, 'EUR', null, null, null)", (tab1['order_id'],))
+    second = one("select public.apply_payment(%s, 'evt_t2', 'cs_t2', 'pi_t2', 15000, 'EUR', null, null, null)", (tab2['order_id'],))[0]
+    check('a second payment of the same commission goes to review', (second['status'], second.get('reason')), ('review', 'COMMISSION_ALREADY_PAID'))
+    check('and the commission keeps its first order', one("select paid_order_id = %s from commission_requests where id = %s", (tab1['order_id'], c6))[0], True)
+
+    # Bizum while the shop is closed: refused, as the checkout is.
+    c7 = request('CR-PAGO000007', 'token-siete-0123456789')
+    q7 = quote('CR-PAGO000007', 'token-siete-0123456789', 'ES', '46001')
+    cur.execute("update shop_settings set sales_enabled = false where id = 1")
+    closed = json.dumps({'reference': 'CR-PAGO000007', 'token_hash': h('token-siete-0123456789'), 'method': 'bizum', 'quote_id': str(q7[0]),
+                         'customer': {'name': 'Ana', 'email': 'ana.cpay@example.com', 'phone': '600111222'}, 'address': {'line1': 'C/ 1'}})
+    denied('no Bizum order while sales are closed', "select public.create_commission_manual_order(%s::jsonb)", (closed,), contains='SALES_DISABLED')
+    cur.execute("update shop_settings set sales_enabled = true where id = 1")
+
+    # Marked paid by hand when it was paid already: refused.
+    q8 = quote('CR-PAGO000007', 'token-siete-0123456789', 'ES', '46001')
+    manual8 = one("select public.create_commission_manual_order(%s::jsonb)", (json.dumps({**json.loads(closed), 'quote_id': str(q8[0])}),))[0]
+    q9 = quote('CR-PAGO000007', 'token-siete-0123456789', 'ES', '46001')
+    card9 = one("select public.reserve_checkout('a9777777-7777-4777-8777-000000000079', %s, %s, 'hash-c9', 'checkout:c9')", (owner, q9[0]))[0]
+    one("select public.apply_payment(%s, 'evt_c9', 'cs_c9', 'pi_c9', %s, 'EUR', null, null, null)", (card9['order_id'], q9[3]))
+    as_role('authenticated', adm)
+    denied('a Bizum order cannot be marked paid once the card paid it', "select public.admin_mark_order_paid(%s)", (manual8['order_id'],), contains='COMMISSION_ALREADY_PAID')
+    as_role('postgres')
+
     # ——— The shop is unchanged: a product still reserves and consumes its stock ———
     cat, = one("select id from categories order by sort_order limit 1")
     mug, = one("insert into products (sku, category_id, motif, status, price_cents, editorial_order, sale_enabled, weight_grams) values ('T-CPAY', %s, 'Pug', 'published', 999, 99004, true, 380) returning id", (cat,))
