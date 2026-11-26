@@ -13,7 +13,7 @@ type OutboxRow = {
   attempt_count: number;
 };
 
-function renderTemplate(
+export function renderTemplate(
   templateKey: string,
   locale: 'en' | 'es',
   payload: Record<string, unknown>,
@@ -34,6 +34,14 @@ function renderTemplate(
           ? `Encargo ${payload.reference ?? ''} — ${payload.name ?? ''}`
           : `Commission ${payload.reference ?? ''} — ${payload.name ?? ''}`,
       text: `Reference: ${payload.reference}\nFrom: ${payload.name} <${payload.email}>\nSize: ${payload.size}\nSubjects: ${payload.subjects}\n\n${payload.message ?? ''}`,
+    };
+  }
+  if (templateKey === 'review_admin') {
+    const who = [payload.name, payload.city].filter(Boolean).join(' · ');
+    const stars = payload.rating ? ` (${payload.rating}/5)` : '';
+    return {
+      subject: `Opinión nueva de ${payload.name ?? ''}${stars}`,
+      text: `${who} ha dejado una opinión nueva${stars}:\n\n«${payload.excerpt ?? ''}»\n\nLéela y publícala o recházala en ${siteUrl()}/admin/reviews/${payload.review_id ?? ''}/`,
     };
   }
   if (templateKey === 'order_paid_admin') {
@@ -84,6 +92,11 @@ function renderTemplate(
   if (templateKey === 'order_shipped_customer') {
     const code = String(payload.tracking_code ?? '');
     const link = payload.tracking_url ? `\n${payload.tracking_url}` : '';
+    const review = payload.review_url
+      ? locale === 'es'
+        ? `\n\nCuando lo tengas en casa, cuéntanos qué tal ha ido (y, si quieres, enséñanos una foto): ${payload.review_url}`
+        : `\n\nOnce it is home, tell us how it went (and share a photo if you like): ${payload.review_url}`
+      : '';
     return {
       subject:
         locale === 'es'
@@ -91,8 +104,8 @@ function renderTemplate(
           : `Your order ${payload.reference ?? ''} is on its way`,
       text:
         locale === 'es'
-          ? `¡Tu pedido ${payload.reference ?? ''} ya está en camino!\n\nNúmero de seguimiento: ${code}${link}\n\nGracias por tu compra.`
-          : `Your order ${payload.reference ?? ''} is on its way!\n\nTracking number: ${code}${link}\n\nThank you for your order.`,
+          ? `¡Tu pedido ${payload.reference ?? ''} ya está en camino!\n\nNúmero de seguimiento: ${code}${link}\n\nGracias por tu compra.${review}`
+          : `Your order ${payload.reference ?? ''} is on its way!\n\nTracking number: ${code}${link}\n\nThank you for your order.${review}`,
     };
   }
   if (templateKey === 'order_refunded_customer') {

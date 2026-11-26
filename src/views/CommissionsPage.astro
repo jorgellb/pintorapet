@@ -3,10 +3,13 @@ import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import AntiBot from '@/components/AntiBot.astro';
 import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
+import PhotoViewer from '@/components/PhotoViewer.astro';
+import ReviewList from '@/components/reviews/ReviewList.astro';
 import { t, type Locale } from '@/i18n';
 import { loadWorks } from '@/lib/content/editorial';
 import { getCommissionExamples } from '@/lib/content/siteExtras';
 import { commissionPrices, MAX_SUBJECTS } from '@/lib/domain/commissionPricing';
+import { commissionReviews } from '@/lib/server/reviews/store';
 
 interface Props {
   locale: Locale;
@@ -18,6 +21,7 @@ const dict = t(locale);
 const copy = dict.commissions;
 const examples = await getCommissionExamples();
 const works = await loadWorks();
+const reviews = await commissionReviews();
 
 // Set by /api/commissions when the form was posted without JavaScript.
 const sent = Astro.url.searchParams.get('sent') === '1';
@@ -230,6 +234,26 @@ const sizeChoices = [
             ))}
           </div>
         </div>
+      </section>
+    )
+  }
+
+  {
+    reviews.length > 0 && (
+      <section class="section home-words" aria-labelledby="home-words-title">
+        <div class="site-shell">
+          <header class="home-words__head">
+            <h2 id="home-words-title" class="display h2-display">{dict.reviews.commissionsTitle}</h2>
+            <p class="muted">{dict.reviews.commissionsLead}</p>
+          </header>
+          <ReviewList reviews={reviews} locale={locale} layout="wall" />
+        </div>
+        <PhotoViewer
+          label={dict.reviews.viewerLabel}
+          close={dict.reviews.close}
+          prev={dict.reviews.prev}
+          next={dict.reviews.next}
+        />
       </section>
     )
   }
@@ -834,6 +858,16 @@ const sizeChoices = [
     .photo__grid {
       grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
     }
+  }
+
+  /* ——— Portraits at home, in their owners' words ——— */
+  .home-words__head {
+    max-width: 38rem;
+    margin-bottom: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .home-words__head p {
+    margin: 0;
   }
 
   /* ——— Examples ——— */

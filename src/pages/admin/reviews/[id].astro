@@ -1,0 +1,928 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import MediaPicker from '@/components/admin/MediaPicker.astro';
+import { mediaDisplayName } from '@/lib/admin/mediaPicker';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { listMedia } from '@/lib/server/admin/editorial';
+import { productLabel, reviewOptions } from '@/lib/server/admin/reviewOptions';
+import { shortDate } from '@/lib/admin/labels';
+import { aboutLabel, adminAbout, type AboutOption, customerAbout, photoSrc, sourceLabel, stars, starsLabel, withCurrent } from '@/lib/admin/reviewView';
+import { REVIEW_MAX_BODY, REVIEW_MAX_PHOTOS } from '@/lib/domain/reviews';
+import { getReview } from '@/lib/server/reviews/store';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const id = Astro.params.id ?? '';
+const isNew = id === 'new';
+const loaded = isNew ? null : await settle(getReview(admin.db, id));
+const review = loaded?.data ?? null;
+if (!isNew && !review) return Astro.redirect('/admin/reviews/');
+
+// A customer's review keeps their words and stars; Meili's own is hers to write.
+const customer = review?.source === 'customer';
+const editable = !customer;
+// Hidden, but a public copy could not be destroyed: Ocultar stays, to try again.
+const leftovers = review?.status === 'hidden' && review.photos.some((p) => p.publicCopy);
+
+// A customer's review can only be tied to something that was in the order.
+const orderProducts = customer && review?.orderId
+  ? ((await settle(
+      admin.db.rows<{ id: string; title: string }>`
+        select product_id as id, min(product_title) as title from public.order_items
+        where order_id = ${review.orderId} and product_id is not null
+        group by product_id order by min(product_title)`,
+    )).data ?? [])
+  : [];
+
+const [{ data: options }, media] = editable
+  ? await Promise.all([settle(reviewOptions(admin.db)), listMedia(admin.db).catch(() => [])])
+  : [{ data: null }, []];
+
+// What the review is about now. The select must always hold it (a product no longer in the
+// order, an archived one, an old commission): otherwise the page sees a change that is not
+// one, refuses to publish, and a save would erase it.
+const currentAbout = review ? (customer ? customerAbout(review) : adminAbout(review)) : '';
+const knownAbout: AboutOption[] = [
+  ...orderProducts.map((p) => ({ value: `p:${p.id}`, label: p.title })),
+  ...(options?.products ?? []).map((p) => ({ value: `p:${p.id}`, label: p.name })),
+  ...(options?.commissions ?? []).map((c) => ({ value: `c:${c.id}`, label: c.name })),
+];
+const currentLabel = currentAbout.startsWith('p:')
+  ? knownAbout.some((o) => o.value === currentAbout)
+    ? ''
+    : ((await productLabel(admin.db, currentAbout.slice(2)).catch(() => null)) ?? 'Producto (ya no está disponible)')
+  : 'Encargo (no está en la lista)';
+const aboutChoices = withCurrent(knownAbout, currentAbout, currentLabel);
+const extraAbout = aboutChoices.length > knownAbout.length ? aboutChoices[aboutChoices.length - 1]! : null;
+const pickerItems = media.map((item) => ({
+  id: item.id,
+  url: item.publicUrl,
+  name: mediaDisplayName(item.object_path),
+  bucket: item.bucket,
+  altEs: item.altEs,
+  altEn: item.altEn,
+}));
+
+const STATUS = {
+  pending: { label: 'Pendiente', chip: 'chip chip--warn' },
+  published: { label: 'Publicada', chip: 'chip chip--ok' },
+  hidden: { label: 'Oculta', chip: 'chip' },
+} as const;
+
+const initial = {
+  authorName: review?.authorName ?? '',
+  city: review?.city ?? '',
+  petName: review?.petName ?? '',
+  body: review?.body ?? '',
+  rating: review?.rating ?? null,
+  locale: review?.locale ?? 'es',
+  about: currentAbout,
+  featured: review?.featured ?? false,
+};
+const pageData = {
+  id: review?.id ?? null,
+  isNew,
+  customer,
+  updatedAt: review?.updatedAt ?? null,
+  status: review?.status ?? null,
+  featured: initial.featured,
+  maxPhotos: REVIEW_MAX_PHOTOS,
+  initial,
+  photos: editable ? (review?.photos ?? []).flatMap((p) => (p.mediaAssetId && p.url ? [{ id: p.mediaAssetId, url: p.url, altEs: '' }] : [])) : [],
+};
+const json = JSON.stringify(pageData).replace(/</g, '\\u003c');
+
+const notice = Astro.url.searchParams.has('guardado')
+  ? 'Cambios guardados.'
+  : Astro.url.searchParams.has('creada')
+    ? 'Opinión guardada. Todavía no se ve en la web: publícala cuando quieras.'
+    : Astro.url.searchParams.has('publicada')
+      ? 'Opinión publicada. Ya se ve en la web.'
+      : Astro.url.searchParams.has('oculta')
+        ? 'Opinión oculta. Ya no se ve en la web.'
+        : null;
+
+const title = isNew ? 'Nueva opinión' : `Opinión de ${review!.authorName}`;
+---
+
+<AdminLayout title={title} email={admin.user.email}>
+  <a class="back" href={`/admin/reviews/${review ? `?estado=${{ pending: 'pendientes', published: 'publicadas', hidden: 'ocultas' }[review.status]}` : ''}`}>← Opiniones</a>
+  <header class="page-head">
+    <div>
+      <h1>{isNew ? 'Nueva opinión' : review!.authorName}</h1>
+      {
+        review && (
+          <p class="chips">
+            <span class={STATUS[review.status].chip}>{STATUS[review.status].label}</span>
+            {review.verified && <span class="chip chip--ok">Compra verificada</span>}
+            <span class={customer ? 'chip chip--info' : 'chip'}>{sourceLabel(review)}</span>
+            {review.featured && <span class="chip chip--warn">En portada</span>}
+          </p>
+        )
+      }
+    </div>
+  </header>
+  <p class="status notice" data-notice role="status" hidden></p>
+  {notice && <p class="status notice">{notice}</p>}
+  {loaded?.error && <p class="err">{loaded.error.message}</p>}
+
+  <div class="editor">
+    <div class="editor-main">
+      <form class="review-form" data-review-form data-page={json} novalidate>
+        {
+          customer && review && (
+            <section class="panel quote body-card">
+              <h2>Lo que escribió</h2>
+              <p class="quote__stars">
+                {review.rating ? (
+                  <span class="stars" role="img" aria-label={starsLabel(review.rating)}>{stars(review.rating)}</span>
+                ) : (
+                  <span class="muted">Sin estrellas</span>
+                )}
+                <span class="muted">· en {review.locale === 'es' ? 'español' : 'inglés'}</span>
+              </p>
+              <blockquote lang={review.locale} data-body>{review.body}</blockquote>
+              <p class="hint">El texto y las estrellas son del cliente: no se pueden cambiar. Puedes corregir cómo aparece su nombre, la ciudad, la mascota y el producto.</p>
+            </section>
+          )
+        }
+
+        {
+          editable && (
+            <section class="panel body-card">
+              <h2>La opinión</h2>
+              <label>
+                <span>Texto <span class="hint">hasta {REVIEW_MAX_BODY} caracteres</span></span>
+                <textarea name="body" rows="6" maxlength={REVIEW_MAX_BODY} required></textarea>
+              </label>
+              <div class="pair">
+                <label>
+                  Estrellas
+                  <select name="rating">
+                    <option value="">Sin estrellas</option>
+                    {[5, 4, 3, 2, 1].map((n) => <option value={n}>{'★'.repeat(n)} {n}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Idioma del texto
+                  <select name="locale">
+                    <option value="es">Español</option>
+                    <option value="en">Inglés</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+          )
+        }
+
+        <section class="panel">
+          <h2>Cómo se muestra</h2>
+          <label>
+            Nombre visible
+            <input name="authorName" required maxlength="80" placeholder="Ana G." />
+          </label>
+          <div class="pair">
+            <label><span>Ciudad <span class="hint">opcional</span></span><input name="city" maxlength="80" placeholder="Valencia" /></label>
+            <label><span>Mascota <span class="hint">opcional</span></span><input name="petName" maxlength="60" placeholder="Luna" /></label>
+          </div>
+          {
+            customer ? (
+              <label>
+                Producto
+                <select name="about">
+                  <option value="">En general</option>
+                  {aboutChoices.map((o) => <option value={o.value}>{o.label}</option>)}
+                </select>
+                <span class="hint">Solo los productos de su pedido: una compra verificada no da estrellas a algo que no compró.</span>
+              </label>
+            ) : (
+              <label>
+                Sobre qué es
+                <select name="about">
+                  <option value="">En general</option>
+                  {(options?.products.length ?? 0) > 0 && (
+                    <optgroup label="Producto">
+                      {options!.products.map((p) => <option value={`p:${p.id}`}>{p.name}</option>)}
+                    </optgroup>
+                  )}
+                  {(options?.commissions.length ?? 0) > 0 && (
+                    <optgroup label="Encargo">
+                      {options!.commissions.map((c) => <option value={`c:${c.id}`}>{c.name}</option>)}
+                    </optgroup>
+                  )}
+                  {extraAbout && <option value={extraAbout.value}>{extraAbout.label}</option>}
+                </select>
+                <span class="hint">Nunca sale como «Compra verificada».</span>
+              </label>
+            )
+          }
+          {isNew && <label class="check"><input type="checkbox" name="featured" /> Destacar en portada</label>}
+        </section>
+
+        {
+          editable && (
+            <section class="panel photos" aria-labelledby="photos-title">
+              <h2 id="photos-title">Fotos</h2>
+              <p class="hint">Hasta {REVIEW_MAX_PHOTOS}, de Medios. La primera es la principal.</p>
+              <ul class="photos__list" data-photos></ul>
+              <button type="button" class="btn--quiet" data-photo-add>Añadir fotos</button>
+            </section>
+          )
+        }
+
+        {
+          customer && review && (
+            <section class="panel photos-static">
+              <h2>Fotos del cliente</h2>
+              {review.photos.length === 0 ? (
+                <p class="muted">No ha enviado fotos.</p>
+              ) : (
+                <ul class="photos__static" data-customer-photos>
+                  {review.photos.map((p, i) => {
+                    const src = photoSrc(review.id, p);
+                    return (
+                      <li>
+                        {src ? (
+                          <a href={src} target="_blank" rel="noopener" title="Abrir la foto entera">
+                            <img src={src} alt={`Foto ${i + 1} de ${review.authorName}`} />
+                          </a>
+                        ) : (
+                          <span class="muted">No disponible</span>
+                        )}
+                        <button type="button" class="photo-drop" data-photo-drop={p.id} aria-label={`Quitar la foto ${i + 1}`}>
+                          Quitar foto
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <p class="hint">
+                {review.status === 'published'
+                  ? 'Las fotos son públicas porque la opinión está publicada.'
+                  : 'Las fotos son privadas: solo las ves tú. Al publicar la opinión se hacen públicas.'}
+              </p>
+            </section>
+          )
+        }
+
+        <div class="form-actions">
+          {
+            isNew ? (
+              <>
+                <button type="submit" class="btn" data-save data-publish="false">Guardar para revisarla</button>
+                <button type="submit" class="btn btn--quiet" data-save data-publish="true">Guardar y publicar</button>
+              </>
+            ) : (
+              <button type="submit" class="btn" data-save>Guardar cambios</button>
+            )
+          }
+          <p class="status" data-status role="status" hidden></p>
+        </div>
+      </form>
+    </div>
+
+    {
+      review && (
+        <aside class="editor-side" data-review-actions>
+          <section class="panel">
+            <h2>Publicación</h2>
+            <p class="hint">
+              {review.status === 'published'
+                ? 'Se ve en la web.'
+                : review.status === 'hidden'
+                  ? 'Oculta: no se ve en la web.'
+                  : 'Pendiente: todavía no se ve en la web.'}
+            </p>
+            <div class="stack">
+              {review.status !== 'published' && (
+                <button type="button" class="btn" data-action="publish">{review.status === 'hidden' ? 'Publicar de nuevo' : 'Publicar'}</button>
+              )}
+              {(review.status !== 'hidden' || leftovers) && (
+                <button type="button" class="btn--quiet" data-action="hide">{review.status === 'pending' ? 'Ocultar sin publicar' : 'Ocultar'}</button>
+              )}
+              {leftovers && <p class="hint">Quedan fotos públicas en Cloudinary: pulsa Ocultar para quitarlas.</p>}
+              <label class="switch">
+                <input type="checkbox" role="switch" data-action="feature" checked={review.featured} />
+                <span>Destacar en portada</span>
+              </label>
+              <p class="hint">Sale en la portada solo si está publicada y tiene foto.</p>
+            </div>
+            <p class="status" data-action-status role="status" hidden></p>
+          </section>
+
+          <section class="panel">
+            <h2>Datos</h2>
+            <dl class="facts">
+              <div><dt>Sobre</dt><dd>{aboutLabel(review)}</dd></div>
+              {review.orderReference && review.orderId && (
+                <div><dt>Pedido</dt><dd><a href={`/admin/orders/${review.orderId}/`}><code>{review.orderReference}</code></a></dd></div>
+              )}
+              <div><dt>Recibida</dt><dd>{shortDate(review.createdAt)}</dd></div>
+              {review.publishedAt && <div><dt>Publicada</dt><dd>{shortDate(review.publishedAt)}</dd></div>}
+              {review.consentAt && <div><dt>Permiso</dt><dd>Dado el {shortDate(review.consentAt)}</dd></div>}
+            </dl>
+          </section>
+
+          <section class="panel">
+            <h2>Borrar</h2>
+            <p class="hint">Borra la opinión y todas sus fotos, también las privadas. No se puede deshacer.</p>
+            <button type="button" class="btn--quiet btn--danger" data-action="delete">Borrar opinión</button>
+          </section>
+        </aside>
+      )
+    }
+  </div>
+  {editable && <MediaPicker items={pickerItems} defaultBucket="portfolio-public" />}
+</AdminLayout>
+
+<style>
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.5rem 0 0;
+  }
+
+  .notice {
+    margin-bottom: 1rem;
+  }
+
+  .status[hidden] {
+    display: none !important;
+  }
+
+  .status[data-tone='err'] {
+    color: var(--danger);
+    font-weight: 500;
+  }
+
+  .status[data-tone='ok'] {
+    color: var(--success);
+  }
+
+  .review-form {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .panel h2 {
+    margin: 0;
+  }
+
+  .quote__stars {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .stars {
+    color: var(--a-warn);
+    font-size: 1.1rem;
+    letter-spacing: 0.08em;
+  }
+
+  blockquote {
+    margin: 0;
+    padding: 0.2rem 0 0.2rem 1rem;
+    border-left: 3px solid var(--line-strong);
+    font-size: 1.02rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .stack {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .stack .btn,
+  .stack button {
+    justify-self: stretch;
+  }
+
+  .stack .hint {
+    margin-top: -0.25rem;
+  }
+
+  .facts {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .facts div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .facts dt {
+    color: var(--muted);
+  }
+
+  .facts dd {
+    margin: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+  }
+
+  .photos > .btn--quiet {
+    justify-self: start;
+  }
+
+  .photos__list,
+  .photos__static {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .photos__list:empty {
+    display: none;
+  }
+
+  .photos__static li {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--paper-deep);
+  }
+
+  .photos__static a {
+    display: block;
+    height: 100%;
+  }
+
+  .photos__static img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .photo-drop {
+    position: absolute;
+    inset: auto 0.25rem 0.25rem;
+    padding: 0.3rem 0.4rem;
+    border: 0;
+    border-radius: 4px;
+    background: rgb(0 0 0 / 0.65);
+    color: #fff;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+
+  .photo-drop:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  .photo-drop:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
+  .photos__list :global(li) {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--line);
+  }
+
+  .photos__list :global(li:first-child) {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+  }
+
+  .photos__list :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .photos__list :global(.photo-tools) {
+    position: absolute;
+    inset: auto 0.25rem 0.25rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .photos__list :global(.photo-tools button) {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.65);
+    color: #fff;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .photos__list :global(.photo-tools button:focus-visible) {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+
+  .photos__list :global(li:first-child .photo-first) {
+    visibility: hidden;
+  }
+
+  /* On a phone the actions come first, but the words they act on come before them. */
+  @media (max-width: 64rem) {
+    .editor .editor-main,
+    .editor .review-form {
+      display: contents;
+    }
+
+    .editor .body-card {
+      order: -2;
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .form-actions .btn {
+      width: 100%;
+    }
+  }
+</style>
+
+<script>
+  import { pickMedia, type PickedMedia } from '@/lib/admin/mediaPicker';
+
+  type Photo = { id: string; url: string; altEs: string };
+  type Values = {
+    authorName: string;
+    city: string;
+    petName: string;
+    body: string;
+    rating: number | null;
+    locale: 'es' | 'en';
+    about: string;
+    featured: boolean;
+  };
+  type Page = {
+    id: string | null;
+    isNew: boolean;
+    customer: boolean;
+    updatedAt: string | null;
+    status: 'pending' | 'published' | 'hidden' | null;
+    featured: boolean;
+    maxPhotos: number;
+    initial: Values;
+    photos: Photo[];
+  };
+  type Reply = { ok?: boolean; id?: string; published?: boolean; warning?: string; updatedAt?: string | null; error?: { message?: string } };
+
+  const NOTICE_KEY = 'reviews-notice';
+  const form = document.querySelector<HTMLFormElement>('[data-review-form]');
+  if (form) {
+    const page = JSON.parse(form.dataset.page ?? '{}') as Page;
+    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+    const status = form.querySelector<HTMLElement>('[data-status]')!;
+    const top = document.querySelector<HTMLElement>('[data-notice]')!;
+    const saveButtons = [...form.querySelectorAll<HTMLButtonElement>('[data-save]')];
+    const say = (el: HTMLElement, text: string, tone: 'ok' | 'err' | 'info' = 'info') => {
+      el.hidden = !text;
+      el.dataset.tone = tone;
+      el.textContent = text;
+    };
+
+    // A message kept across a page change (e.g. "saved, but not published").
+    try {
+      const kept = sessionStorage.getItem(NOTICE_KEY);
+      if (kept) {
+        sessionStorage.removeItem(NOTICE_KEY);
+        say(top, kept, 'err');
+      }
+    } catch {
+      /* private window: the message is simply not shown */
+    }
+
+    const put = (name: string, value: string) => {
+      const el = field(name);
+      if (el) el.value = value;
+    };
+    put('authorName', page.initial.authorName);
+    put('city', page.initial.city);
+    put('petName', page.initial.petName);
+    put('body', page.initial.body);
+    put('rating', page.initial.rating ? String(page.initial.rating) : '');
+    put('locale', page.initial.locale);
+    put('about', page.initial.about);
+
+    // Photos from Medios (Meili's own reviews only).
+    const list = form.querySelector<HTMLUListElement>('[data-photos]');
+    const addPhotos = form.querySelector<HTMLButtonElement>('[data-photo-add]');
+    const photoIds = () => (list ? [...list.children].map((li) => (li as HTMLElement).dataset.id ?? '') : []);
+    const syncPhotos = () => {
+      if (addPhotos && list) addPhotos.disabled = list.children.length >= page.maxPhotos;
+    };
+    const tool = (label: string, text: string, className: string, onClick: () => void) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = className;
+      button.textContent = text;
+      button.setAttribute('aria-label', label);
+      button.title = label;
+      button.addEventListener('click', onClick);
+      return button;
+    };
+    const photoItem = (photo: Photo) => {
+      const li = document.createElement('li');
+      li.dataset.id = photo.id;
+      const img = document.createElement('img');
+      img.src = photo.url.replace('/c_limit,w_2000/', '/c_limit,w_240/');
+      img.alt = photo.altEs;
+      const tools = document.createElement('div');
+      tools.className = 'photo-tools';
+      tools.append(
+        tool('Poner antes', '‹', 'photo-first', () => li.previousElementSibling?.before(li)),
+        tool('Quitar la foto', '×', 'photo-remove', () => {
+          li.remove();
+          syncPhotos();
+        }),
+      );
+      li.append(img, tools);
+      return li;
+    };
+    if (list) {
+      list.replaceChildren(...page.photos.map(photoItem));
+      syncPhotos();
+    }
+    addPhotos?.addEventListener('click', async () => {
+      if (!list) return;
+      const picked: PickedMedia[] = await pickMedia({ multiple: true, exclude: photoIds() });
+      for (const item of picked.slice(0, page.maxPhotos - list.children.length)) {
+        list.append(photoItem({ id: item.id, url: item.url, altEs: item.altEs }));
+      }
+      syncPhotos();
+    });
+
+    const read = (): Values => ({
+      authorName: field('authorName')!.value,
+      city: field('city')!.value,
+      petName: field('petName')!.value,
+      body: field('body')?.value ?? page.initial.body,
+      rating: field('rating')?.value ? Number(field('rating')!.value) : page.customer ? page.initial.rating : null,
+      locale: ((field('locale')?.value as 'es' | 'en' | undefined) ?? page.initial.locale),
+      about: field('about')!.value,
+      featured: (field('featured') as HTMLInputElement | null)?.checked ?? page.initial.featured,
+    });
+    const aboutIds = (about: string) => ({
+      productId: about.startsWith('p:') ? about.slice(2) : null,
+      commissionRequestId: about.startsWith('c:') ? about.slice(2) : null,
+    });
+    const initialPhotos = JSON.stringify(page.photos.map((p) => p.id));
+    const dirty = () => {
+      const now = read();
+      const was = page.initial;
+      return (
+        now.authorName.trim() !== was.authorName ||
+        now.city.trim() !== was.city ||
+        now.petName.trim() !== was.petName ||
+        now.about !== was.about ||
+        (!page.customer && (now.body.trim() !== was.body || now.rating !== was.rating || now.locale !== was.locale)) ||
+        (!page.customer && JSON.stringify(photoIds()) !== initialPhotos)
+      );
+    };
+
+    // After a refused or failed change the page must be read again: the review may have
+    // changed (or be half-done), and the old `updatedAt` is no longer good.
+    const needReload = (el: HTMLElement, message: string) => {
+      document
+        .querySelectorAll<HTMLButtonElement | HTMLInputElement>('[data-action], [data-save], [data-photo-drop]')
+        .forEach((b) => (b.disabled = true));
+      say(el, `${message} Recarga la opinión para volver a intentarlo.`, 'err');
+      if (document.querySelector('[data-reload]')) return;
+      const again = document.createElement('button');
+      again.type = 'button';
+      again.className = 'btn';
+      again.dataset.reload = '';
+      again.textContent = 'Recargar la opinión';
+      again.addEventListener('click', () => location.reload());
+      el.after(again);
+    };
+
+    const call = async (url: string, method: string, body?: unknown) => {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }).catch(() => null);
+      const data = (await res?.json().catch(() => null)) as Reply | null;
+      return { ok: Boolean(res?.ok), status: res?.status ?? 0, data };
+    };
+    const failed = (r: { data: Reply | null }) => r.data?.error?.message ?? 'No hubo respuesta del servidor.';
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const now = read();
+      if (!now.authorName.trim()) {
+        say(status, 'Falta el nombre visible.', 'err');
+        return;
+      }
+      const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+      const publish = submitter?.dataset.publish === 'true';
+
+      if (page.isNew) {
+        if (!now.body.trim()) {
+          say(status, 'Falta el texto de la opinión.', 'err');
+          return;
+        }
+        const body = {
+          authorName: now.authorName,
+          city: now.city,
+          petName: now.petName,
+          body: now.body,
+          rating: now.rating,
+          locale: now.locale,
+          ...aboutIds(now.about),
+          photoIds: photoIds(),
+          featured: now.featured,
+          publish,
+        };
+        saveButtons.forEach((b) => (b.disabled = true));
+        say(status, publish ? 'Guardando y publicando…' : 'Guardando…');
+        const r = await call('/api/admin/reviews/', 'POST', body);
+        if (r.ok && r.data?.id) {
+          const base = `/admin/reviews/${r.data.id}/`;
+          if (r.data.warning) {
+            // Saved, not published: say so on the saved review.
+            try {
+              sessionStorage.setItem(NOTICE_KEY, r.data.warning);
+            } catch {
+              /* private window */
+            }
+            say(status, r.data.warning, 'err');
+            location.assign(`${base}?creada`);
+          } else {
+            location.assign(r.data.published ? `${base}?publicada` : `${base}?creada`);
+          }
+          return;
+        }
+        saveButtons.forEach((b) => (b.disabled = false));
+        say(status, failed(r), 'err');
+        return;
+      }
+
+      // Only what changed: sending a name, city, pet or product closes a customer's review to its author.
+      const was = page.initial;
+      const patch: Record<string, unknown> = {};
+      if (now.authorName.trim() !== was.authorName) patch.authorName = now.authorName;
+      if (now.city.trim() !== was.city) patch.city = now.city;
+      if (now.petName.trim() !== was.petName) patch.petName = now.petName;
+      if (now.about !== was.about) Object.assign(patch, page.customer ? { productId: aboutIds(now.about).productId } : aboutIds(now.about));
+      if (!page.customer) {
+        if (now.body.trim() !== was.body) patch.body = now.body;
+        if (now.rating !== was.rating) patch.rating = now.rating;
+        if (now.locale !== was.locale) patch.locale = now.locale;
+        if (JSON.stringify(photoIds()) !== initialPhotos) patch.photoIds = photoIds();
+      }
+      if (Object.keys(patch).length === 0) {
+        say(status, 'No hay cambios que guardar.');
+        return;
+      }
+      saveButtons.forEach((b) => (b.disabled = true));
+      say(status, 'Guardando…');
+      // The updated_at this page shows: refused (409) if the review changed since.
+      const r = await call(`/api/admin/reviews/${page.id}/`, 'PATCH', { ...patch, updatedAt: page.updatedAt });
+      if (r.ok) {
+        say(status, 'Guardado. Actualizando…', 'ok');
+        location.assign(`/admin/reviews/${page.id}/?guardado`);
+        return;
+      }
+      if (r.status === 409) {
+        needReload(status, failed(r));
+        return;
+      }
+      saveButtons.forEach((b) => (b.disabled = false));
+      say(status, failed(r), 'err');
+    });
+
+    // The actions beside the form (publish, hide, feature, delete).
+    const side = document.querySelector<HTMLElement>('[data-review-actions]');
+    const actionStatus = document.querySelector<HTMLElement>('[data-action-status]');
+    if (side && actionStatus && page.id) {
+      const buttons = () => [...side.querySelectorAll<HTMLButtonElement | HTMLInputElement>('[data-action]')];
+      const busy = (on: boolean) => buttons().forEach((b) => (b.disabled = on));
+      const feature = side.querySelector<HTMLInputElement>('[data-action="feature"]');
+
+      side.addEventListener('click', async (event) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        if (action === 'publish') {
+          if (dirty()) {
+            say(actionStatus, 'Tienes cambios sin guardar. Guárdalos y luego publica.', 'err');
+            return;
+          }
+          busy(true);
+          say(actionStatus, 'Publicando…');
+          const r = await call(`/api/admin/reviews/${page.id}/`, 'PATCH', { action: 'publish', updatedAt: page.updatedAt });
+          if (r.ok) location.assign(`/admin/reviews/${page.id}/?publicada`);
+          else needReload(actionStatus, failed(r));
+        } else if (action === 'hide') {
+          busy(true);
+          say(actionStatus, 'Ocultando…');
+          const r = await call(`/api/admin/reviews/${page.id}/`, 'PATCH', { action: 'hide' });
+          if (r.ok) {
+            // Hidden either way; a photo copy Cloudinary did not destroy is said on the reloaded page.
+            if (r.data?.warning) {
+              try {
+                sessionStorage.setItem(NOTICE_KEY, r.data.warning);
+              } catch {
+                /* private window */
+              }
+            }
+            location.assign(`/admin/reviews/${page.id}/?oculta`);
+          } else {
+            busy(false);
+            say(actionStatus, failed(r), 'err');
+          }
+        } else if (action === 'delete') {
+          if (!confirm('¿Borrar esta opinión y todas sus fotos? No se puede deshacer.')) return;
+          busy(true);
+          say(actionStatus, 'Borrando…');
+          const r = await call(`/api/admin/reviews/${page.id}/`, 'DELETE');
+          if (r.ok) location.assign('/admin/reviews/?borrada');
+          // It may be hidden by now, with its photos half gone: what the page shows is stale.
+          else needReload(actionStatus, failed(r));
+        }
+      });
+
+      feature?.addEventListener('change', async () => {
+        const wanted = feature.checked;
+        busy(true);
+        say(actionStatus, 'Guardando…');
+        // Guarded like a save: if the review changed since this page read it, the toggle
+        // is refused and the page must reload (a newer token is never adopted unseen).
+        const r = await call(`/api/admin/reviews/${page.id}/`, 'PATCH', { featured: wanted, updatedAt: page.updatedAt });
+        if (r.ok) {
+          // The guarded write moved `updated_at`: publishing needs the new value or it is refused.
+          if (r.data?.updatedAt) page.updatedAt = r.data.updatedAt;
+          else {
+            location.reload();
+            return;
+          }
+          say(actionStatus, wanted ? 'Destacada en la portada.' : 'Ya no está destacada.', 'ok');
+          busy(false);
+        } else if (r.status === 409) {
+          feature.checked = !wanted;
+          needReload(actionStatus, failed(r));
+        } else {
+          feature.checked = !wanted;
+          busy(false);
+          say(actionStatus, failed(r), 'err');
+        }
+      });
+    }
+
+    // Meili drops one of the customer's photos: both copies go, then the page is read again.
+    document.querySelectorAll<HTMLButtonElement>('[data-photo-drop]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (!page.id) return;
+        if (!confirm('¿Quitar esta foto de la opinión? Se borra también de Cloudinary y no se puede deshacer.')) return;
+        const target = actionStatus ?? status;
+        button.disabled = true;
+        say(target, 'Quitando la foto…');
+        const r = await call(`/api/admin/reviews/${page.id}/photos/${button.dataset.photoDrop}/`, 'DELETE');
+        if (r.ok) {
+          location.reload();
+          return;
+        }
+        button.disabled = false;
+        say(target, failed(r), 'err');
+      });
+    });
+  }
+</script>

@@ -1,7 +1,10 @@
 ---
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import StallItem from '@/components/shop/StallItem.astro';
-import { t, type Locale } from '@/i18n';
+import PhotoViewer from '@/components/PhotoViewer.astro';
+import ReviewList from '@/components/reviews/ReviewList.astro';
+import Stars from '@/components/reviews/Stars.astro';
+import { t, fill, type Locale } from '@/i18n';
 import { localizedPath, productPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
 import { loadPublicCatalogForPages, topLevelProducts, type loadProductPage } from '@/lib/catalog/loadProducts';
@@ -12,6 +15,7 @@ import { productDetails } from '@/lib/catalog/productDetails';
 import { jsonLdText, productJsonLd } from '@/lib/catalog/productJsonLd';
 import { productQuestion, whatsappLink } from '@/lib/domain/whatsapp';
 import { shippingHighlights } from '@/lib/server/shipping/highlights';
+import { productReviews } from '@/lib/server/reviews/store';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
@@ -27,12 +31,17 @@ const { product, options, selected } = page;
 
 // Product slugs are translated, so find this option's slug in the other locale.
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
-const [catalog, otherCatalog, collections, types, highlights] = await Promise.all([
+// The page's reviews are the product's and its options' (a keyring's shapes share one page).
+const [catalog, otherCatalog, collections, types, highlights, reviewed] = await Promise.all([
   loadPublicCatalogForPages(locale),
   loadPublicCatalogForPages(otherLocale),
   loadShopCollections(locale),
   loadProductTypes(locale),
   shippingHighlights(locale),
+  productReviews(
+    product.id,
+    options.slice(1).map((option) => option.id),
+  ),
 ]);
 const otherSlug = otherCatalog.products.find((p) => p.id === selected.id)?.slug;
 const alternate = otherSlug ? productPath(otherLocale, otherSlug) : localizedPath(otherLocale, 'shop');
@@ -121,7 +130,19 @@ const structured = productJsonLd({
   selected,
   url: abs(productPath(locale, selected.slug)),
   breadcrumbs,
+  reviews: reviewed.jsonLd,
 });
+
+const rated = reviewed.average !== null && reviewed.count > 0;
+const oneDecimal = new Intl.NumberFormat(locale === 'es' ? 'es-ES' : 'en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const averageText = rated ? oneDecimal.format(reviewed.average!) : '';
+const ratedCount = reviewed.count === 1 ? dict.reviews.ratingsOne : fill(dict.reviews.ratingsMany, { n: reviewed.count });
+// The figure the structured data gives (verified purchases only), shown too so the page says what the markup says.
+const verified = reviewed.jsonLd;
+const verifiedText =
+  rated && verified.average !== null && verified.count > 0
+    ? fill(verified.count === 1 ? dict.reviews.verifiedOne : dict.reviews.verifiedMany, { avg: oneDecimal.format(verified.average), n: verified.count })
+    : '';
 
 const assurances = [
   es ? 'Dibujo original a lápiz de Meili Stringfellow' : 'Original pencil drawing by Meili Stringfellow',
@@ -331,6 +352,33 @@ const assurances = [
     </div>
   </article>
 
+  {
+    reviewed.reviews.length > 0 && (
+      <section id="opiniones" class="opinions" aria-labelledby="reviews-title">
+        <div class="site-shell opinions__grid">
+          <header class="opinions__head">
+            <h2 id="reviews-title" class="display opinions__title">{dict.reviews.productTitle}</h2>
+            {rated && (
+              <p class="opinions__average">
+                <span class="opinions__number display">{averageText}</span>
+                <Stars rating={reviewed.average!} locale={locale} size={1.15} />
+                <span class="opinions__count">{ratedCount}</span>
+                {verifiedText && <span class="opinions__count opinions__verified">{verifiedText}</span>}
+              </p>
+            )}
+          </header>
+          <ReviewList reviews={reviewed.reviews} locale={locale} layout="row" label={dict.reviews.productTitle} />
+        </div>
+        <PhotoViewer
+          label={dict.reviews.viewerLabel}
+          close={dict.reviews.close}
+          prev={dict.reviews.prev}
+          next={dict.reviews.next}
+        />
+      </section>
+    )
+  }
+
   <!-- ——— Where it comes from ——— -->
   <section class="origin" aria-labelledby="origin-title">
     <div class="site-shell origin__inner">
@@ -415,6 +463,60 @@ const assurances = [
 <style>
   .pdp {
     padding-block: clamp(1.5rem, 4vw, 3rem) clamp(4rem, 8vw, 7rem);
+  }
+
+  /* ——— Reviews ——— */
+  .opinions {
+    padding-block: clamp(2.5rem, 6vw, 5rem);
+    border-top: 1px solid var(--line);
+  }
+
+  .opinions__grid {
+    display: grid;
+    gap: clamp(1.5rem, 4vw, 2.5rem);
+    align-items: start;
+  }
+
+  .opinions__title {
+    margin: 0 0 1rem;
+    font-size: clamp(1.9rem, 3.6vw, 2.8rem);
+    letter-spacing: -0.03em;
+  }
+
+  .opinions__average {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.8rem;
+    margin: 0;
+  }
+
+  .opinions__number {
+    font-size: clamp(2.4rem, 5vw, 3.4rem);
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .opinions__count {
+    flex-basis: 100%;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .opinions__verified {
+    margin-top: -0.3rem;
+  }
+
+  @media (min-width: 64rem) {
+    .opinions__grid {
+      grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+      column-gap: clamp(3rem, 6vw, 6rem);
+    }
+
+    .opinions__head {
+      position: sticky;
+      top: 6rem;
+    }
   }
 
   /* ——— Breadcrumbs ——— */

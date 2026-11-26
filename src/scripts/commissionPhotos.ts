@@ -4,7 +4,8 @@
  * once the form is sent, with the request's one-time key.
  */
 const MAX_SIDE = 2400;
-const MAX_BYTES = 4 * 1024 * 1024;
+/** What one photo may weigh once resized (the server refuses more). */
+export const MAX_BYTES = 4 * 1024 * 1024;
 
 type Labels = {
   uploading: string;
@@ -13,7 +14,8 @@ type Labels = {
   remove: string;
 };
 
-async function resized(file: File): Promise<Blob> {
+/** The photo as a 2400 px JPEG, or as it is when the browser cannot open it. */
+export async function resized(file: File): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
@@ -35,7 +37,7 @@ export function photoPicker(root: HTMLElement) {
   const list = root.querySelector<HTMLUListElement>('[data-photo-list]')!;
   const drop = root.querySelector<HTMLElement>('[data-photo-drop]')!;
   const note = root.querySelector<HTMLElement>('[data-photo-note]')!;
-  const max = Number(root.dataset.max ?? 10);
+  let max = Number(root.dataset.max ?? 10);
   const labels = JSON.parse(root.dataset.labels ?? '{}') as Labels;
   let files: File[] = [];
 
@@ -91,6 +93,20 @@ export function photoPicker(root: HTMLElement) {
   });
 
   return {
+    /** The photos chosen so far. */
+    files: () => [...files],
+    /** Forget them (once they are uploaded). */
+    clear() {
+      files = [];
+      render();
+    },
+    /** Room left for new ones changes when photos already sent are taken off. */
+    setMax(next: number) {
+      max = next;
+      files = files.slice(0, Math.max(0, max));
+      note.textContent = '';
+      render();
+    },
     /** Upload the photos for the request just sent; resolves with how many failed. */
     async upload(reference: string, token: string, say: (text: string) => void): Promise<number> {
       let failed = 0;

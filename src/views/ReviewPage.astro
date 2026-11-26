@@ -1,0 +1,940 @@
+---
+import '@/styles/paper-forms.css';
+import PublicLayout from '@/layouts/PublicLayout.astro';
+import AntiBot from '@/components/AntiBot.astro';
+import { type Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { REVIEW_MAX_BODY, REVIEW_MAX_PHOTOS, defaultAuthorName } from '@/lib/domain/reviews';
+import { serviceDb } from '@/lib/server/db';
+import { openReviewLink, type ReviewOrder } from '@/lib/server/reviews/link';
+
+/**
+ * Where a customer writes their review, from the personal link in their email
+ * or "Mi cuenta". The link is one order's key: anything wrong with it (unknown,
+ * altered, expired, refunded) gets the same message and nothing else is said
+ * about the order. Not indexed, never cached: it is one person's.
+ */
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const es = locale === 'es';
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+
+const reference = (Astro.url.searchParams.get('r') ?? '').trim().slice(0, 40);
+const key = (Astro.url.searchParams.get('k') ?? '').trim().slice(0, 128);
+const service = serviceDb();
+
+let order: ReviewOrder | null = null;
+if (service && reference.length >= 3 && key.length >= 16) {
+  // A database that fails reads as a bad link to the customer (nothing about the order is said), but is logged.
+  order = await openReviewLink(service, reference, key).catch((err: unknown) => {
+    console.error('[review page] could not open the link', err instanceof Error ? err.message : err);
+    return null;
+  });
+}
+
+const review = order?.review ?? null;
+const customer = order && service ? await service.one<{ customer_name: string | null }>`select customer_name from public.orders where id = ${order.id}`.catch(() => null) : null;
+const products = order?.products ?? [];
+const sentCount = review?.photoIds.length ?? 0;
+const room = Math.max(0, REVIEW_MAX_PHOTOS - sentCount);
+// One piece: the review is about it. Several: the customer picks, or "the order in general".
+const onlyProduct = products.length === 1 ? (products[0]?.id ?? '') : '';
+const chosenProduct = review ? (review.productId ?? '') : onlyProduct;
+
+const copy = es
+  ? {
+      title: 'Tu opinión',
+      invalid: 'Este enlace no es válido o ha caducado. Si crees que es un error, escribe a Meili.',
+      contact: 'Escribir a Meili',
+      eyebrow: 'Pedido',
+      h1: 'Cuéntale a Meili',
+      h1em: 'cómo ha ido',
+      closedH1: 'Gracias por',
+      closedH1em: 'tus palabras',
+      closedLead: 'Aquí tienes lo que me escribiste.',
+      lead: 'Me hace mucha ilusión saber cómo ha llegado a casa y cómo ha quedado. Escríbelo con tus palabras: lo leeré yo antes de publicarlo.',
+      yours: 'Lo que pediste',
+      editing: 'Ya enviaste tu opinión. Puedes cambiarla hasta que Meili la revise.',
+      which: '¿De qué pieza nos hablas?',
+      general: 'Del pedido en general',
+      starsLegend: 'Si quieres, puntúa',
+      optional: 'opcional',
+      outOf: 'de 5',
+      clearStars: 'Quitar la puntuación',
+      body: 'Tu opinión',
+      bodyPlaceholder: 'Cómo llegó, qué dijeron en casa, qué te transmite el retrato…',
+      photosTitle: 'Una foto de tu retrato en casa',
+      photosSmall: `opcional, hasta ${REVIEW_MAX_PHOTOS}`,
+      photosHelp: 'Es lo que más ayuda a quien está dudando. Meili la verá antes de publicar nada.',
+      add: 'Añadir una foto',
+      addHint: 'Del móvil o del ordenador; también puedes arrastrarla aquí.',
+      sentPhoto: 'Foto enviada',
+      removeSent: 'Quitar la foto enviada',
+      name: 'Cómo quieres que aparezca tu nombre',
+      nameHint: 'Así saldrá junto a tu opinión.',
+      city: 'Ciudad',
+      pet: 'Nombre de tu mascota',
+      consent: 'Acepto que Pets Drawings publique mi opinión, el nombre que he indicado y las fotos en su web',
+      submit: 'Enviar mi opinión',
+      change: 'Guardar los cambios',
+      sentTitle: 'Gracias. Meili la leerá antes de publicarla.',
+      sentBody: 'Si quieres cambiar algo, puedes hacerlo mientras Meili no la haya revisado.',
+      again: 'Cambiar mi opinión',
+      readonlyTitle: 'Tu opinión',
+      statusPending: 'Meili la está revisando. Ya no se puede cambiar desde aquí; si quieres corregir algo, escríbele.',
+      statusPublished: 'Ya está publicada en la web. Gracias de corazón.',
+      statusHidden: 'Gracias por escribirla. Si quieres cambiar algo, escribe a Meili.',
+      photosSent: (n: number) => (n === 1 ? '1 foto enviada' : `${n} fotos enviadas`),
+      stars: (n: number) => `${n} de 5`,
+      labels: {
+        sending: 'Enviando tu opinión…',
+        invalid: 'Falta algún dato. Revisa los campos e inténtalo de nuevo.',
+        rate: 'Demasiados intentos desde tu conexión. Espera un rato y vuelve a probar.',
+        closed: 'Meili ya está revisando tu opinión y no se puede cambiar. Si quieres corregir algo, escríbele.',
+        link: 'Este enlace ya no es válido. Si crees que es un error, escribe a Meili.',
+        error: 'No hemos podido enviarla. Inténtalo de nuevo en un momento o escribe a Meili.',
+        uploading: 'Subiendo las fotos: {n} de {total}…',
+        photoFailed: 'Tu opinión está enviada, pero una foto no se pudo subir. Puedes volver a intentarlo con «Cambiar mi opinión».',
+        photoFailedMany: 'Tu opinión está enviada, pero {n} fotos no se pudieron subir. Puedes volver a intentarlo con «Cambiar mi opinión».',
+        photoTooLarge: 'Alguna pesa demasiado: prueba con otra.',
+        photoRemoveFailed: 'No hemos podido quitar la foto. Inténtalo de nuevo.',
+        photoRemoved: 'Foto quitada.',
+      },
+      picker: {
+        uploading: 'Subiendo las fotos: {n} de {total}…',
+        failed: '',
+        tooMany: `Caben hasta ${REVIEW_MAX_PHOTOS} fotos en total.`,
+        remove: 'Quitar',
+      },
+    }
+  : {
+      title: 'Your review',
+      invalid: 'This link isn’t valid or has expired. If you think it’s a mistake, write to Meili.',
+      contact: 'Write to Meili',
+      eyebrow: 'Order',
+      h1: 'Tell Meili',
+      h1em: 'how it went',
+      closedH1: 'Thank you for',
+      closedH1em: 'your words',
+      closedLead: 'Here is what you wrote to me.',
+      lead: 'I would love to hear how it arrived and how it looks at home. Write it in your own words: I read every one myself before it goes up.',
+      yours: 'What you ordered',
+      editing: 'You have already sent your review. You can change it until Meili has looked at it.',
+      which: 'Which piece are you telling us about?',
+      general: 'The order in general',
+      starsLegend: 'If you like, give a rating',
+      optional: 'optional',
+      outOf: 'out of 5',
+      clearStars: 'Clear the rating',
+      body: 'Your review',
+      bodyPlaceholder: 'How it arrived, what they said at home, what the portrait means to you…',
+      photosTitle: 'A photo of your portrait at home',
+      photosSmall: `optional, up to ${REVIEW_MAX_PHOTOS}`,
+      photosHelp: 'It is what helps most for anyone who is unsure. Meili sees it before anything is published.',
+      add: 'Add a photo',
+      addHint: 'From your phone or computer, or drag it here.',
+      sentPhoto: 'Photo sent',
+      removeSent: 'Remove the photo already sent',
+      name: 'How you would like your name to appear',
+      nameHint: 'It will show next to your review.',
+      city: 'City',
+      pet: 'Your pet’s name',
+      consent: 'I agree that Pets Drawings may publish my review, the name I have given and my photos on its website',
+      submit: 'Send my review',
+      change: 'Save the changes',
+      sentTitle: 'Thank you. Meili will read it before it is published.',
+      sentBody: 'If you want to change anything, you can until Meili has looked at it.',
+      again: 'Change my review',
+      readonlyTitle: 'Your review',
+      statusPending: 'Meili is looking at it. It can no longer be changed from here; if you want to correct something, write to her.',
+      statusPublished: 'It is now on the website. Thank you so much.',
+      statusHidden: 'Thank you for writing it. If you want to change anything, write to Meili.',
+      photosSent: (n: number) => (n === 1 ? '1 photo sent' : `${n} photos sent`),
+      stars: (n: number) => `${n} out of 5`,
+      labels: {
+        sending: 'Sending your review…',
+        invalid: 'Something is missing. Check the fields and try again.',
+        rate: 'Too many attempts from your connection. Wait a while and try again.',
+        closed: 'Meili is already looking at your review and it can’t be changed. If you want to correct something, write to her.',
+        link: 'This link is no longer valid. If you think it’s a mistake, write to Meili.',
+        error: 'We could not send it. Try again in a moment or write to Meili.',
+        uploading: 'Uploading the photos: {n} of {total}…',
+        photoFailed: 'Your review is sent, but a photo could not be uploaded. You can try again with “Change my review”.',
+        photoFailedMany: 'Your review is sent, but {n} photos could not be uploaded. You can try again with “Change my review”.',
+        photoTooLarge: 'One may be too big: try another.',
+        photoRemoveFailed: 'We could not remove the photo. Try again.',
+        photoRemoved: 'Photo removed.',
+      },
+      picker: {
+        uploading: 'Uploading the photos: {n} of {total}…',
+        failed: '',
+        tooMany: `Up to ${REVIEW_MAX_PHOTOS} photos in all.`,
+        remove: 'Remove',
+      },
+    };
+
+const closed = Boolean(review && !review.editable);
+const statusText = review
+  ? review.status === 'published'
+    ? copy.statusPublished
+    : review.status === 'pending'
+      ? copy.statusPending
+      : copy.statusHidden
+  : '';
+const authorDefault = review?.authorName ?? defaultAuthorName(customer?.customer_name ?? '');
+const contactHref = localizedPath(locale, 'contact');
+const stars = [1, 2, 3, 4, 5];
+---
+
+<PublicLayout locale={locale} title={copy.title} noindex>
+  <section class="section rv">
+    <div class="site-shell rv__shell">
+      {
+        !order ? (
+          <div class="paper rv__problem">
+            <h1 class="paper__title">{copy.title}</h1>
+            <p class="rv__problem-text">{copy.invalid}</p>
+            <p>
+              <a class="btn btn--ghost" href={contactHref}>{copy.contact}</a>
+            </p>
+          </div>
+        ) : (
+          <>
+            <header class="rv__head">
+              <p class="page-eyebrow">{copy.eyebrow} {order.reference}</p>
+              <h1 class="display rv__title">
+                {closed ? copy.closedH1 : copy.h1} <em>{closed ? copy.closedH1em : copy.h1em}</em>
+              </h1>
+              <p class="rv__lead">{closed ? copy.closedLead : copy.lead}</p>
+              {
+                products.length > 0 && (
+                  <>
+                    <p class="rv__pieces-label" id="rv-pieces">{copy.yours}</p>
+                    <ul class="rv__pieces" aria-labelledby="rv-pieces">
+                      {products.map((p) => (
+                        <li>
+                          <figure>
+                            {p.imageUrl ? (
+                              <img src={p.imageUrl} alt="" width="160" height="160" loading="lazy" decoding="async" />
+                            ) : (
+                              <span class="rv__noimg" aria-hidden="true" />
+                            )}
+                            <figcaption>{p.title}</figcaption>
+                          </figure>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )
+              }
+            </header>
+
+            {
+              closed && review ? (
+                <article class="paper rv__mine" lang={review.locale}>
+                  <h2 class="paper__title">{copy.readonlyTitle}</h2>
+                  {
+                    review.rating !== null && (
+                      <p class="rv__rating" role="img" aria-label={copy.stars(review.rating)}>
+                        {stars.map((n) => (
+                          <svg class:list={['rv__star', { 'is-on': n <= (review.rating ?? 0) }]} viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2 6.3 20.3l1.2-6.4L2.8 9.5l6.4-.8z" />
+                          </svg>
+                        ))}
+                      </p>
+                    )
+                  }
+                  <blockquote class="rv__quote">{review.body}</blockquote>
+                  <p class="rv__by">
+                    {review.authorName}
+                    {review.city && <span>, {review.city}</span>}
+                    {review.petName && <span> · {review.petName}</span>}
+                  </p>
+                  {sentCount > 0 && <p class="rv__small">{copy.photosSent(sentCount)}</p>}
+                  <p class="rv__status" role="status">{statusText}</p>
+                  <p>
+                    <a class="btn btn--ghost" href={contactHref}>{copy.contact}</a>
+                  </p>
+                </article>
+              ) : (
+                <form
+                  class="paper rv__paper"
+                  method="post"
+                  action="/api/reviews/"
+                  data-review-form
+                  data-reference={order.reference}
+                  data-key={key}
+                  data-labels={JSON.stringify(copy.labels)}
+                >
+                  <div class="paper__fields" data-form-fields>
+                    {review && <p class="rv__editing">{copy.editing}</p>}
+                    <input type="hidden" name="reference" value={order.reference} />
+                    <input type="hidden" name="key" value={key} />
+                    <input type="hidden" name="locale" value={locale} />
+
+                    {
+                      products.length > 1 ? (
+                        <fieldset class="field">
+                          <legend class="field__label">{copy.which}</legend>
+                          <div class="chips">
+                            {products.map((p) => (
+                              <label class="chip-option">
+                                <input type="radio" name="productId" value={p.id} checked={chosenProduct === p.id} />
+                                <span>{p.title}</span>
+                              </label>
+                            ))}
+                            <label class="chip-option">
+                              <input type="radio" name="productId" value="" checked={chosenProduct === ''} />
+                              <span>{copy.general}</span>
+                            </label>
+                          </div>
+                        </fieldset>
+                      ) : (
+                        <input type="hidden" name="productId" value={chosenProduct} />
+                      )
+                    }
+
+                    <fieldset class="field rv__stars">
+                      <legend class="field__label">{copy.starsLegend} <small>{copy.optional}</small></legend>
+                      <div class="rv__stars-row">
+                        {stars.map((n) => (
+                          <label class="rv__star-opt">
+                            <input type="radio" name="rating" value={n} checked={review?.rating === n} />
+                            <svg class="rv__star" viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2 6.3 20.3l1.2-6.4L2.8 9.5l6.4-.8z" />
+                            </svg>
+                            <span class="rv__star-n"><span class="rv__sr">{copy.stars(n)}</span><span aria-hidden="true">{n}</span></span>
+                          </label>
+                        ))}
+                        <button class="rv__clear" type="button" data-stars-clear hidden>{copy.clearStars}</button>
+                      </div>
+                    </fieldset>
+
+                    <label class="field rv__body">
+                      <span class="field__label">{copy.body}</span>
+                      <textarea name="body" rows="8" required maxlength={REVIEW_MAX_BODY} placeholder={copy.bodyPlaceholder}>{review?.body ?? ''}</textarea>
+                      <span class="rv__count" data-count aria-hidden="true">0 / {REVIEW_MAX_BODY}</span>
+                    </label>
+
+                    <div
+                      class="field rv__photos"
+                      data-photo-picker
+                      data-max={room}
+                      data-total={REVIEW_MAX_PHOTOS}
+                      data-labels={JSON.stringify(copy.picker)}
+                    >
+                      <span class="rv__photos-title" id="photos-label">{copy.photosTitle} <small>{copy.photosSmall}</small></span>
+                      <p class="field__hint">{copy.photosHelp}</p>
+                      <ul class="rv__sent" data-sent-photos aria-labelledby="photos-label" hidden={sentCount === 0}>
+                        {
+                          (review?.photoIds ?? []).map((id) => (
+                            <li data-photo-id={id}>
+                              <span class="rv__sent-tile">
+                                <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="11" width="36" height="28" rx="3" /><circle cx="18" cy="21" r="3.5" /><path d="M6 34l10-9 8 7 6-5 12 10" /></svg>
+                                <span>{copy.sentPhoto}</span>
+                              </span>
+                              <button type="button" data-photo-remove aria-label={copy.removeSent}>×</button>
+                            </li>
+                          ))
+                        }
+                      </ul>
+                      <ul class="rv__list" data-photo-list aria-labelledby="photos-label"></ul>
+                      <label class="rv__drop" data-photo-drop hidden={room === 0}>
+                        <input class="rv__drop-input" type="file" accept="image/*" multiple data-photo-input aria-labelledby="photos-label" />
+                        <svg viewBox="0 0 48 48" aria-hidden="true">
+                          <rect x="6" y="11" width="36" height="28" rx="3" />
+                          <circle cx="18" cy="21" r="3.5" />
+                          <path d="M6 34l10-9 8 7 6-5 12 10" />
+                          <path class="rv__plus" d="M38 4v10M33 9h10" />
+                        </svg>
+                        <span class="rv__drop-text">
+                          <strong>{copy.add}</strong>
+                          <span>{copy.addHint}</span>
+                        </span>
+                      </label>
+                      <p class="field__hint" data-photo-note aria-live="polite"></p>
+                      <progress class="rv__progress" data-photo-progress value="0" max="1" hidden aria-hidden="true"></progress>
+                    </div>
+
+                    <div class="paper__row">
+                      <label class="field">
+                        <span class="field__label">{copy.name}</span>
+                        <input name="authorName" required maxlength="80" autocomplete="name" value={authorDefault} />
+                        <span class="field__hint">{copy.nameHint}</span>
+                      </label>
+                    </div>
+                    <div class="paper__row">
+                      <label class="field">
+                        <span class="field__label">{copy.city} <small>{copy.optional}</small></span>
+                        <input name="city" maxlength="80" autocomplete="address-level2" value={review?.city ?? ''} />
+                      </label>
+                      <label class="field">
+                        <span class="field__label">{copy.pet} <small>{copy.optional}</small></span>
+                        <input name="petName" maxlength="60" autocomplete="off" value={review?.petName ?? ''} />
+                      </label>
+                    </div>
+
+                    <label class="rv__consent">
+                      <input type="checkbox" name="consent" value="true" required />
+                      <span>{copy.consent}</span>
+                    </label>
+
+                    <AntiBot form="review" locale={locale} />
+
+                    <div class="paper__actions">
+                      <button class="btn" type="submit">{review ? copy.change : copy.submit}</button>
+                      <p class="paper__status" role="status" data-form-status></p>
+                    </div>
+                  </div>
+
+                  <div class="paper__done" data-form-done hidden>
+                    <svg class="paper__done-mark" viewBox="0 0 52 52" aria-hidden="true">
+                      <path d="M6 28 C 12 32, 16 38, 20 43 C 27 28, 36 17, 47 8" pathLength="1"></path>
+                    </svg>
+                    <h3 tabindex="-1">{copy.sentTitle}</h3>
+                    <p>{copy.sentBody}</p>
+                    <p class="rv__failed" data-photo-failed role="status" hidden></p>
+                    <button class="btn btn--ghost" type="button" data-review-again>{copy.again}</button>
+                  </div>
+                </form>
+              )
+            }
+          </>
+        )
+      }
+    </div>
+  </section>
+</PublicLayout>
+
+<style>
+  .rv {
+    padding-block: clamp(2.5rem, 6vw, 5rem) clamp(4rem, 9vw, 7rem);
+  }
+
+  .rv__shell {
+    max-width: 50rem;
+  }
+
+  .rv__head {
+    margin-bottom: clamp(2rem, 5vw, 3.25rem);
+  }
+
+  .rv__title {
+    margin: 0 0 1rem;
+    font-size: clamp(2.5rem, 6.5vw, 4.4rem);
+    text-wrap: balance;
+  }
+
+  .rv__title em {
+    color: var(--accent-deep);
+  }
+
+  .rv__lead {
+    margin: 0;
+    max-width: 36rem;
+    font-size: 1.12rem;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    text-wrap: pretty;
+  }
+
+  /* ——— What they ordered, hung like small prints ——— */
+  .rv__pieces-label {
+    margin: 2rem 0 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .rv__pieces {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.1rem 1.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .rv__pieces figure {
+    display: grid;
+    gap: 0.5rem;
+    width: 6.5rem;
+    margin: 0;
+  }
+
+  .rv__pieces img,
+  .rv__noimg {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border: 0.3rem solid var(--sheet);
+    background: var(--paper-deep);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12), 0 8px 16px -10px rgb(22 23 26 / 0.35);
+  }
+
+  .rv__pieces li:nth-child(odd) figure {
+    rotate: -1.2deg;
+  }
+
+  .rv__pieces li:nth-child(even) figure {
+    rotate: 1deg;
+  }
+
+  .rv__pieces figcaption {
+    font-size: 0.85rem;
+    line-height: 1.3;
+    color: var(--ink-soft);
+    text-wrap: balance;
+  }
+
+  /* ——— The sheet ——— */
+  .rv__paper {
+    padding-block: clamp(2.25rem, 5vw, 3.5rem);
+  }
+
+  .rv__paper .paper__fields {
+    gap: clamp(2rem, 4vw, 2.75rem);
+  }
+
+  .rv__editing {
+    margin: 0;
+    padding: 0.8rem 1rem;
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+  }
+
+  .rv__problem-text {
+    margin: 0 0 1.5rem;
+    max-width: 30rem;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  .rv__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ——— Stars: five radio buttons, optional ——— */
+  .rv__stars-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15rem 0.35rem;
+    margin-top: 0.35rem;
+  }
+
+  .rv__star-opt {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 0.1rem;
+    padding: 0.2rem 0.3rem;
+    cursor: pointer;
+  }
+
+  .rv__star-opt input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .rv__star {
+    width: 2.4rem;
+    height: 2.4rem;
+    fill: transparent;
+    stroke: var(--line-strong);
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    transition:
+      fill var(--dur-ui) var(--ease-soft),
+      stroke var(--dur-ui) var(--ease-soft),
+      transform var(--dur-ui) var(--ease-soft);
+  }
+
+  .rv__star-n {
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  /* A star is lit when it, or any star after it, is the chosen one; hover previews the same. */
+  .rv__star-opt:has(input:checked) .rv__star,
+  .rv__star-opt:has(~ .rv__star-opt input:checked) .rv__star,
+  .rv__star-opt:hover .rv__star,
+  .rv__star-opt:has(~ .rv__star-opt:hover) .rv__star,
+  .rv__rating .rv__star.is-on {
+    fill: var(--accent);
+    stroke: var(--accent-deep);
+  }
+
+  .rv__star-opt:has(input:checked) .rv__star-n {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .rv__star-opt:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .rv__star-opt:active .rv__star {
+    transform: scale(0.92);
+  }
+
+  .rv__clear {
+    margin-left: 0.6rem;
+    padding: 0.5rem 0.2rem;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.9rem;
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 0.3em;
+    cursor: pointer;
+  }
+
+  .rv__clear:hover {
+    color: var(--ink);
+  }
+
+  .rv__clear:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .rv__clear[hidden] {
+    display: none;
+  }
+
+  /* ——— The words get room ——— */
+  .rv__body textarea {
+    min-height: calc(var(--rule) * 8);
+  }
+
+  .rv__count {
+    justify-self: end;
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ——— Photos: the heart of the page ——— */
+  .rv__photos {
+    gap: 0.6rem;
+  }
+
+  .rv__photos-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.5rem, 3.2vw, 2rem);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--ink);
+  }
+
+  .rv__photos-title small {
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .rv__photos-title small::before {
+    content: '· ';
+  }
+
+  .rv__sent,
+  .rv__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .rv__sent[hidden],
+  .rv__list:empty {
+    display: none;
+  }
+
+  .rv__sent li,
+  .rv__list :global(li) {
+    position: relative;
+    width: clamp(6.5rem, 28vw, 9rem);
+    aspect-ratio: 1;
+    animation: rv-in 420ms var(--ease-out) both;
+  }
+
+  .rv__list :global(li:nth-child(odd)),
+  .rv__sent li:nth-child(odd) {
+    rotate: -1.5deg;
+  }
+
+  .rv__list :global(li:nth-child(even)),
+  .rv__sent li:nth-child(even) {
+    rotate: 1.2deg;
+  }
+
+  .rv__list :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border: 0.35rem solid var(--sheet);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12), 0 8px 16px -10px rgb(22 23 26 / 0.35);
+  }
+
+  .rv__sent-tile {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    height: 100%;
+    border: 0.35rem solid var(--sheet);
+    background: var(--accent-soft);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.12), 0 8px 16px -10px rgb(22 23 26 / 0.35);
+    font-size: 0.8rem;
+    color: var(--accent-deep);
+  }
+
+  .rv__sent-tile svg {
+    width: 2rem;
+    height: 2rem;
+    fill: none;
+    stroke: var(--accent-deep);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .rv__sent button,
+  .rv__list :global(button) {
+    position: absolute;
+    top: -0.5rem;
+    right: -0.5rem;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .rv__sent button:focus-visible,
+  .rv__list :global(button:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .rv__drop {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    min-height: 12rem;
+    margin-top: 0.4rem;
+    padding: 1.75rem 1.25rem;
+    border: 1.5px dashed var(--line-strong);
+    background: rgb(255 255 255 / 0.55);
+    text-align: center;
+    cursor: pointer;
+    transition:
+      border-color var(--dur-ui) var(--ease-soft),
+      background var(--dur-ui) var(--ease-soft);
+  }
+
+  .rv__drop[hidden] {
+    display: none;
+  }
+
+  .rv__drop:hover,
+  .rv__drop.is-over,
+  .rv__drop:focus-within {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .rv__drop:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .rv__drop-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .rv__drop svg {
+    width: 3.75rem;
+    height: 3.75rem;
+    fill: none;
+    stroke: var(--accent-deep);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .rv__plus {
+    stroke: var(--accent);
+  }
+
+  .rv__drop-text {
+    display: grid;
+    gap: 0.2rem;
+    font-size: 0.92rem;
+    color: var(--muted);
+  }
+
+  .rv__drop-text strong {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    font-weight: 400;
+    color: var(--ink);
+  }
+
+  .rv__progress {
+    width: 100%;
+    height: 0.35rem;
+    accent-color: var(--accent);
+  }
+
+  .rv__progress[hidden] {
+    display: none;
+  }
+
+  /* ——— Consent ——— */
+  .rv__consent {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: 0.8rem;
+    cursor: pointer;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+
+  .rv__consent input {
+    width: 1.35rem;
+    height: 1.35rem;
+    margin: 0.1rem 0 0;
+    accent-color: var(--accent-deep);
+    cursor: pointer;
+  }
+
+  .rv__consent input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .rv__failed {
+    color: #8a4a1c;
+  }
+
+  .rv__failed[hidden] {
+    display: none;
+  }
+
+  /* ——— A review that is closed, read as a page of the studio's book ——— */
+  .rv__mine {
+    display: grid;
+    gap: 1.25rem;
+    justify-items: start;
+  }
+
+  .rv__mine .paper__title {
+    margin: 0;
+  }
+
+  .rv__rating {
+    display: flex;
+    gap: 0.2rem;
+    margin: 0;
+  }
+
+  .rv__rating .rv__star {
+    width: 1.8rem;
+    height: 1.8rem;
+  }
+
+  .rv__quote {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.25rem, 2.6vw, 1.55rem);
+    line-height: 1.5;
+    white-space: pre-line;
+    text-wrap: pretty;
+    color: var(--ink);
+  }
+
+  .rv__by {
+    margin: 0;
+    font-weight: 500;
+  }
+
+  .rv__small,
+  .rv__status {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .rv__status {
+    max-width: 32rem;
+    color: var(--ink-soft);
+  }
+
+  @keyframes rv-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.96);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rv__sent li,
+    .rv__list :global(li) {
+      animation: none;
+    }
+
+    .rv__star {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { reviewForm } from '@/scripts/reviewForm';
+
+  const form = document.querySelector<HTMLFormElement>('[data-review-form]');
+  if (form) reviewForm(form);
+</script>

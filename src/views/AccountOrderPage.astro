@@ -7,6 +7,8 @@ import { formatEur } from '@/lib/domain/money';
 import { customerStatus } from '@/lib/domain/orderStatus';
 import { countryOptions } from '@/lib/domain/countries';
 import { getOrder, loadProfile } from '@/lib/server/account';
+import { serviceDb } from '@/lib/server/db';
+import { reviewEligible, reviewUrl } from '@/lib/server/reviews/link';
 import { trackingUrl } from '@/lib/server/shipping/correos';
 
 interface Props {
@@ -38,6 +40,24 @@ const current = originals.find((i) => i.replaces_invoice_id) ?? originals[origin
 const replaced = current?.replaces_invoice_id ? invoices.find((i) => i.id === current.replaces_invoice_id) : null;
 const canAskFull = order?.payment_status === 'paid' && current?.kind !== 'full' && !order?.invoice_customer;
 const waitingFull = Boolean(order?.invoice_customer) && current?.kind !== 'full';
+
+// The personal link to review this order, while it still works. The order is already this customer's
+// (read under their own account); the service db only adds its id and whether a review exists.
+const service = order && reviewEligible(order) ? serviceDb() : null;
+const reviewRow = service
+  ? await service
+      .one<{ id: string; has_review: boolean }>`
+        select o.id, exists (select 1 from public.reviews r where r.order_id = o.id) as has_review
+        from public.orders o where o.reference = ${order!.reference}`
+      .catch(() => null)
+  : null;
+// No link rather than a broken page if the link secret is missing.
+let reviewLink: string | null = null;
+try {
+  reviewLink = reviewRow && order ? reviewUrl({ id: reviewRow.id, reference: order.reference, locale }) : null;
+} catch (err) {
+  console.error('[account] review link not built', err instanceof Error ? err.message : err);
+}
 
 // The request form starts from what was typed (after an error), or the profile.
 const flash = Astro.locals.flash ?? null;
@@ -102,6 +122,13 @@ const copy = es
         invoice_later: 'Ahora mismo no podemos emitirla. Lo intentaremos en breve; si es urgente, escríbenos.',
         invoice_failed: 'No pudimos emitir la factura. Inténtalo de nuevo o escríbenos.',
       },
+      review: {
+        title: 'Tu opinión',
+        ask: 'Si ya tienes el retrato en casa, a Meili le encantaría saber cómo ha ido. Puedes añadir una foto.',
+        write: 'Escribe tu opinión',
+        done: 'Ya has escrito tu opinión. Puedes volver a verla.',
+        view: 'Ver tu opinión',
+      },
       notFound: 'No encontramos ese pedido en tu cuenta.',
       help: '¿Algo no está bien?',
       helpLink: 'Escribe a Meili',
@@ -155,6 +182,13 @@ const copy = es
         invoice_fields: 'Please check the details: the tax ID is not valid or a field is missing.',
         invoice_later: 'We cannot issue it right now. We will shortly; if it is urgent, write to us.',
         invoice_failed: 'We could not issue the invoice. Please try again or write to us.',
+      },
+      review: {
+        title: 'Your review',
+        ask: 'Once the portrait is at home, Meili would love to hear how it went. You can add a photo.',
+        write: 'Write a review',
+        done: 'You have already written your review. You can look at it again.',
+        view: 'View your review',
       },
       notFound: 'We could not find that order in your account.',
       help: 'Something not right?',
@@ -271,6 +305,18 @@ const showJourney = Boolean(status) && !['refunded', 'review', 'processing', 'ca
                 {address.postal_code} {address.city}{address.state && `, ${address.state}`}<br />
                 {names.of(address.country) ?? address.country}
               </address>
+            </section>
+          )
+        }
+
+        {
+          reviewLink && reviewRow && (
+            <section class="op__review" aria-labelledby="review-title">
+              <h2 id="review-title" class="op__h2">{copy.review.title}</h2>
+              <p>{reviewRow.has_review ? copy.review.done : copy.review.ask}</p>
+              <a class="btn btn--ghost" href={reviewLink}>
+                {reviewRow.has_review ? copy.review.view : copy.review.write}
+              </a>
             </section>
           )
         }
@@ -679,6 +725,23 @@ const showJourney = Boolean(status) && !['refunded', 'review', 'processing', 'ca
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: #3b2f1c;
+  }
+
+  .op__review {
+    display: grid;
+    justify-items: start;
+    gap: 0.9rem;
+    padding: 1.5rem;
+    background: var(--accent-soft);
+  }
+
+  .op__review .op__h2,
+  .op__review p {
+    margin: 0;
+  }
+
+  .op__review p {
+    color: var(--ink-soft);
   }
 
   .op__invoice {

@@ -55,6 +55,11 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   // A coupon that does not apply (the message is the reason), and one that cannot be deleted.
   ...Object.fromEntries(COUPON_REASONS.map((reason) => [reason, { code: 'CONFLICT', status: 409 }])),
   COUPON_IN_USE: { code: 'CONFLICT', status: 409 },
+  // Reviews: any bad link says the same, whatever is wrong with it.
+  REVIEW_LINK_INVALID: { code: 'FORBIDDEN', status: 403 },
+  REVIEW_CLOSED: { code: 'CONFLICT', status: 409 },
+  REVIEW_PRODUCT: { code: 'VALIDATION', status: 400 },
+  REVIEW_PHOTOS_MAX: { code: 'VALIDATION', status: 400 },
 };
 
 function extractCode(message: string | undefined): string | null {

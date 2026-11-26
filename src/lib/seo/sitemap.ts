@@ -41,6 +41,8 @@ export const PRIVATE_PATHS = [
   '/en/order-status/',
   '/es/cuenta/',
   '/en/account/',
+  '/es/opinion/',
+  '/en/review/',
 ];
 
 type Sources = {

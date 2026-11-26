@@ -9,6 +9,9 @@ import { loadPublicCatalogForPages, topLevelProducts } from '@/lib/catalog/loadP
 import { getAboutImages } from '@/lib/content/siteExtras';
 import { isHeroDesign, loadHeroContent, resolveHero } from '@/lib/content/homeHero';
 import { loadHomeSections, resolveHomeSections, sectionLinks } from '@/lib/content/homeSections';
+import PhotoViewer from '@/components/PhotoViewer.astro';
+import ReviewList from '@/components/reviews/ReviewList.astro';
+import { homeReviews } from '@/lib/server/reviews/store';
 import HeroCollage from '@/components/home/hero/HeroCollage.astro';
 import HeroReveal from '@/components/home/hero/HeroReveal.astro';
 import HeroWall from '@/components/home/hero/HeroWall.astro';
@@ -22,10 +25,11 @@ interface Props {
 const { locale } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const [catalog, aboutImages, sectionsContent] = await Promise.all([
+const [catalog, aboutImages, sectionsContent, reviews] = await Promise.all([
   loadPublicCatalogForPages(locale),
   getAboutImages(),
   loadHomeSections(),
+  homeReviews(),
 ]);
 const products = topLevelProducts(catalog.products);
 
@@ -171,6 +175,29 @@ const drawnNames = [
             {sections.shop.linkLabel}
           </a>
         </div>
+      </section>
+    )
+  }
+
+  {
+    reviews.length > 0 && (
+      <section class="section kind" aria-labelledby="kind-title">
+        <div class="site-shell">
+          <header class="kind__head">
+            <h2 id="kind-title" class="display h2-display">{dict.reviews.homeTitle}</h2>
+            <p class="muted">{dict.reviews.homeLead}</p>
+          </header>
+          <ReviewList reviews={reviews} locale={locale} layout="wall" excerpt />
+          <a class="link kind__more" href={`${localizedPath(locale, 'contact')}#opiniones`}>
+            {dict.reviews.seeMore}
+          </a>
+        </div>
+        <PhotoViewer
+          label={dict.reviews.viewerLabel}
+          close={dict.reviews.close}
+          prev={dict.reviews.prev}
+          next={dict.reviews.next}
+        />
       </section>
     )
   }
@@ -605,6 +632,17 @@ const drawnNames = [
     .boutique__item:not(.boutique__item--feature) img {
       aspect-ratio: 4 / 3;
     }
+  }
+
+  /* ——— Kind words ——— */
+  .kind__head {
+    max-width: 38rem;
+    margin-bottom: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .kind__more {
+    display: inline-block;
+    margin-top: clamp(2.5rem, 5vw, 4rem);
   }
 
   /* ——— Artist: an instant photo that develops, a name written in ink ——— */

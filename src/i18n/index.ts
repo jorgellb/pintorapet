@@ -9,3 +9,8 @@ export function t(locale: Locale): Dictionary {
 }
 
 export type { Dictionary, Locale };
+
+/** Fills the `{name}` holes of a dictionary text. */
+export function fill(text: string, values: Record<string, string | number>): string {
+  return text.replace(/\{(\w+)\}/g, (hole, key: string) => (key in values ? String(values[key]) : hole));
+}

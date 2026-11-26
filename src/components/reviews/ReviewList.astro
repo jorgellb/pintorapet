@@ -1,0 +1,124 @@
+---
+import ReviewCard from '@/components/reviews/ReviewCard.astro';
+import type { Locale } from '@/i18n';
+import type { PublicReview } from '@/lib/domain/reviews';
+
+interface Props {
+  reviews: PublicReview[];
+  locale: Locale;
+  /**
+   * wall:   the first one large, the rest as prints around it (home, Encargos).
+   * pinned: every one taped to the wall as a print or a slip (Contacto).
+   * row:    a quiet list (product page).
+   */
+  layout?: 'wall' | 'pinned' | 'row';
+  /** Long reviews with a photo are shortened; «Leer más» opens the rest. */
+  excerpt?: boolean;
+  /** Names the list for screen readers. */
+  label?: string;
+}
+
+const { reviews, locale, layout = 'wall', excerpt = false, label } = Astro.props;
+---
+
+{
+  reviews.length > 0 && (
+    <ul class={`reviews reviews--${layout}`} aria-label={label}>
+      {reviews.map((review, i) => (
+        <li class={i === 0 && layout === 'wall' ? 'reviews__item reviews__item--lead' : 'reviews__item'} style={`--i:${i}`}>
+          <ReviewCard
+            review={review}
+            locale={locale}
+            variant={layout === 'row' ? 'row' : i === 0 && layout === 'wall' ? 'feature' : 'print'}
+            excerpt={excerpt}
+            pinned={layout === 'pinned'}
+            index={i}
+          />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+<style>
+  .reviews {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: clamp(2.5rem, 5vw, 4rem);
+  }
+
+  .reviews__item {
+    min-width: 0;
+  }
+
+  .reviews--row {
+    gap: 0;
+  }
+
+  .reviews--row .reviews__item:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .reviews--pinned {
+    justify-items: center;
+    gap: 2.75rem;
+  }
+
+  .reviews--pinned .reviews__item {
+    width: min(100%, 22rem);
+  }
+
+  /* Wall: the lead print on its own line, the others in a staggered row beneath. */
+  @media (min-width: 40rem) {
+    .reviews--wall {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: clamp(1.5rem, 3vw, 3rem);
+      align-items: start;
+    }
+
+    .reviews--wall .reviews__item--lead {
+      grid-column: 1 / -1;
+      margin-bottom: clamp(1rem, 3vw, 3rem);
+    }
+
+    .reviews--wall .reviews__item:nth-child(3n) {
+      margin-top: 2.5rem;
+    }
+  }
+
+  @media (min-width: 64rem) {
+    .reviews--wall {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .reviews--wall .reviews__item:nth-child(3n) {
+      margin-top: 0;
+    }
+
+    .reviews--wall .reviews__item:nth-child(3n + 1):not(.reviews__item--lead) {
+      margin-top: 2.5rem;
+    }
+  }
+
+  @media (min-width: 48rem) {
+    .reviews--pinned {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: start;
+      gap: clamp(2rem, 4vw, 3.5rem) clamp(1.5rem, 3vw, 3rem);
+    }
+
+    .reviews--pinned .reviews__item {
+      width: 100%;
+    }
+
+    .reviews--pinned .reviews__item:nth-child(3n + 2) {
+      margin-top: 3rem;
+    }
+
+    .reviews--pinned .reviews__item:nth-child(3n) {
+      margin-top: 1.25rem;
+    }
+  }
+</style>

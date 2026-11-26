@@ -1,0 +1,188 @@
+---
+import AdminLayout from '@/layouts/AdminLayout.astro';
+import { requireAdmin } from '@/lib/server/adminAuth';
+import { hasDatabase, settle } from '@/lib/server/db';
+import { shortDate } from '@/lib/admin/labels';
+import { aboutLabel, excerpt, photoSrc, REVIEW_TABS, sourceLabel, stars, starsLabel } from '@/lib/admin/reviewView';
+import { listReviews, reviewCounts } from '@/lib/server/reviews/store';
+
+export const prerender = false;
+
+if (!hasDatabase()) return Astro.redirect('/admin/login/');
+const admin = await requireAdmin(Astro.cookies, Astro.request);
+if (!admin) return Astro.redirect('/admin/login/');
+
+const tab = REVIEW_TABS.find((t) => t.key === Astro.url.searchParams.get('estado')) ?? REVIEW_TABS[0]!;
+const [{ data: reviews, error }, { data: counts }] = await Promise.all([
+  settle(listReviews(admin.db, tab.status)),
+  settle(reviewCounts(admin.db)),
+]);
+const shown = reviews ?? [];
+const count = (status: (typeof REVIEW_TABS)[number]['status']) => counts?.[status] ?? 0;
+const pending = count('pending');
+const notice = Astro.url.searchParams.has('borrada') ? 'Opinión borrada.' : null;
+---
+
+<AdminLayout title="Opiniones" email={admin.user.email}>
+  <header class="page-head">
+    <div>
+      <h1>Opiniones</h1>
+      <p class="lead">
+        Lo que cuentan quienes han comprado, y las tuyas. Nada sale en la web hasta que lo publicas.
+        {pending > 0 && <strong> {pending === 1 ? 'Hay 1 opinión pendiente.' : `Hay ${pending} opiniones pendientes.`}</strong>}
+      </p>
+    </div>
+    <a class="btn" href="/admin/reviews/new/">Nueva opinión</a>
+  </header>
+
+  {notice && <p class="status">{notice}</p>}
+  {error && <p class="err">{error.message}</p>}
+
+  <ul class="tabs" aria-label="Estado">
+    {
+      REVIEW_TABS.map((t) => (
+        <li>
+          <a href={t === REVIEW_TABS[0] ? '/admin/reviews/' : `/admin/reviews/?estado=${t.key}`} aria-current={t === tab ? 'page' : undefined}>
+            {t.label}<span class="count">{count(t.status)}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  {
+    shown.length === 0 ? (
+      <p class="empty">
+        {tab.status === 'pending'
+          ? 'No hay opiniones pendientes. Cuando alguien escriba una desde su enlace, aparecerá aquí.'
+          : tab.status === 'published'
+            ? 'Todavía no has publicado ninguna opinión.'
+            : 'No hay opiniones ocultas.'}
+      </p>
+    ) : (
+      <ul class="rows" data-review-rows>
+        {shown.map((r) => {
+          const first = r.photos[0] ? photoSrc(r.id, r.photos[0]) : null;
+          return (
+            <li class="row" data-review-id={r.id}>
+              <a class="row__photo" href={`/admin/reviews/${r.id}/`} tabindex="-1" aria-hidden="true">
+                {first ? <img src={first} alt="" loading="lazy" width="72" height="72" /> : <span class="row__nophoto">Sin foto</span>}
+              </a>
+              <div class="row__main">
+                <p class="row__top">
+                  {r.rating ? <span class="stars" role="img" aria-label={starsLabel(r.rating)}>{stars(r.rating)}</span> : <span class="muted">Sin estrellas</span>}
+                  <span class="row__chips">
+                    {r.verified && <span class="chip chip--ok">Compra verificada</span>}
+                    <span class={r.source === 'customer' ? 'chip chip--info' : 'chip'}>{sourceLabel(r)}</span>
+                    {r.featured && <span class="chip chip--warn">En portada</span>}
+                    {r.photos.length > 1 && <span class="chip">{r.photos.length} fotos</span>}
+                  </span>
+                </p>
+                <p class="row__body" lang={r.locale}>
+                  <a href={`/admin/reviews/${r.id}/`}>{excerpt(r.body)}</a>
+                </p>
+                <p class="muted">
+                  <strong>{r.authorName}</strong>{r.city && ` · ${r.city}`}{r.petName && ` · ${r.petName}`} · {aboutLabel(r)} · {shortDate(r.createdAt)}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    )
+  }
+</AdminLayout>
+
+<style>
+  .rows {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--line);
+    border-radius: var(--a-radius);
+    background: var(--sheet);
+    box-shadow: var(--a-shadow);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.5rem 1.1rem;
+    align-items: start;
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row:hover {
+    background: var(--a-hover);
+  }
+
+  .row p {
+    margin: 0;
+  }
+
+  .row__photo {
+    display: block;
+    width: 4.5rem;
+    height: 4.5rem;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--paper-deep);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
+  .row__photo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .row__nophoto {
+    display: grid;
+    height: 100%;
+    place-items: center;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+  }
+
+  .row__main {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .row__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+  }
+
+  .stars {
+    color: var(--a-warn);
+    font-size: 1rem;
+    letter-spacing: 0.08em;
+  }
+
+  .row__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+
+  .row__body a {
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+
+  .row__body a:hover {
+    text-decoration: underline;
+  }
+</style>

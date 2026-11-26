@@ -30,6 +30,7 @@ export const routeMap = {
   accountReset: { en: 'account/new-password', es: 'cuenta/nueva-contrasena' },
   accountDetails: { en: 'account/details', es: 'cuenta/datos' },
   accountOrder: { en: 'account/orders', es: 'cuenta/pedidos' },
+  review: { en: 'review', es: 'opinion' },
 } as const;
 
 export type RouteKey = keyof typeof routeMap;

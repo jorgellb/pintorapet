@@ -60,9 +60,11 @@ for (const locale of locales) {
       await expect(page.locator('.about__figure img')).toHaveCount(4);
     });
 
-    test('contact shows feedback screenshots', async ({ page }) => {
+    test('contact shows the reviews (not screenshots), twelve at most', async ({ page }) => {
       await page.goto(locale.contact);
-      await expect(page.locator('.feedback-grid img')).toHaveCount(3);
+      await expect(page.locator('.feedback-grid')).toHaveCount(0);
+      // without published reviews the section is not drawn
+      expect(await page.locator('#opiniones [data-review]').count()).toBeLessThanOrEqual(12);
     });
 
     test('commissions shows photo/drawing example pairs', async ({ page }) => {

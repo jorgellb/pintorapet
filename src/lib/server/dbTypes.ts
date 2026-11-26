@@ -18,6 +18,9 @@ export type OrderPaymentStatus = 'pending_session' | 'awaiting_transfer' | 'chec
 export type OutboxStatus = 'pending' | 'leased' | 'sent' | 'failed' | 'cancelled';
 export type ProductStatus = 'draft' | 'published' | 'archived';
 export type ReservationStatus = 'active' | 'consumed' | 'released';
+export type ReviewKind = 'product' | 'commission' | 'general';
+export type ReviewSource = 'customer' | 'admin';
+export type ReviewStatus = 'pending' | 'published' | 'hidden';
 export type StockMovementReason = 'sale' | 'reservation' | 'release' | 'admin_adjust' | 'import' | 'return_restock' | 'correction';
 export type StripeEventStatus = 'received' | 'processing' | 'processed' | 'failed' | 'ignored';
 
@@ -720,6 +723,42 @@ export type ProductsRow = {
   weight_grams: number;
   vat_rate: number;
   collection_id: string | null;
+};
+
+/** public.review_photos (table) */
+export type ReviewPhotosRow = {
+  id: string;
+  review_id: string;
+  position: number;
+  private_public_id: string | null;
+  public_public_id: string | null;
+  media_asset_id: string | null;
+  bytes: number | null;
+  created_at: string;
+};
+
+/** public.reviews (table) */
+export type ReviewsRow = {
+  id: string;
+  source: ReviewSource;
+  status: ReviewStatus;
+  kind: ReviewKind;
+  order_id: string | null;
+  product_id: string | null;
+  commission_request_id: string | null;
+  author_name: string;
+  city: string;
+  pet_name: string;
+  body: string;
+  locale: LocaleCode;
+  rating: number | null;
+  featured: boolean;
+  verified: boolean;
+  consent_at: string | null;
+  admin_edited_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 /** public.shipping_carriers (table) */

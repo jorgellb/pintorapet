@@ -1,0 +1,311 @@
+---
+/**
+ * One photo at a time, full screen (arrows, swipe, Escape). Used by the
+ * markets' prints and by the reviews' photos.
+ *
+ * A page includes it once and marks its own lists:
+ *   <ul data-viewer-list={JSON.stringify([{ src, alt, text?, by?, lang? }])}>
+ *     <li><button data-viewer-open="0">…</button></li>
+ *   </ul>
+ * Clicking a `data-viewer-open` button inside the list opens that list's photos
+ * at that index. An entry with `text` shows it under the photo, in its own
+ * language (a review's words); otherwise the caption is the photo's `alt`.
+ */
+interface Props {
+  /** Accessible name of the dialog, in the page's language. */
+  label: string;
+  close: string;
+  prev: string;
+  next: string;
+}
+
+const { label, close, prev, next } = Astro.props;
+---
+
+<dialog class="viewer" data-viewer aria-label={label}>
+  <figure class="viewer__frame">
+    <img class="viewer__img" data-viewer-img alt="" />
+    <figcaption class="viewer__caption">
+      <span class="viewer__text" data-viewer-caption></span>
+      <span class="viewer__by" data-viewer-by hidden></span>
+      <span class="viewer__count" data-viewer-count></span>
+    </figcaption>
+  </figure>
+  <button type="button" class="viewer__btn viewer__close" data-viewer-close aria-label={close}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+  </button>
+  <button type="button" class="viewer__btn viewer__prev" data-viewer-step="-1" aria-label={prev}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+  </button>
+  <button type="button" class="viewer__btn viewer__next" data-viewer-step="1" aria-label={next}>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg>
+  </button>
+</dialog>
+
+<style>
+  .viewer {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: clamp(3.5rem, 7vw, 5rem) clamp(0.75rem, 7vw, 6rem) clamp(1.5rem, 4vw, 3rem);
+    border: 0;
+    background: transparent;
+    color: #f6f1e7;
+    overscroll-behavior: contain;
+  }
+
+  .viewer[open] {
+    display: grid;
+    place-items: center;
+  }
+
+  .viewer::backdrop {
+    background: rgb(22 19 14 / 0.9);
+    backdrop-filter: blur(3px);
+  }
+
+  .viewer__frame {
+    display: grid;
+    justify-items: center;
+    gap: 0.9rem;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0;
+  }
+
+  .viewer__img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100dvh - 11rem);
+    width: auto;
+    height: auto;
+    padding: clamp(0.4rem, 1.2vw, 0.75rem);
+    background: #fff;
+    box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.6);
+    touch-action: pan-y;
+  }
+
+  .viewer__img.is-in {
+    animation: settle 420ms var(--ease-out);
+  }
+
+  .viewer__caption {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem 1rem;
+    max-width: 40rem;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.05rem;
+    text-align: center;
+  }
+
+  /* A review's words: longer, so they scroll inside their own box. */
+  .viewer--text .viewer__img {
+    max-height: calc(100dvh - 19rem);
+  }
+
+  .viewer--text .viewer__text {
+    flex-basis: 100%;
+    max-height: 7.5rem;
+    overflow-y: auto;
+    font-size: 1rem;
+    line-height: 1.5;
+    text-wrap: pretty;
+    overscroll-behavior: contain;
+  }
+
+  .viewer__by {
+    flex-basis: 100%;
+    font-family: var(--font-body, inherit);
+    font-style: normal;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.8;
+  }
+
+  .viewer__by[hidden] {
+    display: none;
+  }
+
+  .viewer__count {
+    font-family: var(--font-body, inherit);
+    font-style: normal;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    opacity: 0.7;
+  }
+
+  .viewer__btn {
+    position: fixed;
+    display: grid;
+    place-items: center;
+    width: 2.9rem;
+    height: 2.9rem;
+    padding: 0;
+    border: 1px solid rgb(246 241 231 / 0.35);
+    border-radius: 50%;
+    background: rgb(22 19 14 / 0.5);
+    color: inherit;
+    cursor: pointer;
+    transition:
+      background 200ms ease,
+      border-color 200ms ease;
+  }
+
+  .viewer__btn:hover {
+    border-color: rgb(246 241 231 / 0.8);
+    background: rgb(22 19 14 / 0.8);
+  }
+
+  .viewer__btn:focus-visible {
+    outline: 2px solid #f2c66d;
+    outline-offset: 2px;
+  }
+
+  .viewer__btn[hidden] {
+    display: none;
+  }
+
+  .viewer__btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .viewer__close {
+    top: max(0.75rem, env(safe-area-inset-top));
+    right: 0.75rem;
+  }
+
+  .viewer__prev,
+  .viewer__next {
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .viewer__prev {
+    left: 0.75rem;
+  }
+
+  .viewer__next {
+    right: 0.75rem;
+  }
+
+  @media (max-width: 40rem) {
+    .viewer__prev,
+    .viewer__next {
+      top: auto;
+      bottom: max(0.75rem, env(safe-area-inset-bottom));
+      transform: none;
+    }
+
+    .viewer__img {
+      max-height: calc(100dvh - 12rem);
+    }
+
+    .viewer--text .viewer__img {
+      max-height: calc(100dvh - 21rem);
+    }
+  }
+
+  @keyframes settle {
+    from {
+      opacity: 0;
+      transform: scale(0.97) rotate(-1deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .viewer__img.is-in {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  type Photo = { src: string; alt: string; text?: string; by?: string; lang?: string };
+  const viewer = document.querySelector<HTMLDialogElement>('[data-viewer]');
+  if (viewer) {
+    const img = viewer.querySelector<HTMLImageElement>('[data-viewer-img]')!;
+    const caption = viewer.querySelector<HTMLElement>('[data-viewer-caption]')!;
+    const by = viewer.querySelector<HTMLElement>('[data-viewer-by]')!;
+    const count = viewer.querySelector<HTMLElement>('[data-viewer-count]')!;
+    const steps = [...viewer.querySelectorAll<HTMLButtonElement>('[data-viewer-step]')];
+    let photos: Photo[] = [];
+    let at = 0;
+    let opener: HTMLElement | null = null;
+
+    const show = (index: number) => {
+      at = (index + photos.length) % photos.length;
+      const photo = photos[at]!;
+      img.classList.remove('is-in');
+      img.src = photo.src;
+      img.alt = photo.alt;
+      void img.offsetWidth;
+      img.classList.add('is-in');
+      caption.textContent = photo.text || photo.alt;
+      // the words are in the language they were written in
+      if (photo.text && photo.lang) caption.lang = photo.lang;
+      else caption.removeAttribute('lang');
+      by.textContent = photo.by ?? '';
+      by.hidden = !photo.text || !photo.by;
+      viewer.classList.toggle('viewer--text', Boolean(photo.text));
+      count.textContent = photos.length > 1 ? `${at + 1} / ${photos.length}` : '';
+      for (const step of steps) step.hidden = photos.length < 2;
+      // the next one is ready before it is asked for
+      if (photos.length > 1) new Image().src = photos[(at + 1) % photos.length]!.src;
+    };
+
+    document.querySelectorAll<HTMLElement>('[data-viewer-list]').forEach((list) => {
+      list.addEventListener('click', (event) => {
+        const button = (event.target as Element).closest<HTMLButtonElement>('[data-viewer-open]');
+        if (!button || !list.contains(button)) return;
+        try {
+          photos = JSON.parse(list.dataset.viewerList ?? '[]') as Photo[];
+        } catch {
+          photos = [];
+        }
+        if (photos.length === 0) return;
+        opener = button;
+        show(Number(button.dataset.viewerOpen) || 0);
+        viewer.showModal();
+      });
+    });
+
+    for (const step of steps) step.addEventListener('click', () => show(at + Number(step.dataset.viewerStep)));
+    viewer.querySelector('[data-viewer-close]')!.addEventListener('click', () => viewer.close());
+    // a click on the dark around the photo closes it
+    viewer.addEventListener('click', (event) => {
+      if (event.target === viewer) viewer.close();
+    });
+    viewer.addEventListener('keydown', (event) => {
+      if (photos.length < 2) return;
+      if (event.key === 'ArrowRight') show(at + 1);
+      if (event.key === 'ArrowLeft') show(at - 1);
+    });
+    viewer.addEventListener('close', () => {
+      img.removeAttribute('src');
+      opener?.focus();
+    });
+
+    let startX: number | null = null;
+    img.addEventListener('pointerdown', (event) => {
+      startX = event.clientX;
+    });
+    img.addEventListener('pointerup', (event) => {
+      if (startX === null || photos.length < 2) return;
+      const dx = event.clientX - startX;
+      startX = null;
+      if (Math.abs(dx) > 40) show(at + (dx < 0 ? 1 : -1));
+    });
+  }
+</script>

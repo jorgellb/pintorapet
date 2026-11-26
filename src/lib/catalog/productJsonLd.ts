@@ -1,3 +1,4 @@
+import { roundTenth, type PublicReview } from '@/lib/domain/reviews';
 import type { ProductPublic } from '@/lib/domain/types';
 
 /**
@@ -10,8 +11,14 @@ export function productJsonLd(input: {
   selected: ProductPublic;
   url: string;
   breadcrumbs: Array<{ name: string; url: string }>;
+  /**
+   * The structured-data subset of the product's reviews (published, verified,
+   * with stars: `productReviews().jsonLd`). `average` and `count` cover all of
+   * them; `items` are the few that are listed.
+   */
+  reviews?: { average: number | null; count: number; items: PublicReview[] };
 }): object[] {
-  const { product, selected, url, breadcrumbs } = input;
+  const { product, selected, url, breadcrumbs, reviews } = input;
   const onSale = selected.saleEnabled && selected.availability === 'available';
   const images = (product.imageUrls.length ? product.imageUrls : [product.coverImageUrl]).filter(Boolean);
   const out: object[] = [
@@ -33,6 +40,25 @@ export function productJsonLd(input: {
       },
     },
   ];
+  if (reviews && reviews.count > 0 && reviews.average !== null) {
+    Object.assign(out[0]!, {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: roundTenth(reviews.average),
+        reviewCount: reviews.count,
+        bestRating: 5,
+      },
+      review: reviews.items
+        .filter((r) => r.rating !== null)
+        .map((r) => ({
+          '@type': 'Review',
+          author: { '@type': 'Person', name: r.authorName },
+          reviewRating: { '@type': 'Rating', ratingValue: r.rating, bestRating: 5 },
+          reviewBody: r.body,
+          datePublished: new Date(r.publishedAt).toISOString(),
+        })),
+    });
+  }
   if (breadcrumbs.length) {
     out.push({
       '@context': 'https://schema.org',

@@ -10,6 +10,7 @@ import { marketDates } from '@/lib/domain/markets';
 import { trackingUrl } from '@/lib/server/shipping/correos';
 import { carrierRow, ON_ITS_WAY } from '@/lib/server/shipping/admin';
 import { loadShippingSettings } from '@/lib/server/shipping/correos';
+import { reviewEligible, reviewUrl } from '@/lib/server/reviews/link';
 
 export const prerender = false;
 
@@ -170,6 +171,16 @@ const trackLink =
 const carriers = ['Correos', 'Correos Express', 'SEUR', 'MRW', 'GLS', 'DHL', 'UPS', 'Otro'];
 const fulfillmentSteps = ['unfulfilled', 'preparing', 'shipped', 'in_transit', 'out_for_delivery', 'completed', 'incident', 'returned'];
 
+// ——— The customer's personal link to review the order (Opiniones) ———
+let reviewLink: string | null = null;
+if (reviewEligible(order)) {
+  try {
+    reviewLink = reviewUrl({ id: order.id, reference: order.reference, locale: order.locale === 'en' ? 'en' : 'es' });
+  } catch {
+    // No secret to sign it with: no link, and the rest of the page still works.
+  }
+}
+
 // ——— Unpaid orders: cancel / delete; any order: archive ———
 const awaitingTransfer = order.payment_status === 'awaiting_transfer';
 const unpaidOrder =
@@ -277,6 +288,19 @@ const carrierName = (value: string | null) =>
           </button>
         )}
       </div>
+      {
+        reviewLink && (
+          <div class="review-link" data-review-link={reviewLink}>
+            <button type="button" class="btn--quiet" data-copy-review-link>
+              Copiar enlace de opinión
+            </button>
+            <div class="review-link__fallback" data-review-link-fallback hidden>
+              <label for="review-link-field" class="muted line">No se pudo copiar solo: selecciónalo y cópialo.</label>
+              <input id="review-link-field" type="text" readonly value={reviewLink} data-review-link-field />
+            </div>
+          </div>
+        )
+      }
       <p class="status" data-order-status role="status" hidden></p>
     </div>
   </header>
@@ -1058,6 +1082,27 @@ const carrierName = (value: string | null) =>
     gap: 0.5rem;
   }
 
+  .review-link {
+    display: grid;
+    justify-items: end;
+    gap: 0.4rem;
+  }
+
+  .review-link__fallback {
+    display: grid;
+    gap: 0.25rem;
+    width: min(100%, 26rem);
+  }
+
+  .review-link__fallback[hidden] {
+    display: none;
+  }
+
+  .review-link__fallback input {
+    width: 100%;
+    font-size: 0.85rem;
+  }
+
   .proofs {
     display: flex;
     flex-wrap: wrap;
@@ -1170,6 +1215,27 @@ const carrierName = (value: string | null) =>
 </style>
 
 <script>
+  // ——— Copy the customer's review link ———
+  const reviewBox = document.querySelector<HTMLElement>('[data-review-link]');
+  reviewBox?.querySelector<HTMLButtonElement>('[data-copy-review-link]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const link = reviewBox.dataset.reviewLink ?? '';
+    const fallback = reviewBox.querySelector<HTMLElement>('[data-review-link-fallback]');
+    const field = reviewBox.querySelector<HTMLInputElement>('[data-review-link-field]');
+    const idle = button.textContent;
+    try {
+      await navigator.clipboard.writeText(link);
+      button.textContent = 'Enlace copiado';
+      if (fallback) fallback.hidden = true;
+      setTimeout(() => (button.textContent = idle), 2500);
+    } catch {
+      // No clipboard (an insecure page, a refused permission): show it, selected, to copy by hand.
+      if (fallback) fallback.hidden = false;
+      field?.focus();
+      field?.select();
+    }
+  });
+
   document.querySelector<HTMLButtonElement>('[data-issue-invoice]')?.addEventListener('click', async (event) => {
     const button = event.currentTarget as HTMLButtonElement;
     const status = document.querySelector<HTMLElement>('[data-invoice-status]');

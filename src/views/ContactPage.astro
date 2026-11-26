@@ -2,9 +2,11 @@
 import '@/styles/paper-forms.css';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import AntiBot from '@/components/AntiBot.astro';
-import { t, type Locale } from '@/i18n';
+import PhotoViewer from '@/components/PhotoViewer.astro';
+import ReviewList from '@/components/reviews/ReviewList.astro';
+import { t, fill, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
-import { getFeedbackImages } from '@/lib/content/siteExtras';
+import { allReviews } from '@/lib/server/reviews/store';
 import { WHATSAPP_URL } from '@/lib/domain/whatsapp';
 
 interface Props {
@@ -13,7 +15,12 @@ interface Props {
 
 const { locale } = Astro.props;
 const dict = t(locale);
-const feedbacks = (await getFeedbackImages()).filter((item) => item.publicUrl);
+
+// «Palabras amables»: every published review, twelve to a page (?p=2).
+const wanted = Math.floor(Number(Astro.url.searchParams.get('p'))) || 1;
+const { reviews, pages } = await allReviews(wanted);
+const page = Math.min(Math.max(1, wanted), pages);
+const pageHref = (n: number) => `${localizedPath(locale, 'contact')}${n > 1 ? `?p=${n}` : ''}#opiniones`;
 
 // Set by /api/contact when the form was posted without JavaScript.
 const sent = Astro.url.searchParams.get('sent') === '1';
@@ -165,31 +172,42 @@ const channels = [
   </section>
 
   {
-    feedbacks.length > 0 && (
-      <section class="section feedbacks" aria-labelledby="feedbacks-title">
+    reviews.length > 0 && (
+      <section id="opiniones" class="section kind" aria-labelledby="kind-title">
         <div class="site-shell">
-          <header class="feedbacks__head">
-            <h2 id="feedbacks-title" class="display h2-display">
+          <header class="kind__head">
+            <h2 id="kind-title" class="display h2-display">
               {dict.contact.feedbacks}
             </h2>
             <p class="muted">{dict.contact.feedbacksLead}</p>
           </header>
-          <ul class="feedback-grid">
-            {feedbacks.map((item, index) => (
-              <li style={`--i:${index}`}>
-                <a href={item.publicUrl!} target="_blank" rel="noopener noreferrer">
-                  <img
-                    src={item.publicUrl!}
-                    alt={`${dict.contact.feedbackAlt} ${index + 1}`}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                  <span class="visually-hidden">{dict.contact.openFeedback}</span>
+          <ReviewList reviews={reviews} locale={locale} layout="pinned" />
+          {pages > 1 && (
+            <nav class="kind__pages" aria-label={dict.reviews.pages}>
+              {page > 1 ? (
+                <a class="text-link" href={pageHref(page - 1)} rel="prev">
+                  <span aria-hidden="true">←</span> {dict.reviews.prevPage}
                 </a>
-              </li>
-            ))}
-          </ul>
+              ) : (
+                <span></span>
+              )}
+              <span class="kind__page">{fill(dict.reviews.pageOf, { n: page, total: pages })}</span>
+              {page < pages ? (
+                <a class="text-link" href={pageHref(page + 1)} rel="next">
+                  {dict.reviews.nextPage} <span aria-hidden="true">→</span>
+                </a>
+              ) : (
+                <span></span>
+              )}
+            </nav>
+          )}
         </div>
+        <PhotoViewer
+          label={dict.reviews.viewerLabel}
+          close={dict.reviews.close}
+          prev={dict.reviews.prev}
+          next={dict.reviews.next}
+        />
       </section>
     )
   }
@@ -296,102 +314,35 @@ const channels = [
   }
 
   /* ——— Kind words, pinned to the wall ——— */
-  .feedbacks {
+  .kind {
     border-top: 1px solid var(--line);
   }
 
-  .feedbacks__head {
+  .kind__head {
     max-width: 36rem;
     margin-bottom: clamp(2.5rem, 5vw, 4rem);
   }
 
-  .feedbacks__head p {
+  .kind__head p {
     margin: 0;
     font-size: 1.08rem;
   }
 
-  .feedback-grid {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 2.5rem;
-    justify-items: center;
+  .kind__pages {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    margin-top: clamp(3rem, 6vw, 5rem);
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
   }
 
-  .feedback-grid li {
-    --r: -1.6deg;
-    position: relative;
-    width: min(100%, 21rem);
-    rotate: var(--r);
-    transition: rotate 500ms var(--ease-out), translate 500ms var(--ease-out);
-  }
-
-  .feedback-grid li:nth-child(3n + 2) {
-    --r: 1.3deg;
-  }
-
-  .feedback-grid li:nth-child(3n) {
-    --r: -0.8deg;
-  }
-
-  .feedback-grid li::before {
-    content: '';
-    position: absolute;
-    z-index: 1;
-    top: -0.65rem;
-    left: 50%;
-    width: 42%;
-    height: 1.3rem;
-    translate: -50% 0;
-    rotate: 3deg;
-    background: rgb(214 220 232 / 0.78);
-    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
-    pointer-events: none;
-  }
-
-  .feedback-grid li:hover {
-    rotate: 0deg;
-    translate: 0 -6px;
-  }
-
-  .feedback-grid a {
-    display: block;
-    background: var(--sheet);
-    padding: 0.55rem;
-    box-shadow: var(--shadow-art);
-  }
-
-  .feedback-grid img {
-    width: 100%;
-    height: auto;
-    box-shadow: none;
-    border-radius: 0;
-  }
-
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-
-  @media (min-width: 48rem) {
-    .feedback-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      align-items: start;
-      gap: clamp(1.5rem, 3vw, 3rem);
-    }
-
-    .feedback-grid li:nth-child(3n + 2) {
-      margin-top: 3rem;
-    }
-
-    .feedback-grid li:nth-child(3n) {
-      margin-top: 1.25rem;
-    }
+  .kind__page {
+    font-size: 0.8rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
 
   @media (min-width: 64rem) {
@@ -407,12 +358,6 @@ const channels = [
 
     .contact__aside {
       padding-top: 1rem;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .feedback-grid li:hover {
-      translate: none;
     }
   }
 </style>

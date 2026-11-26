@@ -2,6 +2,7 @@ import { db, insertValues, json, sql, type Db } from '@/lib/server/db';
 import { CommerceError } from '@/lib/server/commerce/errors';
 import { sendOrderEmails } from '@/lib/server/commerce/outbox';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
+import { reviewEligible, reviewUrl } from '@/lib/server/reviews/link';
 import {
   cancelShipment,
   clearCorreosConfigCache,
@@ -98,6 +99,7 @@ type OrderForShipment = {
   reference: string;
   locale: 'en' | 'es';
   payment_status: string;
+  paid_at: string | null;
   fulfillment_status: string;
   customer_email: string | null;
   customer_name: string | null;
@@ -114,7 +116,7 @@ type OrderForShipment = {
 
 async function paidOrder(client: Db, id: string): Promise<OrderForShipment> {
   const order = await dbCall(() => client.one<OrderForShipment>`
-    select id, reference, locale, payment_status, fulfillment_status, customer_email, customer_name, subtotal_cents,
+    select id, reference, locale, payment_status, paid_at, fulfillment_status, customer_email, customer_name, subtotal_cents,
            shipping_address, shipping_country, shipping_weight_grams, shipping_zone_id, carrier, carrier_shipment_code,
            tracking_code
     from public.orders where id = ${id}`);
@@ -287,12 +289,21 @@ export async function markShipped(
 
   if (input.notify && order.customer_email) {
     const service = db();
+    // Only while the order can still be reviewed (paid within 120 days). The link must never
+    // cost the customer the shipped notice (e.g. no signing secret set): send it without.
+    let reviewLink: string | null = null;
+    try {
+      reviewLink = reviewEligible(order) ? reviewUrl(order) : null;
+    } catch (err) {
+      console.error('[reviews] no review link in the shipped email', id, err instanceof Error ? err.message : err);
+    }
     const payload = {
       order_id: id,
       reference: order.reference,
       carrier: input.carrier,
       tracking_code: input.trackingCode,
       tracking_url: input.carrier === 'correos' ? trackingUrl(input.trackingCode, order.locale) : null,
+      review_url: reviewLink,
     };
     await service.run`
       insert into public.notification_outbox ${insertValues({

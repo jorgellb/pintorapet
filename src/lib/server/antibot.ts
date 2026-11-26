@@ -29,7 +29,7 @@ import { serviceDb } from '@/lib/server/db';
  * Bots that fail get the same answer as a person, so they learn nothing.
  */
 
-export type AntibotForm = 'register' | 'sign_in' | 'forgot' | 'contact' | 'commission';
+export type AntibotForm = 'register' | 'sign_in' | 'forgot' | 'contact' | 'commission' | 'review';
 export type Verdict = { verdict: 'allow' | 'block' | 'rate'; score: number; reasons: string[] };
 
 /** Field names the gate adds to a form; strip them before validating the rest. */
@@ -42,6 +42,20 @@ const FORMS: Record<AntibotForm, { minMs: number; expectTyping: boolean }> = {
   forgot: { minMs: 1500, expectTyping: false },
   contact: { minMs: 5000, expectTyping: true },
   commission: { minMs: 6000, expectTyping: true },
+  review: { minMs: 5000, expectTyping: true },
+};
+
+/**
+ * The form name the database knows. Reviews share the contact form's limits
+ * (and its counters), so the gate needs no new migration.
+ */
+const GATE_FORM: Record<AntibotForm, string> = {
+  register: 'register',
+  sign_in: 'sign_in',
+  forgot: 'forgot',
+  contact: 'contact',
+  commission: 'commission',
+  review: 'contact',
 };
 
 const MAX_AGE_MS = 3 * 60 * 60 * 1000;
@@ -232,7 +246,7 @@ export async function inspect(submission: Submission): Promise<Verdict> {
   try {
     data = await service.one`
       select public.antibot_gate(
-        p_form => ${form}, p_ip_hash => ${ipHash},
+        p_form => ${GATE_FORM[form]}, p_ip_hash => ${ipHash},
         p_email_hash => ${email ? hashOf('email', canonicalEmail(email)) : null},
         p_email_hint => ${email ? maskEmail(email) : null}, p_nonce => ${nonce}, p_verdict => ${local.verdict},
         p_score => ${score}, p_reasons => ${local.reasons}::text[]) as result`.then((row) => row?.result);

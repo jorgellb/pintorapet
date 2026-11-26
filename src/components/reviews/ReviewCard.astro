@@ -1,0 +1,509 @@
+---
+import Stars from '@/components/reviews/Stars.astro';
+import { t, fill, type Locale } from '@/i18n';
+import { sizedImage } from '@/lib/catalog/imageSize';
+import { reviewExcerpt, type PublicReview } from '@/lib/domain/reviews';
+
+interface Props {
+  review: PublicReview;
+  /** The page's language: the labels around the review. The review keeps its own. */
+  locale: Locale;
+  /**
+   * feature: the portrait at home, large, framed like a print on the wall.
+   * print:   the same, smaller (a grid of prints).
+   * row:     a line of a list, with small photos (the product page).
+   */
+  variant?: 'feature' | 'print' | 'row';
+  /** Long reviews with a photo show their first words and «Leer más» opens the rest in the viewer. */
+  excerpt?: boolean;
+  /** Pinned to the wall with tape and a slight tilt (Contacto). */
+  pinned?: boolean;
+  /** Where in the list this card is: it sets the tilt. */
+  index?: number;
+}
+
+const { review, locale, variant = 'print', excerpt = false, pinned = false, index = 0 } = Astro.props;
+const copy = t(locale).reviews;
+const photos = review.photos;
+const hasPhoto = photos.length > 0;
+const name = review.authorName;
+
+const cut = excerpt && hasPhoto ? reviewExcerpt(review.body) : { text: review.body.trim(), cut: false };
+const by = [review.authorName, review.city, review.petName].filter(Boolean).join(' · ');
+const viewerList = JSON.stringify(
+  photos.map((photo) => ({ src: sizedImage(photo.url, 1600), alt: photo.alt, text: review.body, by, lang: review.locale })),
+);
+const tilts = [-1.6, 1.2, -0.8, 1.7, -1.1, 0.9];
+const tilt = variant === 'feature' ? -0.6 : tilts[index % tilts.length]!;
+const more = photos.length - 1;
+const dateText = new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-GB', { month: 'long', year: 'numeric' }).format(new Date(review.publishedAt));
+const date = dateText.charAt(0).toLocaleUpperCase(locale) + dateText.slice(1);
+const sizes = variant === 'feature' ? '(min-width: 48rem) 58vw, 92vw' : '(min-width: 64rem) 28vw, (min-width: 40rem) 45vw, 88vw';
+const widths = variant === 'feature' ? [800, 1200, 1600] : [480, 720, 960];
+---
+
+<article
+  class={`review review--${variant}${hasPhoto ? ' has-photo' : ''}${pinned ? ' is-pinned' : ''}`}
+  lang={review.locale}
+  style={`--r:${tilt}deg`}
+  data-review
+  data-viewer-list={hasPhoto ? viewerList : undefined}
+>
+  {
+    hasPhoto && variant !== 'row' && (
+      <figure class="review__print">
+        <div class="review__frame">
+          <button
+            type="button"
+            class="review__open"
+            data-viewer-open="0"
+            lang={locale}
+            aria-label={more > 0 ? fill(copy.enlargeMany, { n: photos.length, name }) : fill(copy.enlarge, { name })}
+          >
+            <img
+              src={sizedImage(photos[0]!.url, widths[1]!)!}
+              srcset={widths.map((w) => `${sizedImage(photos[0]!.url, w)} ${w}w`).join(', ')}
+              sizes={sizes}
+              alt={photos[0]!.alt}
+              width={variant === 'feature' ? 1200 : 720}
+              height={variant === 'feature' ? 960 : 900}
+              loading="lazy"
+              decoding="async"
+            />
+            {more > 0 && (
+              <span class="review__count" aria-hidden="true" data-more={`+${more}`}></span>
+            )}
+          </button>
+        </div>
+        <figcaption class="review__plaque">
+          {review.petName && <span class="review__pet">{review.petName}</span>}
+          <span class="review__home" lang={locale}>
+            {fill(copy.plaqueHome, { name })}
+          </span>
+        </figcaption>
+      </figure>
+    )
+  }
+
+  <div class="review__body">
+    <p class="review__meta">
+      {review.rating !== null && <Stars rating={review.rating} locale={locale} size={variant === 'feature' ? 1.15 : 1} />}
+      {
+        review.verified && (
+          <span class="review__chip" lang={locale}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"></path></svg>
+            {copy.verified}
+          </span>
+        )
+      }
+      {variant === 'row' && <time class="review__date" datetime={review.publishedAt} lang={locale}>{date}</time>}
+    </p>
+
+    <blockquote class="review__quote">
+      <p>{cut.text}</p>
+    </blockquote>
+    {
+      cut.cut && (
+        <button
+          type="button"
+          class="review__read"
+          data-viewer-open="0"
+          lang={locale}
+          aria-label={fill(copy.readMoreOf, { name })}
+        >
+          {copy.readMore}
+        </button>
+      )
+    }
+
+    <p class="review__by">
+      <cite>{review.authorName}</cite>
+      {review.city && <span>{review.city}</span>}
+      {(variant === 'row' || !hasPhoto) && review.petName && <span>{review.petName}</span>}
+    </p>
+
+    {
+      hasPhoto && variant === 'row' && (
+        <ul class="review__thumbs">
+          {photos.map((photo, i) => (
+            <li style={`--t:${[-2, 1.5, -1][i % 3]}deg`}>
+              <button
+                type="button"
+                data-viewer-open={i}
+                lang={locale}
+                aria-label={fill(copy.enlarge, { name })}
+              >
+                <img
+                  src={sizedImage(photo.url, 320)!}
+                  srcset={`${sizedImage(photo.url, 240)} 240w, ${sizedImage(photo.url, 480)} 480w`}
+                  sizes="6rem"
+                  alt={photo.alt}
+                  width="240"
+                  height="240"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+</article>
+
+<style>
+  .review {
+    position: relative;
+    display: grid;
+    gap: 1.25rem;
+    align-content: start;
+    min-width: 0;
+  }
+
+  /* ——— The portrait, hung on the wall: a mat, a thin frame, a label beneath ——— */
+  .review__print {
+    position: relative;
+    margin: 0;
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .review__frame {
+    position: relative;
+    padding: clamp(0.5rem, 1.4vw, 0.85rem);
+    background: var(--sheet);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-art);
+    rotate: var(--r);
+    transition:
+      rotate 500ms var(--ease-out),
+      translate 500ms var(--ease-out);
+  }
+
+  .review:hover .review__frame,
+  .review:focus-within .review__frame {
+    rotate: 0deg;
+    translate: 0 -4px;
+  }
+
+  .review__open {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: var(--paper-deep);
+    cursor: zoom-in;
+  }
+
+  .review__open:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .review__open img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px rgb(22 23 26 / 0.08);
+  }
+
+  .review__count::after {
+    content: attr(data-more);
+  }
+
+  .review__count {
+    position: absolute;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    padding: 0.2rem 0.6rem;
+    background: rgb(22 23 26 / 0.78);
+    color: #fff;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+  }
+
+  /* The label stays straight even though the print hangs a little askew. */
+  .review__plaque {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.15rem 0.7rem;
+    text-align: center;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .review__pet {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 1.05rem;
+    letter-spacing: -0.01em;
+    text-transform: none;
+    color: var(--ink);
+  }
+
+  /* ——— Words ——— */
+  .review__body {
+    display: grid;
+    gap: 0.85rem;
+    align-content: start;
+    min-width: 0;
+  }
+
+  .review__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.9rem;
+    margin: 0;
+    min-height: 1.1rem;
+  }
+
+  .review__meta:empty {
+    display: none;
+  }
+
+  .review__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.18rem 0.6rem 0.18rem 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+    border-radius: 999px;
+    color: var(--success);
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1.3;
+  }
+
+  .review__chip svg {
+    width: 0.8rem;
+    height: 0.8rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .review__date {
+    margin-left: auto;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .review__quote {
+    position: relative;
+    margin: 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(1.1rem, 1.5vw, 1.25rem);
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+
+  .review__quote p {
+    margin: 0;
+    white-space: pre-line;
+  }
+
+  .review__quote p::before {
+    content: open-quote;
+    content: open-quote / '';
+    margin-right: 0.12em;
+    color: var(--accent);
+    opacity: 0.6;
+  }
+
+  .review__quote p::after {
+    content: close-quote;
+    content: close-quote / '';
+    margin-left: 0.08em;
+    color: var(--accent);
+    opacity: 0.6;
+  }
+
+  .review__read {
+    justify-self: start;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-strong);
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: 0.92rem;
+    cursor: pointer;
+    transition: border-color var(--dur-ui) var(--ease-soft);
+  }
+
+  .review__read:hover {
+    border-bottom-color: var(--ink);
+  }
+
+  .review__read:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .review__by {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.1rem 0.6rem;
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .review__by cite {
+    font-style: normal;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .review__by span + span::before,
+  .review__by cite + span::before {
+    content: '·';
+    margin-right: 0.6rem;
+  }
+
+  /* ——— Feature: the first one, large ——— */
+  .review--feature .review__quote {
+    font-size: clamp(1.3rem, 2.4vw, 1.9rem);
+    line-height: 1.35;
+  }
+
+  .review--feature .review__open img {
+    aspect-ratio: 5 / 4;
+  }
+
+  @media (min-width: 48rem) {
+    .review--feature {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+      align-items: center;
+      gap: clamp(2rem, 5vw, 5rem);
+    }
+
+    .review--feature:not(.has-photo) {
+      grid-template-columns: minmax(0, 1fr);
+      max-width: 44rem;
+    }
+  }
+
+  /* ——— Pinned: taped to the wall (Contacto) ——— */
+  .is-pinned .review__frame::before,
+  .is-pinned:not(.has-photo)::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: -0.65rem;
+    left: 50%;
+    width: 42%;
+    height: 1.3rem;
+    translate: -50% 0;
+    rotate: 3deg;
+    background: rgb(214 220 232 / 0.78);
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.08);
+    pointer-events: none;
+  }
+
+  /* No photo: the words themselves are the paper slip. */
+  .review--print:not(.has-photo),
+  .review--feature:not(.has-photo) {
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+    background: var(--sheet);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-art);
+    rotate: var(--r);
+    transition:
+      rotate 500ms var(--ease-out),
+      translate 500ms var(--ease-out);
+  }
+
+  .review--print:not(.has-photo):hover {
+    rotate: 0deg;
+    translate: 0 -4px;
+  }
+
+  /* ——— Row: a line of the product page's list ——— */
+  .review--row {
+    gap: 0.8rem;
+    padding-block: clamp(1.25rem, 2.5vw, 1.75rem);
+    border-top: 1px solid var(--line);
+  }
+
+  .review--row .review__quote {
+    font-size: 1.1rem;
+  }
+
+  .review__thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    list-style: none;
+    margin: 0.25rem 0 0;
+    padding: 0;
+  }
+
+  .review__thumbs li {
+    rotate: var(--t);
+    transition: rotate 400ms var(--ease-out);
+  }
+
+  .review__thumbs li:hover,
+  .review__thumbs li:focus-within {
+    rotate: 0deg;
+  }
+
+  .review__thumbs button {
+    display: block;
+    width: 5.25rem;
+    padding: 0.3rem;
+    border: 1px solid var(--line);
+    background: var(--sheet);
+    box-shadow: 0 6px 14px -8px rgb(22 23 26 / 0.3);
+    cursor: zoom-in;
+  }
+
+  .review__thumbs button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .review__thumbs img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    object-fit: cover;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .review__frame,
+    .review--print:not(.has-photo),
+    .review--feature:not(.has-photo),
+    .review__thumbs li {
+      transition: none;
+    }
+
+    .review:hover .review__frame,
+    .review:focus-within .review__frame,
+    .review--print:not(.has-photo):hover {
+      translate: none;
+    }
+  }
+</style>
