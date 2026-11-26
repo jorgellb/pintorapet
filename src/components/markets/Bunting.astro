@@ -1,0 +1,70 @@
+---
+/** A garland of little flags across the top of a market card, swaying in the breeze. */
+interface Props {
+  class?: string;
+  flags?: number;
+}
+
+const { class: className, flags = 15 } = Astro.props;
+const colors = ['#dcc39b', '#3f4f73', '#ffffff', '#eceff5'];
+const width = 600;
+const items = Array.from({ length: flags }, (_, i) => {
+  const x = ((i + 0.5) / flags) * width;
+  const t = x / width;
+  const y = 6 + 40 * t * (1 - t);
+  return { x, y, color: colors[i % colors.length]! };
+});
+---
+
+<svg class:list={['bunting', className]} viewBox={`0 0 ${width} 48`} preserveAspectRatio="none" aria-hidden="true">
+  <path class="bunting__string" d={`M0 6 Q${width / 2} 46 ${width} 6`} />
+  {
+    items.map((f, i) => (
+      <path
+        class="bunting__flag"
+        style={`--i:${i}; transform-origin:${f.x}px ${f.y}px`}
+        d={`M${f.x - 13} ${f.y} L${f.x + 13} ${f.y} L${f.x} ${f.y + 24} Z`}
+        fill={f.color}
+      />
+    ))
+  }
+</svg>
+
+<style>
+  .bunting {
+    display: block;
+    width: 100%;
+    height: clamp(2.2rem, 4vw, 3rem);
+    overflow: visible;
+  }
+
+  .bunting__string {
+    fill: none;
+    stroke: #8d7a5c;
+    stroke-width: 1.2;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .bunting__flag {
+    stroke: rgb(22 23 26 / 0.35);
+    stroke-width: 0.8;
+    vector-effect: non-scaling-stroke;
+    animation: sway 4.5s ease-in-out calc(var(--i) * -0.37s) infinite;
+  }
+
+  @keyframes sway {
+    0%,
+    100% {
+      transform: rotate(-4deg);
+    }
+    50% {
+      transform: rotate(5deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bunting__flag {
+      animation: none;
+    }
+  }
+</style>

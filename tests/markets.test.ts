@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fakeDb } from './helpers/fakeDb';
 import { marketDates, marketState, upcoming, type Market } from '../src/lib/domain/markets';
 import { marketSaleSchema, sellAtStall } from '../src/lib/server/commerce/marketSales';
-import { changeFor } from '../src/lib/domain/markets';
+import { changeFor, countdown } from '../src/lib/domain/markets';
 import { CommerceError } from '../src/lib/server/commerce/errors';
 
 const market = (startsOn: string, endsOn: string): Market => ({
@@ -61,5 +61,21 @@ describe('sellAtStall', () => {
     const { db } = fakeDb({ answer: () => ({ error: { message: 'INSUFFICIENT_STOCK: PD-2051' } }) });
     const error = (await sellAtStall(db, input).catch((err: unknown) => err)) as CommerceError;
     expect(error.message).toBe('No queda stock de PD-2051: ya se vendió (en la web o en el puesto).');
+  });
+});
+
+
+describe('countdown', () => {
+  const m = market('2026-12-12', '2026-12-14');
+  it('counts the days to the market', () => {
+    expect(countdown(m, '2026-11-26', 'es')).toBe('Faltan 16 días');
+    expect(countdown(m, '2026-12-11', 'es')).toBe('Mañana');
+    expect(countdown(m, '2026-11-26', 'en')).toBe('In 16 days');
+    expect(countdown(m, '2026-12-11', 'en')).toBe('Tomorrow');
+  });
+
+  it('says when Meili is there now, with the hours', () => {
+    expect(countdown(m, '2026-12-13', 'es')).toBe('Hoy · 10:00–21:00');
+    expect(countdown({ ...m, hours: '' }, '2026-12-13', 'en')).toBe('Today');
   });
 });

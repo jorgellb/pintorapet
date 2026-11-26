@@ -54,3 +54,15 @@ export function changeFor(totalCents: number, given: string): number | null {
   const cents = Math.round(Number(raw) * 100);
   return cents >= totalCents ? cents - totalCents : null;
 }
+
+/** "Faltan 16 días", "Mañana", "Hoy · 10:00–21:00": how far the market is. */
+export function countdown(market: Pick<Market, 'startsOn' | 'endsOn' | 'hours'>, today: string, locale: Locale): string {
+  const es = locale === 'es';
+  if (marketState(market, today) === 'now') {
+    const word = es ? 'Hoy' : 'Today';
+    return market.hours ? `${word} · ${market.hours}` : word;
+  }
+  const days = Math.round((Date.parse(`${market.startsOn}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+  if (days <= 1) return es ? 'Mañana' : 'Tomorrow';
+  return es ? `Faltan ${days} días` : `In ${days} days`;
+}

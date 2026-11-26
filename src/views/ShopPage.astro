@@ -8,8 +8,7 @@ import StallItem from '@/components/shop/StallItem.astro';
 import TypeIcon from '@/components/shop/TypeIcon.astro';
 import { loadProductTypes } from '@/lib/catalog/productTypes';
 import { publicMarkets } from '@/lib/server/markets';
-import { marketDates, marketState } from '@/lib/domain/markets';
-import { madridDay } from '@/lib/domain/holidays';
+import NextMarket from '@/components/markets/NextMarket.astro';
 
 interface Props {
   locale: Locale;
@@ -26,7 +25,6 @@ const [catalog, collections, types, markets] = await Promise.all([
 ]);
 // The next market on the calendar (or today's), under the stall's title.
 const nextMarket = markets[0] ?? null;
-const marketToday = nextMarket ? marketState(nextMarket, madridDay()) === 'now' : false;
 const { source } = catalog;
 // Types (Admin › Tienda › Tipos de producto): a hidden type takes its pieces out of the shop list.
 const typeOf = new Map(types.map((type) => [type.code, type]));
@@ -95,20 +93,14 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
           ? 'Tarjetas, posavasos y tazas con sus retratos a lápiz, las mismas piezas que lleva a los mercados.'
           : 'Cards, coasters and mugs printed with her pencil portraits, the same pieces she takes to local markets.'}
       </p>
-      {
-        nextMarket && (
-          <a class="next-market" href={localizedPath(locale, 'markets')}>
-            <span class="next-market__label">
-              {marketToday ? (es ? 'Hoy en el puesto' : 'At the stall today') : es ? 'Próximo mercado' : 'Next market'}
-            </span>
-            <span>
-              {nextMarket.name} · {marketDates(nextMarket, locale)}
-              {nextMarket.city && `, ${nextMarket.city}`}
-            </span>
-          </a>
-        )
-      }
     </div>
+    {
+      nextMarket && (
+        <div class="site-shell">
+          <NextMarket market={nextMarket} locale={locale} more={markets.length - 1} />
+        </div>
+      )
+    }
 
     {
       source === 'empty' && (
@@ -323,32 +315,6 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
 </PublicLayout>
 
 <style>
-  .next-market {
-    grid-column: 1 / -1;
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    width: fit-content;
-    margin-top: 0.5rem;
-    color: var(--ink);
-    text-decoration: none;
-    border-bottom: 1px solid var(--line-strong);
-    padding-bottom: 0.25rem;
-  }
-
-  .next-market:hover {
-    border-color: var(--ink);
-  }
-
-  .next-market__label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--accent);
-  }
-
   /* ——— The awning of her market tent ——— */
   .canopy {
     position: relative;

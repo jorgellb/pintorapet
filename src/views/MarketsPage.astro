@@ -1,9 +1,12 @@
 ---
 import PublicLayout from '@/layouts/PublicLayout.astro';
+import Bunting from '@/components/markets/Bunting.astro';
+import DateTag from '@/components/markets/DateTag.astro';
+import StallSketch from '@/components/markets/StallSketch.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { madridDay } from '@/lib/domain/holidays';
-import { marketDates, marketState } from '@/lib/domain/markets';
+import { countdown, marketDates, marketState } from '@/lib/domain/markets';
 import { jsonLdText } from '@/lib/catalog/productJsonLd';
 import { publicMarkets } from '@/lib/server/markets';
 
@@ -20,11 +23,6 @@ const title = es ? 'Dónde estaré' : 'Where to find me';
 const description = es
   ? 'Los mercados donde Meili pone su puesto de retratos a lápiz, tarjetas, tazas y posavasos: fechas, horarios y lugar.'
   : 'The markets where Meili sets up her stall of pencil portraits, cards, mugs and coasters: dates, hours and place.';
-const month = (iso: string) =>
-  new Intl.DateTimeFormat(es ? 'es-ES' : 'en-GB', { month: 'short', timeZone: 'UTC' })
-    .format(new Date(`${iso}T12:00:00Z`))
-    .replace('.', '');
-const dayOf = (iso: string) => String(Number(iso.slice(8, 10)));
 
 // Google can list each market as an event.
 const origin = Astro.site ?? new URL('https://petsdrawings.com');
@@ -44,69 +42,119 @@ const events = markets.map((m) => ({
   organizer: { '@type': 'Person', name: 'Meili Stringfellow', url: new URL(localizedPath(locale, 'home'), origin).href },
   description: (es ? m.notesEs : m.notesEn) || description,
 }));
+const tilts = [-5, 4, -3, 6, -6, 3];
 ---
 
 <PublicLayout locale={locale} title={title} description={description}>
   {events.length > 0 && <script slot="head" type="application/ld+json" set:html={jsonLdText(events)} />}
 
-  <section class="section markets-page">
-    <div class="site-shell">
-      <header class="head">
+  <Bunting class="page-bunting" flags={22} />
+
+  <section class="hero" aria-labelledby="markets-title">
+    <div class="site-shell hero__grid">
+      <div class="hero__text">
         <p class="eyebrow">{es ? 'Mercados' : 'Markets'}</p>
-        <h1 class="display h1-display">
-          {es ? 'En persona, ' : 'In person, '}<em>{es ? 'en el puesto' : 'at the stall'}</em>
+        <h1 id="markets-title" class="display hero__title">
+          {es ? 'En persona,' : 'In person,'}
+          <em>{es ? 'en el puesto' : 'at the stall'}</em>
         </h1>
-        <p class="lead">
+        <p class="hero__lead">
           {es
             ? 'Meili lleva sus retratos a los mercados: puedes ver las piezas de cerca, elegirlas con calma y hablar con ella de un encargo.'
             : 'Meili takes her portraits to local markets: see the pieces up close, choose at your own pace and talk to her about a commission.'}
         </p>
-      </header>
+        {
+          markets[0] && (
+            <p class="hero__next">
+              <span class="hero__next-label">{es ? 'El próximo' : 'The next one'}</span>
+              <span>
+                {markets[0].name} · {countdown(markets[0], today, locale).toLowerCase()}
+              </span>
+            </p>
+          )
+        }
+      </div>
+      <div class="hero__art">
+        <StallSketch label={es ? 'Dibujo a lápiz del puesto de Meili en un mercado' : 'Pencil drawing of Meili’s market stall'} />
+      </div>
+    </div>
+  </section>
 
+  <section class="calendar" aria-label={es ? 'Calendario de mercados' : 'Market calendar'}>
+    <div class="site-shell">
       {
         markets.length === 0 ? (
           <div class="empty">
+            <p class="display empty__title">{es ? 'El calendario está en blanco, por ahora.' : 'The calendar is blank, for now.'}</p>
             <p>
               {es
-                ? 'Ahora mismo no hay ningún mercado en el calendario. Los anuncia en Instagram en cuanto los confirma.'
-                : 'There are no markets on the calendar right now. She announces them on Instagram as soon as they are confirmed.'}
+                ? 'Meili anuncia los mercados en Instagram en cuanto los confirma.'
+                : 'Meili announces markets on Instagram as soon as they are confirmed.'}
             </p>
             <a class="btn btn--ghost" href="https://www.instagram.com/petsdrawings_meili/" rel="noopener noreferrer" target="_blank">
               Instagram
             </a>
           </div>
         ) : (
-          <ol class="list">
-            {markets.map((m) => {
+          <ol class="thread">
+            {markets.map((m, i) => {
               const notes = es ? m.notesEs : m.notesEn;
               const now = marketState(m, today) === 'now';
+              const where = [m.place, m.city].filter(Boolean).join(', ');
               return (
-                <li class:list={['market', { 'market--now': now }]}>
-                  <p class="date" aria-hidden="true">
-                    <span class="date__month">{month(m.startsOn)}</span>
-                    <span class="date__day">{dayOf(m.startsOn)}</span>
-                    {m.endsOn !== m.startsOn && <span class="date__to">– {dayOf(m.endsOn)}</span>}
-                  </p>
-                  <div class="market__body">
-                    {now && <p class="now">{es ? 'Hoy estoy aquí' : 'I am here today'}</p>}
-                    <h2 class="display market__name">{m.name}</h2>
-                    <p class="market__when">
-                      {marketDates(m, locale)}
-                      {m.hours && <> · {m.hours}</>}
+                <li class:list={['stop', { 'stop--now': now }]} style={`--i:${i}`}>
+                  <div class="stop__tag">
+                    <DateTag startsOn={m.startsOn} endsOn={m.endsOn} locale={locale} now={now} tilt={tilts[i % tilts.length]} />
+                  </div>
+                  <article class="stop__card" aria-labelledby={`market-${m.id}`}>
+                    <p class="stop__when">
+                      {now && <span class="stop__live">{es ? 'Hoy estoy aquí' : 'I am here today'}</span>}
+                      <span>{marketDates(m, locale)}</span>
+                      {!now && <span class="stop__count">{countdown(m, today, locale)}</span>}
                     </p>
-                    {(m.place || m.city) && <p class="market__where">{[m.place, m.city].filter(Boolean).join(', ')}</p>}
-                    {notes && <p class="market__notes">{notes}</p>}
-                    <p class="market__links">
-                      {m.mapUrl && (
-                        <a href={m.mapUrl} rel="noopener noreferrer" target="_blank">
-                          {es ? 'Cómo llegar' : 'Directions'}
-                        </a>
+                    <h2 id={`market-${m.id}`} class="display stop__name">
+                      {m.name}
+                      <svg class="stop__underline" viewBox="0 0 300 14" preserveAspectRatio="none" aria-hidden="true" data-draw>
+                        <path pathLength="1" d="M3 9 C 50 3, 110 13, 170 7 S 260 4, 297 8" />
+                      </svg>
+                    </h2>
+                    <ul class="stop__facts">
+                      {m.hours && (
+                        <li>
+                          <svg viewBox="0 0 24 24" aria-hidden="true" data-draw>
+                            <circle pathLength="1" cx="12" cy="12" r="8.5" />
+                            <path pathLength="1" d="M12 7.5V12l3 2" />
+                          </svg>
+                          {m.hours}
+                        </li>
+                      )}
+                      {where && (
+                        <li>
+                          <svg viewBox="0 0 24 24" aria-hidden="true" data-draw>
+                            <path pathLength="1" d="M12 21s6.5-6.1 6.5-11.2A6.5 6.5 0 0 0 5.5 9.8C5.5 14.9 12 21 12 21Z" />
+                            <circle pathLength="1" cx="12" cy="9.8" r="2.3" />
+                          </svg>
+                          {where}
+                        </li>
                       )}
                       {m.pickup && (
-                        <span class="pickup">{es ? 'Puedes recoger aquí tu pedido de la web' : 'Web orders can be picked up here'}</span>
+                        <li class="stop__pickup">
+                          <svg viewBox="0 0 24 24" aria-hidden="true" data-draw>
+                            <path pathLength="1" d="M5 9h14l-1.2 11H6.2L5 9Z" />
+                            <path pathLength="1" d="M9 9V7.5a3 3 0 0 1 6 0V9" />
+                          </svg>
+                          {es ? 'Puedes recoger aquí tu pedido de la web, sin envío' : 'Pick up your web order here, no shipping'}
+                        </li>
                       )}
-                    </p>
-                  </div>
+                    </ul>
+                    {notes && <p class="stop__notes">{notes}</p>}
+                    {m.mapUrl && (
+                      <a class="stop__map" href={m.mapUrl} rel="noopener noreferrer" target="_blank">
+                        {es ? 'Cómo llegar' : 'Directions'}
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>
+                      </a>
+                    )}
+                  </article>
                 </li>
               );
             })}
@@ -127,139 +175,333 @@ const events = markets.map((m) => ({
 </PublicLayout>
 
 <style>
-  .head {
-    max-width: 46rem;
-    margin-bottom: clamp(2.5rem, 6vw, 4.5rem);
+  .page-bunting {
+    margin-top: -1rem;
   }
 
-  .lead {
-    color: var(--ink-soft);
-    font-size: 1.1rem;
+  /* ——— Hero: the stall drawing itself ——— */
+  .hero {
+    padding-block: clamp(2rem, 6vw, 4rem) clamp(2.5rem, 6vw, 4.5rem);
   }
 
-  .list {
+  .hero__grid {
     display: grid;
-    gap: 1.25rem;
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: center;
+  }
+
+  @media (min-width: 56rem) {
+    .hero__grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    }
+  }
+
+  .hero__title {
+    margin: 0 0 1.25rem;
+    font-size: clamp(3rem, 7.5vw, 6.4rem);
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+  }
+
+  .hero__title em {
+    display: block;
+    padding-left: 0.35em;
+    color: var(--accent);
+  }
+
+  .hero__lead {
+    max-width: 32rem;
+    margin: 0;
+    font-size: 1.12rem;
+    color: var(--ink-soft);
+  }
+
+  .hero__next {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    align-items: baseline;
+    margin: 1.75rem 0 0;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  .hero__next-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .hero__art {
+    max-width: 38rem;
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  /* ——— The calendar: markets on a thread, in date order ——— */
+  .calendar {
+    padding-block: clamp(1rem, 3vw, 2rem) clamp(4rem, 9vw, 7rem);
+  }
+
+  .thread {
+    --tag: 9rem;
+    position: relative;
+    display: grid;
+    gap: clamp(2rem, 5vw, 3.25rem);
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
-  .market {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: clamp(1.25rem, 4vw, 2.5rem);
-    padding: clamp(1.25rem, 3vw, 2rem);
-    background: var(--sheet);
-    box-shadow: var(--shadow-art);
+  /* the string the tags hang from, in date order */
+  .thread::before {
+    content: '';
+    position: absolute;
+    top: 0.5rem;
+    bottom: 2rem;
+    left: calc(var(--tag) / 2);
+    border-left: 1.5px dashed #b8a27c;
   }
 
-  .market--now {
-    outline: 2px solid var(--accent);
+  .stop {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--tag) minmax(0, 1fr);
+    gap: clamp(1rem, 3vw, 2.5rem);
+    align-items: start;
+  }
+
+  .stop__tag {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    padding-top: 0.25rem;
+  }
+
+  .stop__card {
+    padding: clamp(1.25rem, 3vw, 2.25rem) clamp(1.25rem, 3.5vw, 2.75rem);
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+    transition:
+      transform 500ms var(--ease-out),
+      box-shadow 500ms var(--ease-out);
+  }
+
+  .stop:hover .stop__card {
+    transform: translateY(-3px);
+  }
+
+  .stop--now .stop__card {
+    outline: 2px solid #e8c77f;
     outline-offset: -2px;
   }
 
-  .date {
-    display: grid;
-    justify-items: center;
-    align-content: start;
-    width: 5.5rem;
-    margin: 0;
-    padding: 0.75rem 0.5rem;
-    border: 1px solid var(--line);
-    text-align: center;
-  }
-
-  .date__month {
-    font-size: 0.75rem;
+  .stop__when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+    margin: 0 0 0.6rem;
+    font-size: 0.78rem;
     font-weight: 600;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--muted);
   }
 
-  .date__day {
-    font-family: var(--font-display);
-    font-size: 2.6rem;
-    line-height: 1;
+  .stop__count {
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--ink);
+    letter-spacing: 0.06em;
   }
 
-  .date__to {
-    font-size: 0.9rem;
-    color: var(--muted);
-  }
-
-  .market__body p {
-    margin: 0;
-  }
-
-  .now {
-    width: fit-content;
-    margin-bottom: 0.6rem !important;
-    padding: 0.2rem 0.6rem;
+  .stop__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.2rem 0.65rem;
     background: var(--accent);
     color: var(--light);
-    font-size: 0.78rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
-  .market__name {
-    margin: 0 0 0.5rem;
-    font-size: clamp(1.7rem, 3vw, 2.4rem);
-    letter-spacing: -0.035em;
+  .stop__live::before {
+    content: '';
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: #f2c66d;
+    animation: live 1.8s ease-out infinite;
   }
 
-  .market__when {
-    color: var(--ink);
+  .stop__name {
+    position: relative;
+    width: fit-content;
+    margin: 0 0 1.1rem;
+    padding-bottom: 0.4rem;
+    font-size: clamp(1.9rem, 3.6vw, 2.9rem);
+    line-height: 1;
+    letter-spacing: -0.04em;
   }
 
-  .market__where,
-  .market__notes {
-    margin-top: 0.3rem !important;
+  .stop__underline {
+    position: absolute;
+    left: -0.2rem;
+    right: -0.4rem;
+    bottom: -0.35rem;
+    width: calc(100% + 0.6rem);
+    height: 0.75rem;
+    overflow: visible;
+  }
+
+  .stop__underline path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+  }
+
+  .stop__facts {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
     color: var(--ink-soft);
   }
 
-  .market__links {
+  .stop__facts li {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.25rem;
-    margin-top: 0.9rem !important;
-    font-size: 0.95rem;
+    align-items: center;
+    gap: 0.7rem;
   }
 
-  .pickup {
+  .stop__facts svg,
+  .stop__map svg {
+    flex: none;
+    width: 1.2rem;
+    height: 1.2rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .stop__pickup {
     color: var(--success);
+  }
+
+  .stop__notes {
+    max-width: 36rem;
+    margin: 1rem 0 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  .stop__map {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 1.25rem;
+    color: var(--ink);
+    text-underline-offset: 0.25em;
+  }
+
+  /* ——— Lines that draw themselves (armed by StallSketch's script) ——— */
+  [data-draw] :is(path, circle) {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+
+  :global(html.js-draw) .calendar [data-draw]:not(.is-drawn) :is(path, circle) {
+    stroke-dashoffset: 1;
+  }
+
+  .calendar [data-draw].is-drawn :is(path, circle) {
+    transition: stroke-dashoffset 1s cubic-bezier(0.65, 0, 0.35, 1) 0.35s;
+  }
+
+  .calendar .stop__underline.is-drawn path {
+    transition-duration: 1.2s;
+    transition-delay: 0.55s;
   }
 
   .empty {
     display: grid;
     justify-items: start;
-    gap: 1.25rem;
+    gap: 1rem;
     max-width: 38rem;
     color: var(--ink-soft);
   }
 
+  .empty__title {
+    margin: 0;
+    font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+    color: var(--ink);
+  }
+
   .more {
-    margin-top: clamp(2.5rem, 6vw, 4rem);
+    margin-top: clamp(3rem, 6vw, 4.5rem);
     color: var(--muted);
   }
 
-  @media (max-width: 30rem) {
-    .market {
+  @keyframes live {
+    0% {
+      box-shadow: 0 0 0 0 rgb(242 198 109 / 0.7);
+    }
+    100% {
+      box-shadow: 0 0 0 0.55rem rgb(242 198 109 / 0);
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .thread {
+      --tag: 6.5rem;
+    }
+
+    .thread::before {
+      display: none;
+    }
+
+    .stop {
       grid-template-columns: minmax(0, 1fr);
+      gap: 0;
     }
 
-    .date {
-      grid-auto-flow: column;
-      align-items: baseline;
-      gap: 0.5rem;
-      width: fit-content;
-      padding: 0.4rem 0.75rem;
+    .stop__tag {
+      justify-content: flex-start;
+      padding-left: 1rem;
+      margin-bottom: -2.25rem;
     }
 
-    .date__day {
-      font-size: 1.6rem;
+    .stop__card {
+      padding-top: 2.75rem;
+    }
+
+    .stop__name {
+      margin-left: 0;
+    }
+
+    .stop :global(.dtag) {
+      --w: 6rem;
+    }
+
+    .stop__card .stop__when {
+      padding-left: 6.5rem;
+      min-height: 2rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stop__live::before {
+      animation: none;
     }
   }
 </style>

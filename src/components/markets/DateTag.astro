@@ -1,0 +1,202 @@
+---
+import type { Locale } from '@/i18n';
+
+/**
+ * A market's date on a kraft tag hanging from a pin, as the shop's price tags
+ * hang: the month in small capitals, the day (or span of days) large, the
+ * weekday under it. It swings in when it appears, and again on hover.
+ */
+interface Props {
+  startsOn: string;
+  endsOn: string;
+  locale: Locale;
+  /** Meili is at this market today. */
+  now?: boolean;
+  size?: 'md' | 'lg';
+  /** Degrees the tag rests at. */
+  tilt?: number;
+}
+
+const { startsOn, endsOn, locale, now = false, size = 'md', tilt = -4 } = Astro.props;
+const fmt = (iso: string, opts: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat(locale === 'es' ? 'es-ES' : 'en-GB', { ...opts, timeZone: 'UTC' })
+    .format(new Date(`${iso}T12:00:00Z`))
+    .replace('.', '');
+const day = (iso: string) => String(Number(iso.slice(8, 10)));
+const sameMonth = startsOn.slice(0, 7) === endsOn.slice(0, 7);
+const month = sameMonth || startsOn === endsOn ? fmt(startsOn, { month: 'long' }) : `${fmt(startsOn, { month: 'short' })} – ${fmt(endsOn, { month: 'short' })}`;
+const days = startsOn === endsOn ? day(startsOn) : `${day(startsOn)}–${day(endsOn)}`;
+const weekday =
+  startsOn === endsOn
+    ? fmt(startsOn, { weekday: 'long' })
+    : `${fmt(startsOn, { weekday: 'short' })} – ${fmt(endsOn, { weekday: 'short' })}`;
+---
+
+<span class:list={['dtag', `dtag--${size}`, { 'dtag--now': now, 'dtag--span': startsOn !== endsOn }]} style={`--r:${tilt}deg`} aria-hidden="true">
+  <span class="dtag__pin"></span>
+  <span class="dtag__string"></span>
+  <span class="dtag__card">
+    <span class="dtag__month">{month}</span>
+    <span class="dtag__day">{days}</span>
+    <span class="dtag__weekday">{weekday}</span>
+  </span>
+</span>
+
+<style>
+  .dtag {
+    --w: 7.2rem;
+    display: inline-grid;
+    justify-items: center;
+    transform-origin: 50% 0.3rem;
+    rotate: var(--r);
+    filter: drop-shadow(0 10px 10px rgb(22 23 26 / 0.16));
+    animation: tag-in 1.6s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+  }
+
+  .dtag--lg {
+    --w: clamp(8.5rem, 16vw, 11rem);
+  }
+
+  .dtag:hover {
+    animation: tag-swing 1.6s cubic-bezier(0.3, 0.6, 0.4, 1);
+  }
+
+  .dtag__pin {
+    width: 0.7rem;
+    height: 0.7rem;
+    margin-bottom: -0.25rem;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #8e9bbb, var(--accent-deep));
+    box-shadow: 0 1px 2px rgb(22 23 26 / 0.35);
+    z-index: 1;
+  }
+
+  .dtag__string {
+    width: 1px;
+    height: 1.9rem;
+    background: #8d7a5c;
+  }
+
+  .dtag__card {
+    display: grid;
+    justify-items: center;
+    gap: 0.1rem;
+    width: var(--w);
+    margin-top: -0.6rem;
+    padding: 1.45rem 0.6rem 0.9rem;
+    background:
+      radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.28), transparent 60%),
+      repeating-linear-gradient(115deg, rgb(255 255 255 / 0.04) 0 2px, transparent 2px 5px),
+      #dcc39b;
+    clip-path: polygon(50% 0, 100% 1.2rem, 100% 100%, 0 100%, 0 1.2rem);
+    -webkit-mask: radial-gradient(circle 0.24rem at 50% 0.95rem, transparent 96%, #000 100%);
+    mask: radial-gradient(circle 0.24rem at 50% 0.95rem, transparent 96%, #000 100%);
+    color: #3b2f1c;
+    text-align: center;
+  }
+
+  .dtag__month,
+  .dtag__weekday {
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.78;
+  }
+
+  .dtag__day {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 2.6rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+  }
+
+  .dtag--span .dtag__day {
+    font-size: 2rem;
+  }
+
+  .dtag--lg .dtag__day {
+    font-size: clamp(2.8rem, 5vw, 3.6rem);
+  }
+
+  .dtag--lg.dtag--span .dtag__day {
+    font-size: clamp(2.2rem, 4vw, 2.9rem);
+  }
+
+  /* Today: the tag glows, a ring breathing around it. */
+  .dtag--now .dtag__card {
+    background:
+      radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.35), transparent 60%),
+      #e8c77f;
+  }
+
+  .dtag--now .dtag__pin {
+    box-shadow:
+      0 0 0 0 rgb(242 198 109 / 0.7),
+      0 1px 2px rgb(22 23 26 / 0.35);
+    animation: breathe 2.2s ease-out infinite;
+  }
+
+  @keyframes tag-in {
+    0% {
+      rotate: calc(var(--r) + 28deg);
+      opacity: 0;
+    }
+    25% {
+      opacity: 1;
+    }
+    45% {
+      rotate: calc(var(--r) - 12deg);
+    }
+    65% {
+      rotate: calc(var(--r) + 6deg);
+    }
+    82% {
+      rotate: calc(var(--r) - 2deg);
+    }
+    100% {
+      rotate: var(--r);
+    }
+  }
+
+  @keyframes tag-swing {
+    0% {
+      rotate: var(--r);
+    }
+    20% {
+      rotate: calc(var(--r) * -1 + 7deg);
+    }
+    45% {
+      rotate: calc(var(--r) - 5deg);
+    }
+    70% {
+      rotate: calc(var(--r) + 2deg);
+    }
+    100% {
+      rotate: var(--r);
+    }
+  }
+
+  @keyframes breathe {
+    0% {
+      box-shadow:
+        0 0 0 0 rgb(242 198 109 / 0.75),
+        0 1px 2px rgb(22 23 26 / 0.35);
+    }
+    100% {
+      box-shadow:
+        0 0 0 0.9rem rgb(242 198 109 / 0),
+        0 1px 2px rgb(22 23 26 / 0.35);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dtag,
+    .dtag:hover,
+    .dtag--now .dtag__pin {
+      animation: none;
+    }
+  }
+</style>

@@ -1,0 +1,221 @@
+---
+/**
+ * Meili's market stall drawn in pencil: it draws itself, stroke by stroke,
+ * when it comes into view, then its string of lights comes on. With reduced
+ * motion (or without JavaScript) it is simply there, drawn.
+ */
+interface Props {
+  class?: string;
+  /** Accessible description; decorative when omitted. */
+  label?: string;
+}
+
+const { class: className, label } = Astro.props;
+const uid = Math.random().toString(36).slice(2, 8);
+// Bulbs along the string of lights (points on its curve).
+const bulbs = [
+  [101.6, 105.8],
+  [140.8, 113.4],
+  [180, 116],
+  [219.2, 113.4],
+  [258.4, 105.8],
+];
+---
+
+<svg
+  class:list={['stall', 'draw', className]}
+  viewBox="0 0 360 240"
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : 'true'}
+  data-draw
+>
+  <defs>
+    <!-- A pencil line is never quite straight. -->
+    <filter id={`graphite-${uid}`} x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="grain" />
+      <feDisplacementMap in="SourceGraphic" in2="grain" scale="1.6" />
+    </filter>
+    <radialGradient id={`glow-${uid}`}>
+      <stop offset="0" stop-color="#f2c66d" stop-opacity="0.85" />
+      <stop offset="1" stop-color="#f2c66d" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- A wash of colour under the lines, once they are drawn. -->
+  <g class="wash">
+    <path d="M60 80 L180 26 L300 80 Z" fill="#eceff5" />
+    <path d="M100 168 H260 V222 H100 Z" fill="#f4ecdf" />
+  </g>
+
+  <g class="lines" filter={`url(#graphite-${uid})`}>
+    <path pathLength="1" style="--d:0" d="M14 222 C 90 219, 270 224, 346 221" />
+    <path pathLength="1" style="--d:0.15" d="M78 222 L80 80" />
+    <path pathLength="1" style="--d:0.2" d="M282 222 L280 80" />
+    <path pathLength="1" style="--d:0.35" d="M60 80 L180 26 L300 80" />
+    <path pathLength="1" style="--d:0.55" d="M180 26 L90 80 M180 26 L120 80 M180 26 L150 80 M180 26 L210 80 M180 26 L240 80 M180 26 L270 80" />
+    <path pathLength="1" style="--d:0.75" d="M60 80 H300" />
+    <path
+      pathLength="1"
+      style="--d:0.85"
+      d="M60 80 q15 16 30 0 q15 16 30 0 q15 16 30 0 q15 16 30 0 q15 16 30 0 q15 16 30 0 q15 16 30 0 q15 16 30 0"
+    />
+    <path pathLength="1" style="--d:1" d="M180 26 L180 8" />
+    <path pathLength="1" class="flag" style="--d:1.1" d="M180 8 Q190 9 198 13 Q190 16 180 18" />
+    <!-- the counter and its cloth -->
+    <path pathLength="1" style="--d:1.1" d="M94 168 H266" />
+    <path pathLength="1" style="--d:1.2" d="M100 168 V222 M260 168 V222" />
+    <path pathLength="1" style="--d:1.3" d="M100 186 q20 9 40 0 q20 9 40 0 q20 9 40 0 q20 9 40 0" />
+    <!-- what is on it: two portraits, a card, a mug -->
+    <path pathLength="1" style="--d:1.45" d="M114 168 V128 H146 V168 M119 133 H141 V163 H119 Z" />
+    <path pathLength="1" style="--d:1.55" d="M124 154 q2 -12 6 -12 q4 0 6 12 q-6 5 -12 0 M126 146 l-3 -5 M134 146 l3 -5" />
+    <path pathLength="1" style="--d:1.65" d="M160 168 L167 144 H184 L178 168" />
+    <path pathLength="1" style="--d:1.75" d="M197 168 V148 H217 V168 Z M217 153 q9 0 9 6 q0 6 -9 6" />
+    <path pathLength="1" style="--d:1.85" d="M230 168 V118 H262 V168 M235 123 H257 V163 H235 Z" />
+    <path pathLength="1" style="--d:1.95" d="M240 150 q3 -14 8 -14 q5 0 8 14 q-8 6 -16 0 M243 140 l-4 -6 M253 140 l4 -6" />
+    <!-- the string of lights -->
+    <path pathLength="1" style="--d:1.2" d="M82 100 Q180 132 278 100" />
+  </g>
+
+  <g class="bulbs">
+    {
+      bulbs.map(([x, y], i) => (
+        <g style={`--i:${i}`}>
+          <circle class="bulb__glow" cx={x} cy={y + 6} r="11" fill={`url(#glow-${uid})`} />
+          <path class="bulb__stem" d={`M${x} ${y} V${y + 3}`} />
+          <circle class="bulb" cx={x} cy={y + 6} r="3.2" />
+        </g>
+      ))
+    }
+  </g>
+</svg>
+
+<script is:inline>
+  // Armed before the first paint, so the stall is not seen drawn and then wiped.
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('js-draw');
+</script>
+
+<style>
+  .stall {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .lines {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.88;
+  }
+
+  .lines path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+
+  .wash {
+    opacity: 1;
+  }
+
+  .bulb {
+    fill: #f2c66d;
+    stroke: var(--ink);
+    stroke-width: 1;
+  }
+
+  .bulb__stem {
+    stroke: var(--ink);
+    stroke-width: 1.2;
+  }
+
+  .bulb__glow {
+    opacity: 0.9;
+  }
+
+  .flag {
+    transform-box: fill-box;
+    transform-origin: 0 50%;
+  }
+
+  /* ——— Drawing itself (only once armed by the script above) ——— */
+  :global(html.js-draw) .stall:not(.is-drawn) .lines path {
+    stroke-dashoffset: 1;
+  }
+
+  :global(html.js-draw) .stall:not(.is-drawn) .wash,
+  :global(html.js-draw) .stall:not(.is-drawn) .bulbs {
+    opacity: 0;
+  }
+
+  .stall.is-drawn .lines path {
+    transition: stroke-dashoffset 1.1s cubic-bezier(0.65, 0, 0.35, 1) calc(var(--d, 0) * 1s);
+  }
+
+  .stall.is-drawn .wash {
+    transition: opacity 1.2s ease 1.9s;
+  }
+
+  .stall.is-drawn .bulbs {
+    transition: opacity 0.6s ease 2.2s;
+  }
+
+  .stall.is-drawn .bulb__glow {
+    animation: twinkle 2.8s ease-in-out calc(2.4s + var(--i) * 0.45s) infinite;
+  }
+
+  .stall.is-drawn .flag {
+    animation: wave 3.2s ease-in-out 1.6s infinite;
+  }
+
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0.9;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+
+  @keyframes wave {
+    0%,
+    100% {
+      transform: skewY(0deg) scaleX(1);
+    }
+    50% {
+      transform: skewY(-8deg) scaleX(0.86);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stall .bulb__glow,
+    .stall .flag {
+      animation: none !important;
+    }
+  }
+</style>
+
+<script>
+  // Draw each sketch when it comes into view (once); never leave one blank.
+  const sketches = [...document.querySelectorAll<SVGElement>('[data-draw]')];
+  const draw = (el: Element) => el.classList.add('is-drawn');
+  if ('IntersectionObserver' in window) {
+    const seen = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          draw(entry.target);
+          seen.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.25 },
+    );
+    sketches.forEach((el) => seen.observe(el));
+  } else {
+    sketches.forEach(draw);
+  }
+</script>

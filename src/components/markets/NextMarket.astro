@@ -1,0 +1,270 @@
+---
+import type { Locale } from '@/i18n';
+import { localizedPath } from '@/i18n/routes';
+import { countdown, marketState, type Market } from '@/lib/domain/markets';
+import { madridDay } from '@/lib/domain/holidays';
+import Bunting from './Bunting.astro';
+import DateTag from './DateTag.astro';
+import StallSketch from './StallSketch.astro';
+
+/**
+ * The next market, at the top of the shop: the stall drawing itself under a
+ * garland, the date on a hanging tag, how long is left, and where.
+ */
+interface Props {
+  market: Market;
+  locale: Locale;
+  /** Markets after this one on the calendar. */
+  more?: number;
+}
+
+const { market, locale, more = 0 } = Astro.props;
+const es = locale === 'es';
+const today = madridDay();
+const now = marketState(market, today) === 'now';
+const where = [market.place, market.city].filter(Boolean).join(', ');
+const notes = es ? market.notesEs : market.notesEn;
+const marketsPath = localizedPath(locale, 'markets');
+---
+
+<section class:list={['next', { 'next--now': now }]} aria-labelledby="next-market-title">
+  <Bunting class="next__bunting" />
+  <div class="next__body">
+    <div class="next__art">
+      <StallSketch class="next__sketch" />
+      <div class="next__tag">
+        <DateTag startsOn={market.startsOn} endsOn={market.endsOn} locale={locale} now={now} size="lg" tilt={5} />
+      </div>
+    </div>
+
+    <div class="next__info">
+      <p class="next__eyebrow">
+        <span class:list={['next__pulse', { 'is-live': now }]} aria-hidden="true"></span>
+        {now ? (es ? 'Hoy estoy en el mercado' : 'At the market today') : es ? 'Próximo mercado' : 'Next market'}
+        {!now && <span class="next__count">{countdown(market, today, locale)}</span>}
+      </p>
+      <h2 id="next-market-title" class="display next__name">{market.name}</h2>
+      <ul class="next__facts">
+        {
+          market.hours && (
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>
+              {market.hours}
+            </li>
+          )
+        }
+        {
+          where && (
+            <li>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21s6.5-6.1 6.5-11.2A6.5 6.5 0 0 0 5.5 9.8C5.5 14.9 12 21 12 21Z" />
+                <circle cx="12" cy="9.8" r="2.3" />
+              </svg>
+              {where}
+            </li>
+          )
+        }
+        {
+          market.pickup && (
+            <li class="next__pickup">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l-1.2 11H6.2L5 9Z" /><path d="M9 9V7.5a3 3 0 0 1 6 0V9" /></svg>
+              {es ? 'Puedes recoger aquí tu pedido de la web, sin envío' : 'Pick up your web order here, no shipping'}
+            </li>
+          )
+        }
+      </ul>
+      {notes && <p class="next__notes">{notes}</p>}
+      <div class="next__actions">
+        <a class="btn" href={marketsPath}>{es ? 'Ver dónde estaré' : 'Where to find me'}</a>
+        {
+          market.mapUrl && (
+            <a class="next__map" href={market.mapUrl} rel="noopener noreferrer" target="_blank">
+              {es ? 'Cómo llegar' : 'Directions'}
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>
+            </a>
+          )
+        }
+        {
+          more > 0 && (
+            <a class="next__more" href={marketsPath}>
+              {es ? `y ${more} ${more === 1 ? 'mercado más' : 'mercados más'}` : `and ${more} more ${more === 1 ? 'market' : 'markets'}`}
+            </a>
+          )
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .next {
+    position: relative;
+    margin-top: clamp(2rem, 5vw, 3.5rem);
+    background: var(--sheet);
+    box-shadow: var(--shadow-art);
+  }
+
+  .next--now {
+    outline: 2px solid #e8c77f;
+    outline-offset: -2px;
+  }
+
+  .next__bunting {
+    position: absolute;
+    inset: -0.35rem 0 auto;
+    pointer-events: none;
+  }
+
+  .next__body {
+    display: grid;
+    gap: clamp(1.5rem, 4vw, 3rem);
+    padding: clamp(3.25rem, 6vw, 4.5rem) clamp(1.25rem, 4vw, 3.5rem) clamp(1.75rem, 4vw, 3rem);
+    align-items: center;
+  }
+
+  @media (min-width: 54rem) {
+    .next__body {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    }
+  }
+
+  .next__art {
+    position: relative;
+    max-width: 34rem;
+    margin-inline: auto;
+    width: 100%;
+  }
+
+  /* hanging from the corner of the awning, clear of the pieces on the counter */
+  .next__tag {
+    position: absolute;
+    top: 4%;
+    right: -1.25rem;
+  }
+
+  @media (max-width: 34rem) {
+    .next__tag {
+      position: static;
+      display: flex;
+      justify-content: center;
+      margin-top: -0.5rem;
+    }
+  }
+
+  .next__eyebrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 0 0 0.9rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .next__pulse {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .next__pulse.is-live {
+    background: #d9a441;
+    animation: live 1.8s ease-out infinite;
+  }
+
+  .next__count {
+    padding: 0.2rem 0.65rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--ink);
+    letter-spacing: 0.08em;
+  }
+
+  .next__name {
+    margin: 0 0 1.1rem;
+    font-size: clamp(2.2rem, 4.6vw, 3.9rem);
+    line-height: 0.98;
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+  }
+
+  .next__facts {
+    display: grid;
+    gap: 0.55rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--ink-soft);
+  }
+
+  .next__facts li {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .next__facts svg,
+  .next__map svg {
+    flex: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .next__pickup {
+    color: var(--success);
+  }
+
+  .next__notes {
+    margin: 1rem 0 0;
+    max-width: 32rem;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+  }
+
+  .next__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+    margin-top: 1.75rem;
+  }
+
+  .next__map,
+  .next__more {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--ink);
+    text-underline-offset: 0.25em;
+  }
+
+  .next__more {
+    color: var(--muted);
+  }
+
+  @keyframes live {
+    0% {
+      box-shadow: 0 0 0 0 rgb(217 164 65 / 0.6);
+    }
+    100% {
+      box-shadow: 0 0 0 0.7rem rgb(217 164 65 / 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .next__pulse.is-live {
+      animation: none;
+    }
+  }
+</style>
