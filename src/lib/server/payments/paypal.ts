@@ -49,6 +49,18 @@ export function paypalBase(mode: PaymentMode): string {
 
 const tokens = new Map<string, { token: string; expiresAt: number; appId?: string }>();
 
+/**
+ * Every PayPal request gives up after this long. A timeout throws a TimeoutError,
+ * as a network failure throws a TypeError, so callers handle both the same way.
+ */
+const PAYPAL_TIMEOUT_MS = 15_000;
+
+/** A body that is not JSON reads as empty, but one cut off by the timeout must still fail. */
+function unreadable(signal: AbortSignal): Record<string, never> {
+  signal.throwIfAborted();
+  return {};
+}
+
 export class PaypalApiError extends Error {
   constructor(
     readonly status: number,
@@ -67,6 +79,7 @@ export async function paypalToken(
   const cached = tokens.get(cacheKey);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached;
 
+  const signal = AbortSignal.timeout(PAYPAL_TIMEOUT_MS);
   const res = await fetch(`${paypalBase(creds.mode)}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
@@ -74,8 +87,9 @@ export async function paypalToken(
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: 'grant_type=client_credentials',
+    signal,
   });
-  const body = (await res.json().catch(() => ({}))) as {
+  const body = (await res.json().catch(() => unreadable(signal))) as {
     access_token?: string;
     expires_in?: number;
     app_id?: string;
@@ -101,6 +115,7 @@ async function call<T>(
   requestId?: string,
 ): Promise<T> {
   const { token } = await paypalToken(creds);
+  const signal = AbortSignal.timeout(PAYPAL_TIMEOUT_MS);
   const res = await fetch(`${paypalBase(creds.mode)}${path}`, {
     method,
     headers: {
@@ -110,9 +125,10 @@ async function call<T>(
       ...(requestId ? { 'PayPal-Request-Id': requestId } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   if (res.status === 204) return undefined as T;
-  const data = (await res.json().catch(() => ({}))) as {
+  const data = (await res.json().catch(() => unreadable(signal))) as {
     message?: string;
     details?: Array<{ issue?: string; description?: string }>;
   };

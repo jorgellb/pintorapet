@@ -12,6 +12,11 @@ const API = 'https://api.cloudinary.com/v1_1';
 const DELIVERY = 'https://res.cloudinary.com';
 /** Never send more than 2000 px on the long side, whatever was uploaded. */
 const SIZE_CAP = 'c_limit,w_2000';
+/** Uploads carry up to 10 MB; deletes and lists are small. A timeout throws a TimeoutError. */
+const UPLOAD_TIMEOUT_MS = 30_000;
+const API_TIMEOUT_MS = 10_000;
+/** For fetching a privateDownloadUrl (a customer's photo, up to a few MB). */
+export const PRIVATE_DOWNLOAD_TIMEOUT_MS = 20_000;
 
 export class CloudinaryError extends Error {
   readonly status: number;
@@ -70,8 +75,12 @@ function signedForm(config: CloudinaryConfig, params: Record<string, string>, no
   return form;
 }
 
-async function readJson(response: Response): Promise<Record<string, unknown>> {
-  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+/** A body that is not JSON reads as empty, but one cut off by the timeout must still fail. */
+async function readJson(response: Response, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const body = (await response.json().catch(() => {
+    signal.throwIfAborted();
+    return {};
+  })) as Record<string, unknown>;
   if (!response.ok) {
     const error = body.error as { message?: string } | undefined;
     throw new CloudinaryError(error?.message ?? `Cloudinary answered ${response.status}`, response.status);
@@ -86,8 +95,9 @@ export async function uploadImage(
 ): Promise<{ publicId: string; bytes: number }> {
   const form = signedForm(config, { overwrite: 'false', public_id: image.publicId }, now);
   form.set('file', new Blob([image.bytes], { type: image.contentType }));
-  const response = await fetchImpl(`${API}/${config.cloudName}/image/upload`, { method: 'POST', body: form });
-  const body = await readJson(response);
+  const signal = AbortSignal.timeout(UPLOAD_TIMEOUT_MS);
+  const response = await fetchImpl(`${API}/${config.cloudName}/image/upload`, { method: 'POST', body: form, signal });
+  const body = await readJson(response, signal);
   return { publicId: String(body.public_id), bytes: Number(body.bytes) };
 }
 
@@ -102,8 +112,9 @@ export async function uploadPrivateImage(
 ): Promise<{ publicId: string; bytes: number }> {
   const form = signedForm(config, { overwrite: 'false', public_id: image.publicId, type: 'authenticated' }, now);
   form.set('file', new Blob([image.bytes], { type: image.contentType }));
-  const response = await fetchImpl(`${API}/${config.cloudName}/image/upload`, { method: 'POST', body: form });
-  const body = await readJson(response);
+  const signal = AbortSignal.timeout(UPLOAD_TIMEOUT_MS);
+  const response = await fetchImpl(`${API}/${config.cloudName}/image/upload`, { method: 'POST', body: form, signal });
+  const body = await readJson(response, signal);
   return { publicId: String(body.public_id), bytes: Number(body.bytes) };
 }
 
@@ -136,8 +147,9 @@ export async function destroyPrivateImage(
   { fetchImpl = fetch, now = Date.now }: Deps = {},
 ): Promise<'ok' | 'not found'> {
   const form = signedForm(config, { invalidate: 'true', public_id: publicId, type: 'authenticated' }, now);
-  const response = await fetchImpl(`${API}/${config.cloudName}/image/destroy`, { method: 'POST', body: form });
-  const body = await readJson(response);
+  const signal = AbortSignal.timeout(API_TIMEOUT_MS);
+  const response = await fetchImpl(`${API}/${config.cloudName}/image/destroy`, { method: 'POST', body: form, signal });
+  const body = await readJson(response, signal);
   if (body.result === 'ok' || body.result === 'not found') return body.result;
   throw new CloudinaryError(`Cloudinary could not delete ${publicId}: ${String(body.result)}`, response.status);
 }
@@ -149,8 +161,9 @@ export async function destroyImage(
   { fetchImpl = fetch, now = Date.now }: Deps = {},
 ): Promise<'ok' | 'not found'> {
   const form = signedForm(config, { invalidate: 'true', public_id: publicId }, now);
-  const response = await fetchImpl(`${API}/${config.cloudName}/image/destroy`, { method: 'POST', body: form });
-  const body = await readJson(response);
+  const signal = AbortSignal.timeout(API_TIMEOUT_MS);
+  const response = await fetchImpl(`${API}/${config.cloudName}/image/destroy`, { method: 'POST', body: form, signal });
+  const body = await readJson(response, signal);
   if (body.result === 'ok' || body.result === 'not found') return body.result;
   throw new CloudinaryError(`Cloudinary could not delete ${publicId}: ${String(body.result)}`, response.status);
 }
@@ -167,10 +180,12 @@ export async function listImagePublicIds(
   do {
     const query = new URLSearchParams({ prefix, max_results: '500' });
     if (cursor) query.set('next_cursor', cursor);
+    const signal = AbortSignal.timeout(API_TIMEOUT_MS);
     const response = await fetchImpl(`${API}/${config.cloudName}/resources/image/upload?${query}`, {
       headers: { authorization },
+      signal,
     });
-    const body = await readJson(response);
+    const body = await readJson(response, signal);
     for (const resource of (body.resources ?? []) as Array<{ public_id: string }>) ids.add(resource.public_id);
     cursor = typeof body.next_cursor === 'string' ? body.next_cursor : undefined;
   } while (cursor);

@@ -5,6 +5,7 @@ import {
   destroyImage,
   destroyPrivateImage,
   parseCloudinaryUrl,
+  PRIVATE_DOWNLOAD_TIMEOUT_MS,
   privateDownloadUrl,
   uploadImage,
   uploadPrivateImage,
@@ -159,7 +160,9 @@ export async function publishPhotos(db: Db, reviewId: string, { fetchImpl = fetc
       update public.review_photos set public_public_id = coalesce(public_public_id, ${intended})
       where id = ${photo.id} returning public_public_id`;
     if (!named) continue;
-    const download = await fetchImpl(privateDownloadUrl(config, photo.private_public_id, { ttlSeconds: 120 }));
+    const download = await fetchImpl(privateDownloadUrl(config, photo.private_public_id, { ttlSeconds: 120 }), {
+      signal: AbortSignal.timeout(PRIVATE_DOWNLOAD_TIMEOUT_MS),
+    });
     if (download.status === 404) {
       // The private image is gone (already deleted): drop the photo instead of blocking the review forever.
       console.error('[reviews] private photo missing, dropped', photo.id);
@@ -220,7 +223,9 @@ export async function reviewPhotoFile(db: Db, reviewId: string, photoId: string,
   const row = await db.one<{ private_public_id: string | null }>`
     select private_public_id from public.review_photos where id = ${photoId} and review_id = ${reviewId}`;
   if (!row?.private_public_id) throw new CommerceError('UNAVAILABLE', 'Foto no encontrada.', 404);
-  const res = await fetchImpl(privateDownloadUrl(cloudinary(), row.private_public_id, { ttlSeconds: 120 }));
+  const res = await fetchImpl(privateDownloadUrl(cloudinary(), row.private_public_id, { ttlSeconds: 120 }), {
+    signal: AbortSignal.timeout(PRIVATE_DOWNLOAD_TIMEOUT_MS),
+  });
   if (!res.ok) throw new CommerceError('UNAVAILABLE', 'Cloudinary no devolvió la foto.', 502);
   return new Response(res.body, {
     headers: {

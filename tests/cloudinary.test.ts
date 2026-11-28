@@ -202,3 +202,44 @@ describe('photoType', () => {
     expect(photoType(new TextEncoder().encode('<svg onload=alert(1)>'))).toBeNull();
   });
 });
+
+describe('timeouts', () => {
+  const image = { bytes: new Uint8Array([1, 2, 3]), contentType: 'image/jpeg', publicId: 'a/b' };
+  const aborted = () => AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+
+  it('give uploads 30 s and deletes and lists 10 s', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/resources/')
+        ? jsonResponse({ resources: [] })
+        : jsonResponse({ public_id: 'a/b', bytes: 3, result: 'ok' }),
+    );
+    const deps = { fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow };
+    await uploadImage(config, image, deps);
+    await uploadPrivateImage(config, image, deps);
+    await destroyImage(config, 'a/b', deps);
+    await listImagePublicIds(config, 'a/', deps);
+    expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([30_000, 30_000, 10_000, 10_000]);
+    for (const [, init] of fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>) {
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    }
+    timeout.mockRestore();
+  });
+
+  it('fail when the answer is cut off, instead of reading it as empty', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(aborted);
+    const fetchImpl = vi.fn(async () => new Response('{"public_id": "a/', { status: 200 }));
+    await expect(uploadImage(config, image, { fetchImpl: fetchImpl as unknown as typeof fetch })).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+    timeout.mockRestore();
+  });
+
+  it('still read an answer that is not JSON as empty when nothing timed out', async () => {
+    const fetchImpl = vi.fn(async () => new Response('oops', { status: 500 }));
+    await expect(destroyImage(config, 'a/b', { fetchImpl: fetchImpl as unknown as typeof fetch })).rejects.toMatchObject({
+      name: 'CloudinaryError',
+      status: 500,
+    });
+  });
+});

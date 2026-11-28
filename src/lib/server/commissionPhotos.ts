@@ -3,6 +3,7 @@ import { transaction, type Db } from '@/lib/server/db';
 import {
   destroyPrivateImage,
   parseCloudinaryUrl,
+  PRIVATE_DOWNLOAD_TIMEOUT_MS,
   privateDownloadUrl,
   uploadPrivateImage,
 } from '@/lib/server/media/cloudinary';
@@ -104,7 +105,9 @@ export async function photoFile(client: Db, commissionId: string, fileId: string
     where id = ${fileId} and commission_request_id = ${commissionId} and storage_public_id is not null
       and status = 'accepted'`;
   if (!row) throw new CommerceError('UNAVAILABLE', 'Foto no encontrada.', 404);
-  const res = await fetch(privateDownloadUrl(cloudinary(), row.storage_public_id, { ttlSeconds: 120 }));
+  const res = await fetch(privateDownloadUrl(cloudinary(), row.storage_public_id, { ttlSeconds: 120 }), {
+    signal: AbortSignal.timeout(PRIVATE_DOWNLOAD_TIMEOUT_MS),
+  });
   if (!res.ok) throw new CommerceError('UNAVAILABLE', 'Cloudinary no devolvió la foto.', 502);
   return new Response(res.body, {
     headers: {
