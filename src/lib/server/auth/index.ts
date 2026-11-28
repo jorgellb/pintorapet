@@ -111,20 +111,42 @@ export async function sessionUser(cookies: AstroCookies, request: Request): Prom
   }
 }
 
+/** Thrown by setOwnPassword when the current password is missing or wrong. */
+export class WrongCurrentPassword extends Error {
+  constructor() {
+    super('The current password does not match.');
+    this.name = 'WrongCurrentPassword';
+  }
+}
+
+/** Whether the user has a password; someone who only ever signed in by link has none. */
+export async function hasOwnPassword(userId: string): Promise<boolean> {
+  const context = await auth().$context;
+  return Boolean((await context.internalAdapter.findCredentialAccount(userId))?.password);
+}
+
 /**
- * Sets a password for a signed-in user, as Supabase's updateUser did (no old
- * password asked), ends all their sessions, and signs this browser in again.
+ * Sets a password for a signed-in user, ends all their sessions, and signs this
+ * browser in again. A user who has a password must give it as `currentPassword`,
+ * so a stolen or borrowed session cannot lock the owner out; one who only ever
+ * signed in by link chooses a first password without it. Forgotten passwords
+ * go through the emailed reset link instead.
  */
 export async function setOwnPassword(
   cookies: AstroCookies,
   request: Request,
   user: SessionUser,
   password: string,
+  currentPassword: string,
 ): Promise<void> {
   const context = await auth().$context;
+  const account = await context.internalAdapter.findCredentialAccount(user.id);
+  if (account?.password) {
+    const proved = currentPassword !== '' && (await context.password.verify({ hash: account.password, password: currentPassword }));
+    if (!proved) throw new WrongCurrentPassword();
+  }
   const hash = await context.password.hash(password);
-  // Someone who only ever signed in by link has no password account yet.
-  if (await context.internalAdapter.findCredentialAccount(user.id)) {
+  if (account) {
     await context.internalAdapter.updatePassword(user.id, hash);
   } else {
     await context.internalAdapter.createAccount({ userId: user.id, providerId: 'credential', accountId: user.id, password: hash });

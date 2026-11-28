@@ -5,6 +5,7 @@ import AntiBot from '@/components/AntiBot.astro';
 import type { Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { safeNext } from '@/lib/domain/accountProfile';
+import { hasOwnPassword } from '@/lib/server/auth';
 
 type Mode = 'signIn' | 'register' | 'forgot' | 'reset';
 
@@ -18,7 +19,16 @@ const es = locale === 'es';
 const accountPath = localizedPath(locale, 'account');
 const next = safeNext(Astro.url.searchParams.get('next'), accountPath);
 const endpoint = { signIn: 'sign-in', register: 'register', forgot: 'forgot', reset: 'reset' }[mode];
-const antibot = ({ signIn: 'sign_in', register: 'register', forgot: 'forgot' } as const)[mode as Exclude<Mode, 'reset'>];
+// The emailed link brings ?token=…; signed-in customers change it from their account.
+const resetToken = mode === 'reset' ? (Astro.url.searchParams.get('token') ?? '') : '';
+// Changing a password from the account asks for the current one, limited like signing in.
+// Someone who only ever signed in by link chooses a first one without it.
+const customer = Astro.locals.customer;
+const askCurrent =
+  mode === 'reset' && !resetToken && Boolean(customer) && (await hasOwnPassword(customer!.user.id).catch(() => true));
+const antibot = askCurrent
+  ? 'sign_in'
+  : ({ signIn: 'sign_in', register: 'register', forgot: 'forgot' } as const)[mode as Exclude<Mode, 'reset'>];
 
 const copy = es
   ? {
@@ -40,6 +50,7 @@ const copy = es
       email: 'Email',
       password: 'Contraseña',
       passwordNew: 'Contraseña nueva',
+      passwordCurrent: 'Contraseña actual',
       passwordRepeat: 'Repítela',
       passwordHint: 'Al menos 8 caracteres.',
       privacy: 'He leído y acepto la {link}.',
@@ -67,6 +78,7 @@ const copy = es
         email: 'Ese email no parece válido. Revísalo.',
         mail: 'Ahora mismo no podemos enviarte el correo. Inténtalo más tarde o escríbenos a info@petsdrawings.com.',
         mismatch: 'Las dos contraseñas no coinciden.',
+        current: 'La contraseña actual no es correcta.',
         privacy: 'Para crear la cuenta tienes que aceptar la política de privacidad.',
         missing: 'Revisa los campos.',
         link: 'El enlace no es válido o ha caducado. Entra o pide otro.',
@@ -91,6 +103,7 @@ const copy = es
       email: 'Email',
       password: 'Password',
       passwordNew: 'New password',
+      passwordCurrent: 'Current password',
       passwordRepeat: 'Repeat it',
       passwordHint: 'At least 8 characters.',
       privacy: 'I have read and accept the {link}.',
@@ -118,6 +131,7 @@ const copy = es
         email: 'That email does not look valid. Please check it.',
         mail: 'We cannot send you the email right now. Try again later or write to info@petsdrawings.com.',
         mismatch: 'The two passwords do not match.',
+        current: 'Your current password is not right.',
         privacy: 'To create the account you need to accept the privacy policy.',
         missing: 'Please check the fields.',
         link: 'The link is not valid or has expired. Sign in or ask for another one.',
@@ -132,9 +146,7 @@ const error = errorKey ? (copy.errors[errorKey as keyof typeof copy.errors] ?? c
 const sentTo = flash?.sent === (mode === 'register' ? 'register' : 'forgot') ? (flash.email ?? '') : null;
 const email = flash?.email ?? '';
 const fullName = flash?.fullName ?? '';
-// The emailed link brings ?token=…; signed-in customers change it from their account.
-const resetToken = mode === 'reset' ? (Astro.url.searchParams.get('token') ?? '') : '';
-const resetReady = mode !== 'reset' || Boolean(Astro.locals.customer) || Boolean(resetToken);
+const resetReady = mode !== 'reset' || Boolean(customer) || Boolean(resetToken);
 
 const [titleTop, titleItalic] = copy.titles[mode];
 const [privacyBefore, privacyAfter] = copy.privacy.split('{link}');
@@ -208,6 +220,13 @@ const nextQuery = next !== accountPath ? `?next=${encodeURIComponent(next)}` : '
                 </label>
               )}
 
+              {askCurrent && (
+                <label class="field">
+                  <span class="field__label">{copy.passwordCurrent}</span>
+                  <input name="current_password" type="password" autocomplete="current-password" required maxlength="72" />
+                </label>
+              )}
+
               {(mode === 'signIn' || mode === 'register' || mode === 'reset') && (
                 <label class="field">
                   <span class="field__label">{mode === 'reset' ? copy.passwordNew : copy.password}</span>
@@ -245,7 +264,7 @@ const nextQuery = next !== accountPath ? `?next=${encodeURIComponent(next)}` : '
 
               <div class="paper__actions">
                 <button class="btn" type="submit">{copy.submit[mode]}</button>
-                {mode === 'signIn' && (
+                {(mode === 'signIn' || askCurrent) && (
                   <a class="text-link" href={localizedPath(locale, 'accountForgot')}>
                     {copy.forgotLink}
                   </a>

@@ -64,12 +64,62 @@ describe.skipIf(!url)('passwords against PostgreSQL', () => {
 
   it('lets someone with no password yet choose one from their account', async () => {
     const user = await newUser();
+    expect(await authMod.hasOwnPassword(user.id)).toBe(false);
     const jar = cookies();
-    await authMod.setOwnPassword(jar, request(), user, 'una-nueva-larga');
+    await authMod.setOwnPassword(jar, request(), user, 'una-nueva-larga', '');
     expect(jar.set).toHaveBeenCalled();
     const signedIn = await authMod.signInWithPassword(cookies(), request(), user.email, 'una-nueva-larga');
     expect(signedIn.id).toBe(user.id);
     const accounts = await dbMod.db().rows`SELECT 1 FROM auth.account WHERE user_id = ${user.id} AND provider_id = 'credential'`;
     expect(accounts).toHaveLength(1);
+    expect(await authMod.hasOwnPassword(user.id)).toBe(true);
+  });
+
+  it('asks for the current password before changing one', async () => {
+    const user = await newUser();
+    await authMod.setOwnPassword(cookies(), request(), user, 'la-primera-larga', '');
+    await expect(authMod.setOwnPassword(cookies(), request(), user, 'la-segunda-larga', '')).rejects.toBeInstanceOf(
+      authMod.WrongCurrentPassword,
+    );
+    await expect(authMod.setOwnPassword(cookies(), request(), user, 'la-segunda-larga', 'no-es-esta')).rejects.toBeInstanceOf(
+      authMod.WrongCurrentPassword,
+    );
+    // Nothing changed: the first password still works.
+    expect((await authMod.signInWithPassword(cookies(), request(), user.email, 'la-primera-larga')).id).toBe(user.id);
+
+    await authMod.setOwnPassword(cookies(), request(), user, 'la-segunda-larga', 'la-primera-larga');
+    expect((await authMod.signInWithPassword(cookies(), request(), user.email, 'la-segunda-larga')).id).toBe(user.id);
+    await expect(authMod.signInWithPassword(cookies(), request(), user.email, 'la-primera-larga')).rejects.toThrow();
+  });
+
+  it('stores a Supabase password again as scrypt the first time it signs in', async () => {
+    const user = await newUser();
+    await dbMod.db().run`
+      INSERT INTO auth.account (account_id, provider_id, user_id, password)
+      VALUES (${user.id}, 'credential', ${user.id}, extensions.crypt('la-de-siempre', extensions.gen_salt('bf', 10)))`;
+    const stored = async () =>
+      (await dbMod.db().one<{ password: string }>`
+        SELECT password FROM auth.account WHERE user_id = ${user.id} AND provider_id = 'credential'`)!.password;
+    const before = await stored();
+    expect(passwordMod.isSupabaseHash(before)).toBe(true);
+
+    await expect(authMod.signInWithPassword(cookies(), request(), user.email, 'otra-cualquiera')).rejects.toThrow();
+    expect(await stored()).toBe(before);
+
+    await authMod.signInWithPassword(cookies(), request(), user.email, 'la-de-siempre');
+    const after = await stored();
+    expect(passwordMod.isSupabaseHash(after)).toBe(false);
+    expect(await passwordMod.verifyPassword({ hash: after, password: 'la-de-siempre' })).toBe(true);
+    // Still the same password, now without pgcrypto.
+    expect((await authMod.signInWithPassword(cookies(), request(), user.email, 'la-de-siempre')).id).toBe(user.id);
+  });
+
+  it('accepts a Supabase password as the current one when changing it', async () => {
+    const user = await newUser();
+    await dbMod.db().run`
+      INSERT INTO auth.account (account_id, provider_id, user_id, password)
+      VALUES (${user.id}, 'credential', ${user.id}, extensions.crypt('la-de-siempre', extensions.gen_salt('bf', 10)))`;
+    await authMod.setOwnPassword(cookies(), request(), user, 'una-nueva-larga', 'la-de-siempre');
+    expect((await authMod.signInWithPassword(cookies(), request(), user.email, 'una-nueva-larga')).id).toBe(user.id);
   });
 });

@@ -4,7 +4,15 @@ import { passwordSchema, safeNext } from '@/lib/domain/accountProfile';
 import { authErrorKey } from '@/lib/server/account';
 import { clientIp, formFields, inspect, reportSignedIn, type AntibotForm } from '@/lib/server/antibot';
 import { setFlash } from '@/lib/server/flash';
-import { auth, hasAuth, sessionUser, setOwnPassword, signInWithPassword } from '@/lib/server/auth';
+import {
+  auth,
+  hasAuth,
+  hasOwnPassword,
+  sessionUser,
+  setOwnPassword,
+  signInWithPassword,
+  WrongCurrentPassword,
+} from '@/lib/server/auth';
 import { forwardCookies } from '@/lib/server/auth/cookies';
 import { db } from '@/lib/server/db';
 
@@ -134,10 +142,18 @@ export const POST: APIRoute = async (context) => {
   }
   const who = await sessionUser(cookies, request);
   if (!who) return back('link');
-  try {
-    await setOwnPassword(cookies, request, who, password);
-  } catch (err) {
-    return back(authErrorKey(err));
+  // Guessing the current password is limited like signing in.
+  const guarded = await hasOwnPassword(who.id).catch(() => true);
+  if (guarded) {
+    const { verdict } = await inspect({ form: 'sign_in', fields: formFields(form), ip: clientIp(context), email: who.email });
+    if (verdict === 'rate') return back('rate');
+    if (verdict === 'block') return back('generic');
   }
+  try {
+    await setOwnPassword(cookies, request, who, password, String(form.get('current_password') ?? ''));
+  } catch (err) {
+    return back(err instanceof WrongCurrentPassword ? 'current' : authErrorKey(err));
+  }
+  if (guarded) await reportSignedIn(formFields(form));
   return redirect(`${account}?password=1`, 303);
 };
