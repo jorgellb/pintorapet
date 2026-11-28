@@ -1,4 +1,6 @@
 import type { APIRoute } from 'astro';
+import { waitUntil } from '@vercel/functions';
+import { RATE, withinLimit } from '@/lib/server/rateLimit';
 import { quoteRequestSchema } from '@/lib/validation/checkout';
 import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { hasDatabase } from '@/lib/server/db';
@@ -16,7 +18,8 @@ import { customerSession } from '@/lib/server/account';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ request, cookies }) => {
+export const POST: APIRoute = async (context) => {
+  const { request, cookies } = context;
   try {
     let raw: unknown;
     try {
@@ -51,6 +54,15 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           503,
         );
       }
+      if (!(await withinLimit(RATE.quote, context))) {
+        throw new CommerceError('RATE_LIMITED', 'Too many price checks from this connection; try again in a few minutes', 429);
+      }
+      // Checkouts whose time is up give their stock back, so the cart sees it (after the answer).
+      waitUntil(
+        supabase.run`select public.release_lapsed_attempts()`.catch((err: unknown) =>
+          console.error('[cart quote] lapsed checkouts not released', err),
+        ),
+      );
       // Who is buying comes from the session; a typed email only counts if it is the account's own.
       const account = body.couponCode ? await customerSession(cookies, request) : null;
       const quote = await createPersistedQuote(supabase, {

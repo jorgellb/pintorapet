@@ -4,7 +4,7 @@
 pg_dump (PostgreSQL 18, through Docker) → encrypted with gpg (AES-256, a
 passphrase that never leaves the GitHub secrets) → Cloudinary as a *private*
 raw file, readable only with a signed request. Keeps 35 days of dailies and,
-forever, the one from the 1st of each month (invoices must be kept for years).
+for 6 years, the one from the 1st of each month (invoices must be kept that long).
 
 Environment: DATABASE_URL, DATABASE_CA_CERT (PEM), BACKUP_PASSPHRASE,
 CLOUDINARY_URL. Standard library only, so it runs on a bare CI runner.
@@ -34,6 +34,9 @@ from pathlib import Path
 
 PREFIX = 'backups/'
 KEEP_DAYS = 35
+# The accounting records (invoices) must be kept 6 years (Código de Comercio
+# art. 30); past that, personal data erased from the database leaves the backups too.
+KEEP_MONTHLY_DAYS = 6 * 366
 
 
 def cloudinary() -> tuple[str, str, str]:
@@ -104,8 +107,13 @@ def admin(method: str, path: str, query: dict) -> dict:
         return json.load(response)
 
 
+def stale_backup(day: dt.date, today: dt.date) -> bool:
+    """Dailies go after KEEP_DAYS; the 1st of each month after KEEP_MONTHLY_DAYS."""
+    return (today - day).days > (KEEP_MONTHLY_DAYS if day.day == 1 else KEEP_DAYS)
+
+
 def prune(today: dt.date) -> list[str]:
-    """Dailies older than KEEP_DAYS go; the 1st of each month stays."""
+    """Deletes the backups stale_backup says are past their time."""
     names = []
     cursor = None
     while True:
@@ -121,7 +129,7 @@ def prune(today: dt.date) -> list[str]:
         if not m:
             continue
         day = dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        if day.day != 1 and (today - day).days > KEEP_DAYS:
+        if stale_backup(day, today):
             stale.append(name)
     for start in range(0, len(stale), 100):
         admin('DELETE', 'resources/raw/private', {'public_ids[]': stale[start:start + 100]})

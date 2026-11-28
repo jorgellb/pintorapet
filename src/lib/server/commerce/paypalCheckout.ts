@@ -81,17 +81,29 @@ export async function finalizePaypalOrder(
   return { status, ...base };
 }
 
-/** Frees the stock of an attempt the buyer cancelled on PayPal. */
+/** PayPal's states for an order the buyer can still approve, or no longer can. */
+const PAYPAL_NOT_APPROVED = new Set(['CREATED', 'SAVED', 'PAYER_ACTION_REQUIRED', 'VOIDED']);
+
+/**
+ * Frees the stock of an attempt the buyer cancelled on PayPal. The cancel
+ * link carries only PayPal's order id, so PayPal is asked first: an order
+ * already approved or paid keeps its pieces (without PayPal's answer, the
+ * reservation simply lapses on its own).
+ */
 export async function cancelPaypalOrder(
   supabase: Db,
+  creds: PaypalConfig | null,
   paypalOrderId: string,
 ): Promise<{ locale?: 'en' | 'es' }> {
   const attempt = await supabase.one<{ id: string; status: string; orders: { locale: 'en' | 'es' } | null }>`
     select a.id, a.status, (select json_build_object('locale', o.locale) from public.orders o where o.id = a.order_id) as orders
     from public.checkout_attempts a where a.paypal_order_id = ${paypalOrderId}`;
   if (!attempt) return {};
-  if (attempt.status === 'session_open' || attempt.status === 'creating_session') {
-    await dbCall(() => supabase.call('release_reservations', { p_attempt_id: attempt.id, p_reason: 'cancelled' }));
+  if (creds && (attempt.status === 'session_open' || attempt.status === 'creating_session')) {
+    const order = await getPaypalOrder(creds, paypalOrderId).catch(() => null);
+    if (order && PAYPAL_NOT_APPROVED.has(order.status)) {
+      await dbCall(() => supabase.call('release_reservations', { p_attempt_id: attempt.id, p_reason: 'cancelled' }));
+    }
   }
   return { locale: attempt.orders?.locale };
 }

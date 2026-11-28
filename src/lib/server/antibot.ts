@@ -67,11 +67,19 @@ export function isAntibotForm(value: string): value is AntibotForm {
 }
 
 let processSecret: string | null = null;
+let warned = false;
 
 function key(): Buffer {
+  const legacy = import.meta.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!import.meta.env.ANTIBOT_SECRET && !warned) {
+    warned = true;
+    // Removing SUPABASE_SERVICE_ROLE_KEY without setting ANTIBOT_SECRET would break every form.
+    console.warn('[antibot] ANTIBOT_SECRET is not set; using %s', legacy ? 'the old Supabase key' : 'a key for this process only');
+  }
   const secret =
     import.meta.env.ANTIBOT_SECRET ||
-    import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
+    // Until ANTIBOT_SECRET is set everywhere: the key earlier challenges were signed with.
+    legacy ||
     // Local development without keys: good for one process only.
     (processSecret ??= randomBytes(32).toString('hex'));
   return createHmac('sha256', String(secret)).update('pets-drawings antibot v1').digest();
@@ -86,6 +94,11 @@ function sign(data: string): string {
 /** Keyed hash: the same visitor matches across requests, the raw value is never stored. */
 function hashOf(kind: 'ip' | 'email', value: string): string {
   return createHmac('sha256', key()).update(`${kind}:${value}`).digest('hex').slice(0, 40);
+}
+
+/** The keyed hash of an IP that rate limits count by (never the IP itself). */
+export function ipKey(ip: string): string {
+  return hashOf('ip', ip);
 }
 
 /** The visitor's IP as Vercel (or the dev server) reports it. Pass the Astro context. */

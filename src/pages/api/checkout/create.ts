@@ -8,10 +8,12 @@ import { checkoutProviders } from '@/lib/server/payments/config';
 import { serviceDb } from '@/lib/server/db';
 import { normalizeCartItems } from '@/lib/domain/cart';
 import { customerSession, loadProfile, saveProfile } from '@/lib/server/account';
+import { RATE, withinLimit } from '@/lib/server/rateLimit';
 
 export const prerender = false;
 
-export const POST: APIRoute = async ({ request, cookies }) => {
+export const POST: APIRoute = async (context) => {
+  const { request, cookies } = context;
   try {
     const body = checkoutCreateSchema.parse(await request.json());
 
@@ -51,6 +53,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         'Supabase service client unavailable',
         503,
       );
+    }
+
+    if (!(await withinLimit(RATE.checkout, context))) {
+      throw new CommerceError('RATE_LIMITED', 'Too many checkouts from this connection; try again later', 429);
     }
 
     const { hash } = ensureCartOwnerHash(cookies);

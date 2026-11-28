@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fakeDb } from './helpers/fakeDb';
-import { claimCoupon, ownEmail, releaseOwnerCouponOrders, stripeSessionExpiry } from '../src/lib/server/commerce/checkout';
+import { claimCoupon, ownEmail, releaseOwnerOpenOrders, stripeSessionExpiry } from '../src/lib/server/commerce/checkout';
 import { createPersistedQuote, quoteCouponCtx } from '../src/lib/server/commerce/quotes';
 import {
   couponMessage,
@@ -374,9 +374,9 @@ describe('createPersistedQuote', () => {
   });
 });
 
-describe('releaseOwnerCouponOrders', () => {
+describe('releaseOwnerOpenOrders', () => {
   const released = (rows: unknown) =>
-    fakeDb({ query: (q) => (q.text.includes('release_owner_coupon_orders') ? { result: rows } : undefined) });
+    fakeDb({ query: (q) => (q.text.includes('release_owner_open_orders') ? { result: rows } : undefined) });
 
   it('cancels the owner\'s earlier orders in the database and expires their Stripe sessions', async () => {
     const { db, queries } = released([
@@ -384,9 +384,9 @@ describe('releaseOwnerCouponOrders', () => {
       { order_id: 'old-2', stripe_session_id: null },
     ]);
     const expire = vi.fn(async () => ({}));
-    await releaseOwnerCouponOrders(db, 'order-2', expire);
+    await releaseOwnerOpenOrders(db, 'order-2', expire);
     expect(queries.map((q) => [q.text.replace(/\s+/g, ' ').trim(), q.values])).toEqual([
-      ['select public.release_owner_coupon_orders($1) as result', ['order-2']],
+      ['select public.release_owner_open_orders($1) as result', ['order-2']],
     ]);
     expect(expire.mock.calls).toEqual([['cs_old_1']]);
   });
@@ -400,7 +400,7 @@ describe('releaseOwnerCouponOrders', () => {
     const expire = vi.fn(async (id: string) => {
       if (id === 'cs_old_1') throw new Error('session already complete');
     });
-    await expect(releaseOwnerCouponOrders(db, 'order-2', expire)).resolves.toBeUndefined();
+    await expect(releaseOwnerOpenOrders(db, 'order-2', expire)).resolves.toBeUndefined();
     expect(expire.mock.calls).toEqual([['cs_old_1'], ['cs_old_2']]);
     expect(log).toHaveBeenCalledTimes(1);
     log.mockRestore();
@@ -414,7 +414,7 @@ describe('releaseOwnerCouponOrders', () => {
     });
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const expire = vi.fn(async () => ({}));
-    await expect(releaseOwnerCouponOrders(db, 'order-2', expire)).resolves.toBeUndefined();
+    await expect(releaseOwnerOpenOrders(db, 'order-2', expire)).resolves.toBeUndefined();
     expect(expire).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledTimes(1);
     log.mockRestore();
@@ -422,7 +422,7 @@ describe('releaseOwnerCouponOrders', () => {
 
   it('only cancels when Stripe is not connected', async () => {
     const { db, queries } = released([{ order_id: 'old-1', stripe_session_id: 'cs_old_1' }]);
-    await expect(releaseOwnerCouponOrders(db, 'order-2', null)).resolves.toBeUndefined();
+    await expect(releaseOwnerOpenOrders(db, 'order-2', null)).resolves.toBeUndefined();
     expect(queries).toHaveLength(1);
   });
 });

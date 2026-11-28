@@ -102,9 +102,10 @@ export async function createCheckout(
     throw new CommerceError('NOT_CONFIGURED', 'Payment provider not connected', 503);
   }
 
-  if (paypal) {
-    await supabase.run`select public.release_expired_paypal_attempts()`.catch(() => 0);
-  }
+  // Checkouts whose time is up (any provider) give their stock back first.
+  await supabase.run`select public.release_lapsed_attempts()`.catch((err: unknown) =>
+    console.error('[checkout] lapsed checkouts not released', err),
+  );
 
   const quote = await dbCall(() => supabase.one<Quote>`
     select lines, subtotal_cents, shipping_cents, tax_cents, total_cents, shipping_country, shipping_postal_code,
@@ -161,7 +162,7 @@ export async function createCheckout(
   }
 
   const stripeKey = payments.stripe?.secretKey;
-  await releaseOwnerCouponOrders(
+  await releaseOwnerOpenOrders(
     supabase,
     reserve.order_id,
     stripeKey ? (sessionId) => stripeFor(stripeKey).checkout.sessions.expire(sessionId) : null,
@@ -232,14 +233,14 @@ export async function claimCoupon(
 type ReleasedOrder = { order_id: string; stripe_session_id: string | null };
 
 /**
- * Before the claim: the same cart owner's other unpaid orders holding this
- * order's coupon (a payment page left behind, «Pagar» pressed again) end as
- * expired, so their use no longer counts against this one, and their open
- * Stripe sessions are expired too. Best effort: a failure is logged, and the
- * claim then judges the uses as before. One of those sessions paid anyway is a
- * late payment (review, flagged if the limit is full).
+ * Before the coupon claim: the same cart's other unpaid shop orders (a payment
+ * page left behind, «Pagar» pressed again) end as expired, so their stock goes
+ * back on sale and their coupon use no longer counts against this one, and
+ * their open Stripe sessions are expired too. A cart holds one checkout at a
+ * time. Best effort: a failure is logged, and the claim then judges the uses as
+ * before. One of those sessions paid anyway is a late payment (review).
  */
-export async function releaseOwnerCouponOrders(
+export async function releaseOwnerOpenOrders(
   supabase: Db,
   orderId: string,
   expireSession: ((sessionId: string) => Promise<unknown>) | null,
@@ -248,9 +249,9 @@ export async function releaseOwnerCouponOrders(
   try {
     released =
       (await supabase.one<{ result: ReleasedOrder[] }>`
-        select public.release_owner_coupon_orders(${orderId}) as result`)?.result ?? [];
+        select public.release_owner_open_orders(${orderId}) as result`)?.result ?? [];
   } catch (err) {
-    console.error('[checkout] earlier orders with the coupon not released', orderId, err);
+    console.error('[checkout] earlier orders of this cart not released', orderId, err);
     return;
   }
   for (const old of released) {

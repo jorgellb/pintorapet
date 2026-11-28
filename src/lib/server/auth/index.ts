@@ -77,6 +77,8 @@ function create() {
       magicLink({
         disableSignUp: true,
         expiresIn: 5 * 60,
+        // Only a hash of the link's token is stored: a database copy cannot sign anyone in.
+        storeToken: 'hashed',
         sendMagicLink: async ({ email, url }) => sendAuthEmail('magic', email, { url, name: '' }),
       }),
     ],
