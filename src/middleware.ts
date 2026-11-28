@@ -10,6 +10,8 @@ const NEW_PASSWORD = /^\/(en\/account\/new-password|es\/cuenta\/nueva-contrasena
 const CHECKOUT = /^\/(en\/checkout|es\/finalizar-compra)\/?$/;
 
 const SECURITY_HEADERS: Record<string, string> = {
+  // Vercel's default HSTS plus every subdomain; ignored by browsers over plain http.
+  'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'SAMEORIGIN',
