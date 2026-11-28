@@ -104,7 +104,7 @@ export async function createCheckout(
   }
 
   // Checkouts whose time is up give their stock back first (the ones Stripe
-  // has to confirm are left to the cart and the cron, so this does not wait).
+  // has to confirm are left to the cron, so this does not wait).
   await releaseLapsedCheckouts(supabase, { askStripe: false }).catch((err: unknown) =>
     console.error('[checkout] lapsed checkouts not released', err),
   );

@@ -84,6 +84,7 @@ export async function handleStripeEvent(
       return { handled: true, detail: data };
     }
 
+    case 'checkout.session.async_payment_failed':
     case 'checkout.session.expired': {
       const session = event.data.object as Stripe.Checkout.Session;
       const attemptId = session.metadata?.attempt_id;
@@ -98,9 +99,11 @@ export async function handleStripeEvent(
         return { handled: true, detail: { ignored: true } };
       }
 
+      // Ended unpaid, or a slow payment (a bank debit) that failed: the pieces go back on sale.
+      const reason = event.type === 'checkout.session.expired' ? 'stripe_session_expired' : 'stripe_payment_failed';
       const data = (
         await dbCall(() => supabase.one<{ result: unknown }>`
-          select public.release_reservations(p_attempt_id => ${attemptId}, p_reason => 'stripe_session_expired') as result`)
+          select public.release_reservations(p_attempt_id => ${attemptId}, p_reason => ${reason}) as result`)
       )?.result;
 
       await recordEvent(supabase, {

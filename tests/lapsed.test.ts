@@ -48,11 +48,22 @@ describe('lapsed checkouts', () => {
     ]);
   });
 
-  it('keeps the pieces of a session Stripe has as complete (paid, or a slow payment on its way)', async () => {
+  it('keeps the pieces of a session Stripe has as complete (paid, or a slow payment on its way), and notes it asked', async () => {
     stripe.status = 'complete';
     const { db: client, queries } = db();
     await releaseLapsedCheckouts(client, { askStripe: true });
     expect(released(queries).map(([id]) => id)).toEqual(['paypal-1', 'never-opened']);
+    const noted = queries.filter((q) => q.text.includes('stripe_checked_at = now()')).map((q) => q.values);
+    expect(noted).toEqual([['ended']]);
+  });
+
+  it('asks the database for no Stripe sessions when the caller will not ask Stripe', async () => {
+    const { db: client, queries } = db();
+    await releaseLapsedCheckouts(client, { askStripe: false });
+    expect(queries[0].values).toEqual([0]);
+    const asking = db();
+    await releaseLapsedCheckouts(asking.db, { askStripe: true });
+    expect(asking.queries[0].values).toEqual([10]);
   });
 
   it('keeps them too when Stripe cannot be asked, or the caller cannot wait', async () => {

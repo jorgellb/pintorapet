@@ -58,9 +58,10 @@ export const POST: APIRoute = async (context) => {
       if (!(await withinLimit(RATE.quote, context))) {
         throw new CommerceError('RATE_LIMITED', 'Too many price checks from this connection; try again in a few minutes', 429);
       }
-      // Checkouts whose time is up give their stock back, so the cart sees it (after the answer).
+      // Checkouts whose time is up give their stock back, so the cart sees it (after the
+      // answer). Never asking Stripe from here: a visitor's request must not make Stripe calls.
       waitUntil(
-        releaseLapsedCheckouts(supabase, { askStripe: true }).catch((err: unknown) =>
+        releaseLapsedCheckouts(supabase, { askStripe: false }).catch((err: unknown) =>
           console.error('[cart quote] lapsed checkouts not released', err),
         ),
       );

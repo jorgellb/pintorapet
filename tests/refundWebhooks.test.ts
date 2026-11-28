@@ -71,3 +71,24 @@ describe('Stripe refund events', () => {
     });
   });
 });
+
+describe('Stripe checkout sessions that end unpaid', () => {
+  const sessionEvent = (type: string): Stripe.Event =>
+    ({
+      id: `evt_${type}`,
+      type,
+      data: { object: { id: 'cs_1', object: 'checkout.session', metadata: { attempt_id: 'attempt-1' } } },
+    }) as unknown as Stripe.Event;
+
+  it('frees the stock of a slow payment that failed, as of one that expired', async () => {
+    for (const [type, reason] of [
+      ['checkout.session.async_payment_failed', 'stripe_payment_failed'],
+      ['checkout.session.expired', 'stripe_session_expired'],
+    ]) {
+      const { db, queries } = fakeDb({ query: () => ({ result: { released: 1 } }) });
+      await handleStripeEvent(db, sessionEvent(type));
+      const release = queries.find((q) => q.text.includes('release_reservations'));
+      expect(release?.values).toEqual(['attempt-1', reason]);
+    }
+  });
+});

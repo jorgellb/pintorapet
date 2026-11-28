@@ -23,6 +23,8 @@ import {
 const STRIPE_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
   'checkout.session.completed',
   'checkout.session.async_payment_succeeded',
+  // A slow payment method (a bank debit) that failed: its pieces go back on sale.
+  'checkout.session.async_payment_failed',
   'checkout.session.expired',
   // Refunds: ours confirmed, or made in the Stripe dashboard.
   'refund.created',

@@ -53,6 +53,13 @@ describe.skipIf(!url)('reservations, limits and retention against PostgreSQL', (
     // Its payment's webhook may just be late: without Stripe's answer, the piece stays held.
     await release();
     expect(await stockOf(db(), ended.productId)).toMatchObject({ stock_reserved: 1 });
+    // Once asked, it waits half an hour before Stripe is asked again, and never
+    // takes the place of a checkout that can be freed without asking.
+    await db().run`update public.checkout_attempts set stripe_checked_at = now() where id = ${ended.attemptId}`;
+    const again = await db().rows<{ attempt_id: string }>`select attempt_id from public.lapsed_attempts(200)`;
+    expect(again.map((row) => row.attempt_id)).not.toContain(ended.attemptId);
+    const none = await db().rows<{ ask_stripe: boolean }>`select ask_stripe from public.lapsed_attempts(200, 0)`;
+    expect(none.every((row) => !row.ask_stripe)).toBe(true);
   });
 
   it('a reviewed payment keeps its pieces however old its checkout is', async () => {

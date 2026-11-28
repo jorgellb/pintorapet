@@ -10,11 +10,13 @@ type Lapsed = { attempt_id: string; provider: string; stripe_session_id: string 
  * at a time so no two hold each other's locks. A Stripe session that ended
  * without its "expired" webhook is freed only once Stripe says it expired:
  * one that was paid (its webhook late) or is still being paid by a slow
- * method keeps its pieces. `askStripe: false` skips those, for callers that
- * cannot wait for Stripe (opening a checkout); the cron and the cart ask.
+ * method keeps its pieces, and is asked about again in 30 minutes at the
+ * earliest (ten sessions a run). Only the cron asks Stripe (`askStripe`);
+ * opening a checkout and pricing a cart free the others without waiting.
  */
 export async function releaseLapsedCheckouts(service: Db, opts: { askStripe: boolean }): Promise<number> {
-  const rows = await service.rows<Lapsed>`select * from public.lapsed_attempts()`;
+  const rows = await service.rows<Lapsed>`
+    select * from public.lapsed_attempts(p_limit => 50, p_ask_limit => ${opts.askStripe ? 10 : 0})`;
   let stripe: Stripe | null = null;
   if (opts.askStripe && rows.some((row) => row.ask_stripe)) {
     const { stripe: config } = await loadPaymentConfig();
@@ -28,7 +30,12 @@ export async function releaseLapsedCheckouts(service: Db, opts: { askStripe: boo
         console.error('[checkout] Stripe session %s not read', row.stripe_session_id, err);
         return null;
       });
-      if (session?.status !== 'expired') continue;
+      if (session?.status !== 'expired') {
+        // Asked: not again for a while (lapsed_attempts waits 30 minutes).
+        await service.run`update public.checkout_attempts set stripe_checked_at = now() where id = ${row.attempt_id}`
+          .catch((err: unknown) => console.error('[checkout] check of %s not noted', row.attempt_id, err));
+        continue;
+      }
     }
     const reason = row.provider === 'paypal' ? 'paypal_expired' : row.ask_stripe ? 'stripe_session_expired' : 'lapsed';
     try {
