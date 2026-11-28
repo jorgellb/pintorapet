@@ -131,7 +131,7 @@ async function loadFromSupabase(locale: Locale): Promise<ProductPublic[] | null>
       client.rows`select * from public.catalog_product_images_v order by position`.then(asData, asError),
     ]);
     if (products.error || !products.data) {
-      console.error('[catalog] database unavailable, using the local file:', String((products.error as { message?: unknown } | null)?.message ?? products.error));
+      console.error('[catalog] database read failed:', String((products.error as { message?: unknown } | null)?.message ?? products.error));
       return null;
     }
 
@@ -195,7 +195,8 @@ async function loadFromSupabase(locale: Locale): Promise<ProductPublic[] | null>
         collectionId: row.collection_id ? String(row.collection_id) : null,
       } satisfies ProductPublic;
     });
-  } catch {
+  } catch (err) {
+    console.error('[catalog] database read failed:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -209,6 +210,10 @@ export async function loadPublicCatalog(locale: Locale): Promise<{
     if (fromDb !== null) {
       return { products: fromDb, source: 'supabase' };
     }
+    console.error(
+      '[catalog] FALLBACK: the database could not be read, so the shop is showing the old WooCommerce ' +
+        'snapshot (migration/products.json). Its prices, stock and products may be out of date.',
+    );
   }
 
   const fromFile = await loadFromMigration(locale);
