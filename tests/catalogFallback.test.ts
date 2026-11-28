@@ -23,7 +23,7 @@ beforeEach(() => {
 afterEach(() => errors.mockRestore());
 
 const fallbackLogged = () =>
-  errors.mock.calls.some(([line]) => typeof line === 'string' && line.startsWith('[catalog] FALLBACK'));
+  (errors.mock.calls as unknown[][]).some(([line]) => typeof line === 'string' && line.startsWith('[catalog] FALLBACK'));
 
 describe('the catalogue when the database cannot be read', () => {
   it('still shows the WooCommerce snapshot, and says so in the log', async () => {
