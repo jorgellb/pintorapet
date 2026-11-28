@@ -7,19 +7,23 @@ import { serviceDb } from '@/lib/server/db';
 import { syncOpenShipments } from '@/lib/server/shipping/trackingSync';
 import { purgeExpiredData } from '@/lib/server/retention';
 import { releaseLapsedCheckouts } from '@/lib/server/commerce/lapsed';
+import { isGithubCron } from '@/lib/server/githubOidc';
 
 export const prerender = false;
 
 async function run(request: Request): Promise<Response> {
   const secret = import.meta.env.CRON_SECRET;
   const auth = request.headers.get('authorization');
-  // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` when configured.
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` when configured; the
+  // outbox workflow on GitHub sends a token GitHub signed for it (no secret to share).
+  const fromVercel = Boolean(secret) && auth === `Bearer ${secret}`;
+  if (!fromVercel && !(await isGithubCron(auth))) {
     return jsonError(new CommerceError('FORBIDDEN', 'Unauthorized cron', 401));
   }
 
-  // `?quick=1` (every few minutes, .github/workflows/outbox.yml): stock and emails only.
-  // The daily run (Vercel Cron) also asks Correos about parcels and forgets old data.
+  // `?quick=1` (every 15 minutes, .github/workflows/outbox.yml): stock and emails only.
+  // The daily run (Vercel Cron, and the workflow once a day) also asks Correos about
+  // parcels and forgets old data.
   const quick = new URL(request.url).searchParams.has('quick');
 
   // Checkouts whose time is up give their stock back (PayPal and Stripe).
