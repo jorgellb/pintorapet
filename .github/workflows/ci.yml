@@ -40,3 +40,40 @@ jobs:
         run: pnpm exec astro check
       - name: Build
         run: pnpm exec astro build
+
+  # The schema built from the migrations on a throwaway PostgreSQL 18, then the
+  # tests that make their own rows in it: payments under review, invoices, stock
+  # reservations, limits, retention and who may run what.
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: avnadmin
+          POSTGRES_PASSWORD: localpw
+          POSTGRES_DB: defaultdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U avnadmin -d defaultdb"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      LOCAL_PG_URL: postgresql://avnadmin:localpw@127.0.0.1:5432/defaultdb
+      TEST_DATABASE_URL: postgresql://avnadmin:localpw@127.0.0.1:5432/defaultdb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build the schema from the migrations
+        run: |
+          python3 -m pip install --quiet --break-system-packages 'psycopg[binary]>=3.2,<4'
+          touch .env
+          python3 scripts/aiven/apply-schema.py local
+      - name: Database tests
+        run: pnpm exec vitest run tests/paymentReview.integration.test.ts tests/reservations.integration.test.ts
