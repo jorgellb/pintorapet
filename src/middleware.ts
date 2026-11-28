@@ -2,6 +2,7 @@ import { defineMiddleware } from 'astro:middleware';
 import { customerSession } from '@/lib/server/account';
 import { takeFlash } from '@/lib/server/flash';
 import { safeNext } from '@/lib/domain/accountProfile';
+import { cacheControlFor } from '@/lib/server/cachePolicy';
 
 const ACCOUNT_AREA = /^\/(en\/account|es\/cuenta)(\/|$)/;
 const OPEN_ACCOUNT_PAGES = /^\/(en\/account\/(sign-in|register|forgot-password)|es\/cuenta\/(entrar|registro|recuperar))\/?$/;
@@ -60,23 +61,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const response = await next();
 
-  if (
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/api/') ||
-    pathname.includes('/cart') ||
-    pathname.includes('/carrito') ||
-    pathname.includes('/checkout') ||
-    pathname.includes('/finalizar-compra') ||
-    pathname.includes('/compra/') ||
-    pathname.includes('/order-status') ||
-    pathname.includes('/estado-pedido') ||
-    pathname.startsWith('/en/account') ||
-    pathname.startsWith('/es/cuenta')
-  ) {
-    return withHeaders(response, {
-      'Cache-Control': 'private, no-store',
-    });
-  }
-
-  return withHeaders(response);
+  const cacheControl = cacheControlFor({
+    method: context.request.method,
+    pathname,
+    requestCookies: context.request.headers.get('cookie'),
+    response,
+    // Cookies set through Astro.cookies only join the response after this.
+    setsCookies: !context.cookies.headers().next().done,
+  });
+  return withHeaders(response, cacheControl ? { 'Cache-Control': cacheControl } : {});
 });
