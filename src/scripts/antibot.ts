@@ -203,7 +203,8 @@ function protect(root: HTMLElement): void {
     prepared.catch(() => {});
   };
 
-  const ready = async () => {
+  /** `renewAfterSend`: the caller renews Turnstile once the form is sent (a plain form). */
+  const ready = async (renewAfterSend = false) => {
     if (!prepared) prepare();
     let current = await prepared!;
     if (Date.now() - current.fetchedAt > REFRESH_AFTER_MS) {
@@ -223,18 +224,22 @@ function protect(root: HTMLElement): void {
 
     // Each challenge is good for one submission: start the next one now.
     prepare();
-    // After the form data is read (same tick), not before.
-    void turnstile?.then((state) => setTimeout(() => state.renew(), 0));
+    // After the form data is read, not before. An enhanced form reads it in this
+    // same tick; a plain form is sent again a task later, so it renews itself
+    // after sending (a renew before that would send an empty Turnstile token).
+    if (!renewAfterSend) void turnstile?.then((state) => setTimeout(() => state.renew(), 0));
   };
 
-  form[READY] = () =>
-    ready().catch((err) => {
+  const readyOrSay = (renewAfterSend: boolean) =>
+    ready(renewAfterSend).catch((err) => {
       if (status) {
         status.textContent = root.dataset.msgError ?? '';
         status.hidden = false;
       }
       throw err;
     });
+
+  form[READY] = () => readyOrSay(false);
 
   // Plain forms: hold the first submit, send again once ready.
   if (!form.hasAttribute('data-enhance')) {
@@ -248,7 +253,7 @@ function protect(root: HTMLElement): void {
       const submitter = (event as SubmitEvent).submitter as HTMLElement | null;
       const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
       button?.setAttribute('aria-busy', 'true');
-      form[READY]!()
+      readyOrSay(true)
         // Send again from a later task: when everything is already prepared this
         // runs while the first submit event is still being dispatched, and the
         // browser ignores requestSubmit() then (the click did nothing).
@@ -256,6 +261,8 @@ function protect(root: HTMLElement): void {
         .then(() => {
           releasing = true;
           form.requestSubmit(submitter instanceof HTMLButtonElement ? submitter : undefined);
+          // The form data was taken by requestSubmit(): the token can be renewed now.
+          void turnstile?.then((state) => state.renew());
         })
         .catch(() => {})
         .finally(() => button?.removeAttribute('aria-busy'));
