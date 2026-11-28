@@ -1,17 +1,39 @@
-import { z } from 'zod';
+// The cart store loads this on every public page, so it stays free of zod.
+// The server validates request bodies with cartItemSchema in
+// src/lib/validation/checkout.ts, which uses the same limits.
 
-export const cartItemSchema = z.object({
-  productId: z.string().uuid(),
-  quantity: z.number().int().min(1).max(20),
-});
+export const CART_MAX_LINES = 20;
+export const CART_MAX_QUANTITY = 20;
 
-export const cartStateSchema = z.object({
-  version: z.literal(1),
-  items: z.array(cartItemSchema).max(20),
-});
+export type CartItem = { productId: string; quantity: number };
+export type CartState = { version: 1; items: CartItem[] };
 
-export type CartItem = z.infer<typeof cartItemSchema>;
-export type CartState = z.infer<typeof cartStateSchema>;
+/** An RFC 9562 UUID, the same rule as zod's uuid(). */
+const UUID =
+  /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
+
+function isProductId(value: unknown): value is string {
+  return typeof value === 'string' && UUID.test(value);
+}
+
+function cartItem(value: unknown): CartItem | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { productId, quantity } = value as Record<string, unknown>;
+  if (!isProductId(productId)) return null;
+  if (typeof quantity !== 'number' || !Number.isInteger(quantity)) return null;
+  if (quantity < 1 || quantity > CART_MAX_QUANTITY) return null;
+  return { productId, quantity };
+}
+
+/** The saved cart, or null when anything in it is not a valid cart. */
+export function parseCartState(value: unknown): CartState | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { version, items } = value as Record<string, unknown>;
+  if (version !== 1 || !Array.isArray(items) || items.length > CART_MAX_LINES) return null;
+  const parsed = items.map(cartItem);
+  if (parsed.some((item) => item === null)) return null;
+  return { version: 1, items: parsed as CartItem[] };
+}
 
 export function emptyCart(): CartState {
   return { version: 1, items: [] };
@@ -25,6 +47,6 @@ export function normalizeCartItems(items: CartItem[]): CartItem[] {
   }
   return [...map.entries()].map(([productId, quantity]) => ({
     productId,
-    quantity: Math.min(quantity, 20),
+    quantity: Math.min(quantity, CART_MAX_QUANTITY),
   }));
 }

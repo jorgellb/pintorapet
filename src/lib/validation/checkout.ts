@@ -1,6 +1,11 @@
 import { z } from 'zod';
-import { cartItemSchema } from '@/lib/domain/cart';
+import { CART_MAX_QUANTITY } from '@/lib/domain/cart';
 import { checkoutCustomerSchema, invoiceCustomerSchema } from '@/lib/domain/checkoutCustomer';
+
+export const cartItemSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: z.number().int().min(1).max(CART_MAX_QUANTITY),
+});
 
 /** Strict bodies reject client-supplied prices and unknown keys. */
 export const quoteRequestSchema = z

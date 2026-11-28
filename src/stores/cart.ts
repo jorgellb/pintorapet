@@ -1,7 +1,7 @@
 import {
-  cartStateSchema,
   emptyCart,
   normalizeCartItems,
+  parseCartState,
   type CartState,
 } from '@/lib/domain/cart';
 
@@ -23,11 +23,11 @@ export function readCart(): CartState {
   try {
     const raw = localStorage.getItem(CART_STORAGE_KEY);
     if (!raw) return emptyCart();
-    const parsed = cartStateSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) return emptyCart();
+    const parsed = parseCartState(JSON.parse(raw));
+    if (!parsed) return emptyCart();
     return {
       version: 1,
-      items: normalizeCartItems(parsed.data.items),
+      items: normalizeCartItems(parsed.items),
     };
   } catch {
     return emptyCart();
