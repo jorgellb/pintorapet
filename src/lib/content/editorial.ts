@@ -174,10 +174,11 @@ function mapGallery(row: Record<string, unknown>): GalleryEntry | null {
   };
 }
 
+/** Rows of the view; null without a database; 'failed' when it could not be read. */
 async function fromView<T>(
   view: 'editorial_artworks_v' | 'editorial_gallery_v',
   map: (row: Record<string, unknown>) => T | null,
-): Promise<T[] | null> {
+): Promise<T[] | null | 'failed'> {
   if (!hasDatabase()) return null;
   try {
     const client = anonDb();
@@ -187,20 +188,38 @@ async function fromView<T>(
       return mapped ? [mapped] : [];
     });
   } catch {
-    return null;
+    return 'failed';
   }
+}
+
+/**
+ * The entries and whether they are a stand-in: the database could not be
+ * read, so these are the content files, which may lack recent pieces. A
+ * detail page then answers "try later" rather than "not found".
+ */
+export type Loaded<T> = { items: T[]; stale: boolean };
+
+async function withFallback<T>(remote: T[] | null | 'failed', files: () => Promise<T[]>): Promise<Loaded<T>> {
+  if (Array.isArray(remote) && remote.length > 0) return { items: remote, stale: false };
+  return { items: await files(), stale: remote === 'failed' };
+}
+
+/** Published artwork sheets, with where they came from. */
+export async function loadWorksFrom(): Promise<Loaded<WorkEntry>> {
+  return withFallback(await fromView('editorial_artworks_v', mapWork), worksFromFiles);
+}
+
+/** Published extra-gallery items, with where they came from. */
+export async function loadGalleryFrom(): Promise<Loaded<GalleryEntry>> {
+  return withFallback(await fromView('editorial_gallery_v', mapGallery), galleryFromFiles);
 }
 
 /** Published artwork sheets. Supabase when the editorial migration is applied, otherwise the content files. */
 export async function loadWorks(): Promise<WorkEntry[]> {
-  const remote = await fromView('editorial_artworks_v', mapWork);
-  if (remote && remote.length > 0) return remote;
-  return worksFromFiles();
+  return (await loadWorksFrom()).items;
 }
 
 /** Published extra-gallery items. Same fallback as loadWorks. */
 export async function loadGallery(): Promise<GalleryEntry[]> {
-  const remote = await fromView('editorial_gallery_v', mapGallery);
-  if (remote && remote.length > 0) return remote;
-  return galleryFromFiles();
+  return (await loadGalleryFrom()).items;
 }

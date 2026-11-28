@@ -9,8 +9,12 @@ export function productJsonLd(input: {
   product: ProductPublic;
   /** The option on show (a keyring's shape…): its price and stock. */
   selected: ProductPublic;
+  /** The page's canonical URL: the product's, also on an option's page. */
   url: string;
   breadcrumbs: Array<{ name: string; url: string }>;
+  /** Offer extras from seo/structuredData.ts: OfferShippingDetails and MerchantReturnPolicy objects. */
+  shippingDetails?: object[];
+  returnPolicies?: object[];
   /**
    * The structured-data subset of the product's reviews (published, verified,
    * with stars: `productReviews().jsonLd`). `average` and `count` cover all of
@@ -18,7 +22,7 @@ export function productJsonLd(input: {
    */
   reviews?: { average: number | null; count: number; items: PublicReview[] };
 }): object[] {
-  const { product, selected, url, breadcrumbs, reviews } = input;
+  const { product, selected, url, breadcrumbs, reviews, shippingDetails = [], returnPolicies = [] } = input;
   const onSale = selected.saleEnabled && selected.availability === 'available';
   const images = (product.imageUrls.length ? product.imageUrls : [product.coverImageUrl]).filter(Boolean);
   const out: object[] = [
@@ -37,6 +41,8 @@ export function productJsonLd(input: {
         priceCurrency: 'EUR',
         availability: onSale ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         itemCondition: 'https://schema.org/NewCondition',
+        ...(shippingDetails.length ? { shippingDetails } : {}),
+        ...(returnPolicies.length ? { hasMerchantReturnPolicy: returnPolicies } : {}),
       },
     },
   ];

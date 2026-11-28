@@ -245,6 +245,14 @@ export function loadPublicCatalogForPages(locale: Locale): ReturnType<typeof loa
   return value;
 }
 
+/**
+ * The database is set up but the pages got the local file instead: it could
+ * not be read, so a product missing from the page catalogue may still exist.
+ */
+export async function catalogReadFailed(locale: Locale): Promise<boolean> {
+  return hasDatabase() && (await loadPublicCatalogForPages(locale)).source !== 'supabase';
+}
+
 /** @deprecated Prefer loadPublicCatalog for source awareness. */
 export async function loadManifestProducts(
   locale: Locale,
