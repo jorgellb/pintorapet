@@ -2,9 +2,9 @@
 
 ## Acceso
 
-1. Invita el email de la artista en Supabase Auth (sin contraseña por defecto en este repo).
-2. Define `ADMIN_BOOTSTRAP_EMAIL` y ejecuta `pnpm admin:bootstrap` con la service role.
-3. Abre `/admin/login/` y pide un magic link.
+1. La artista se crea una cuenta normal en la web (sin contraseña por defecto en este repo).
+2. Se le da acceso añadiendo su cuenta a `public.admin_users` con SQL (ver «Run the site» en el README).
+3. Abre `/admin/login/` y entra con la contraseña o pide un enlace.
 4. No hay registro público de administración.
 
 ## Productos

@@ -24,10 +24,7 @@
     "migration:extras": "node scripts/migration/build-site-extras.mjs",
     "migration:pages": "python3 scripts/migration/extract-pages.py",
     "migration:import-sql": "node scripts/migration/generate-product-import-sql.mjs",
-    "migration:validate": "node scripts/migration/validate-manifests.mjs",
-    "admin:bootstrap": "node scripts/bootstrap-admin.mjs",
-    "editorial:import": "node scripts/editorial-import.mjs",
-    "storage:upload": "node scripts/upload-storage.mjs"
+    "migration:validate": "node scripts/migration/validate-manifests.mjs"
   },
   "dependencies": {
     "@astrojs/react": "^7.1.9",
@@ -36,8 +33,6 @@
     "@fontsource/fraunces": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/outfit": "^5.3.0",
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.118.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vercel/functions": "3.12.0",
