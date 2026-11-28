@@ -15,6 +15,8 @@ function token(overrides: Record<string, unknown> = {}, { key = privateKey, kid 
     iss: GITHUB_ISSUER,
     aud: CRON_AUDIENCE,
     repository: 'jorgellb/pintorapet',
+    repository_id: '1431416576',
+    repository_owner_id: '25139828',
     ref: 'refs/heads/main',
     workflow_ref: 'jorgellb/pintorapet/.github/workflows/outbox.yml@refs/heads/main',
     event_name: 'schedule',
@@ -43,6 +45,9 @@ describe('GitHub-signed cron calls', () => {
   it('refuses another repository, branch, workflow, audience, event or an expired token', async () => {
     for (const overrides of [
       { repository: 'someone/pintorapet' },
+      // The same name, re-created by someone else after a rename or a deleted account.
+      { repository_id: '999' },
+      { repository_owner_id: '999' },
       { ref: 'refs/heads/feature' },
       { workflow_ref: 'jorgellb/pintorapet/.github/workflows/ci.yml@refs/heads/main' },
       { aud: 'sts.amazonaws.com' },
@@ -68,6 +73,14 @@ describe('GitHub-signed cron calls', () => {
     await check(token());
     await check(token());
     expect(fetchKeys).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks GitHub at most once a minute, however many unknown key ids arrive at once', async () => {
+    await Promise.all(Array.from({ length: 20 }, () => check(token({}, { kid: 'made-up' }))));
+    await check(token({}, { kid: 'another' }));
+    expect(fetchKeys).toHaveBeenCalledTimes(1);
+    // Still accepts the real key meanwhile.
+    expect(await check(token())).toBe(true);
   });
 
   it('says no, and logs, when GitHub cannot be reached', async () => {
