@@ -2,7 +2,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
-import react from '@astrojs/react';
 import vercel from '@astrojs/vercel';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -12,7 +11,6 @@ export default defineConfig({
   site: 'https://petsdrawings.com',
   output: 'server',
   adapter: vercel(),
-  integrations: [react()],
   trailingSlash: 'always',
   devToolbar: { enabled: false },
   i18n: {
