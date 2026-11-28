@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { audit } from '@/lib/server/shipping/http';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
 
 export const prerender = false;
@@ -32,6 +32,6 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
     if (err && typeof err === 'object' && 'issues' in err) {
       return jsonError(new CommerceError('VALIDATION', 'Invalid commission patch', 400, err));
     }
-    return jsonError(new CommerceError('INTERNAL', 'Commission update failed', 500));
+    return internalError(err, 'Commission update failed');
   }
 };

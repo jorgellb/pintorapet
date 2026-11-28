@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { APIRoute } from 'astro';
 import { reviewInputSchema } from '@/lib/domain/reviews';
 import { clientIp, inspect, withoutAntibotFields } from '@/lib/server/antibot';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { hasDatabase, serviceDb } from '@/lib/server/db';
 import { parseRequestBody } from '@/lib/server/parseBody';
 import { submitCustomerReview } from '@/lib/server/reviews/store';
@@ -43,11 +43,10 @@ export const POST: APIRoute = async (context) => {
     const result = await submitCustomerReview(input, { ip: clientIp(context) });
     return Response.json({ ok: true, ...result });
   } catch (err) {
-    if (err instanceof CommerceError) return jsonError(new CommerceError(err.code, err.message, err.status));
+    if (err instanceof CommerceError) return jsonError(err);
     if (err && typeof err === 'object' && 'issues' in err) {
       return jsonError(new CommerceError('VALIDATION', 'Invalid review', 400));
     }
-    console.error('[review]', err);
-    return jsonError(new CommerceError('INTERNAL', 'Review failed', 500));
+    return internalError(err, 'Review failed');
   }
 };

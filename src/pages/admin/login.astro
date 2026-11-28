@@ -1,7 +1,9 @@
 ---
+import AntiBot from '@/components/AntiBot.astro';
 import AdminLayout from '@/layouts/AdminLayout.astro';
 import { hasAuth } from '@/lib/server/auth';
-import { adminSignIn, getSessionUser, isActiveAdmin, sendAdminLink } from '@/lib/server/adminAuth';
+import { getSessionUser, isActiveAdmin } from '@/lib/server/adminAuth';
+import { adminLogin } from '@/lib/server/adminLogin';
 
 export const prerender = false;
 
@@ -16,23 +18,10 @@ if (session && (await isActiveAdmin(session.id))) {
 }
 
 if (Astro.request.method === 'POST' && configured) {
-  const form = await Astro.request.formData();
-  const email = String(form.get('email') ?? '')
-    .trim()
-    .toLowerCase();
-  const password = String(form.get('password') ?? '');
-
-  if (!email || !email.includes('@')) {
-    errorMsg = 'Escribe un correo válido.';
-  } else if (password.length > 0) {
-    const result = await adminSignIn(Astro.cookies, Astro.request, email, password);
-    if (result === 'ok') return Astro.redirect('/admin/');
-    errorMsg = result === 'not_admin' ? 'Esta cuenta no tiene acceso al panel.' : 'El correo o la contraseña no coinciden.';
-  } else if (await sendAdminLink(Astro.request, email)) {
-    notice = 'Si ese correo tiene acceso, te llegará un enlace para entrar.';
-  } else {
-    errorMsg = 'No se pudo enviar el enlace. Revisa el correo o entra con la contraseña.';
-  }
+  const result = await adminLogin(Astro, await Astro.request.formData());
+  if (result.signedIn) return Astro.redirect('/admin/');
+  notice = result.notice ?? null;
+  errorMsg = result.error ?? null;
 }
 ---
 
@@ -59,6 +48,7 @@ if (Astro.request.method === 'POST' && configured) {
               <input type="password" name="password" maxlength="128" autocomplete="current-password" />
               <span class="hint">Déjala vacía para recibir un enlace de acceso por correo.</span>
             </label>
+            <AntiBot form="sign_in" locale="es" />
             <button type="submit">Entrar</button>
           </form>
         </>

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { finalizePaypalOrder } from '@/lib/server/commerce/paypalCheckout';
 import { paypalRefundOf, recordProviderRefund } from '@/lib/server/commerce/refunds';
 import { loadPaymentConfig } from '@/lib/server/payments/config';
@@ -58,6 +58,6 @@ export const POST: APIRoute = async ({ request }) => {
     return Response.json({ received: true, status: outcome.status });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(new CommerceError('INTERNAL', 'PayPal webhook failed', 500));
+    return internalError(err, 'PayPal webhook failed');
   }
 };

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { uploadMedia } from '@/lib/server/admin/editorial';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
 
@@ -24,6 +24,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     return Response.json({ ok: true, media: row });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(new CommerceError('INTERNAL', 'Upload failed', 500));
+    return internalError(err, 'Upload failed');
   }
 };

@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { deleteMedia, saveMediaAlts } from '@/lib/server/admin/editorial';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
 
@@ -36,6 +36,6 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(new CommerceError('INTERNAL', 'Could not delete the media', 500));
+    return internalError(err, 'Could not delete the media');
   }
 };

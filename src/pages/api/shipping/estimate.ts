@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { shippingEstimateSchema } from '@/lib/validation/checkout';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { normalizeCartItems } from '@/lib/domain/cart';
 import { isShippingCountry } from '@/lib/domain/countries';
@@ -89,7 +89,11 @@ export const POST: APIRoute = async ({ request }) => {
       holiday: holiday ? { late: holiday.kind === 'late', text: holidayText(holiday, body.locale) } : null,
     });
   } catch (err) {
-    if (err instanceof CommerceError) return jsonError(new CommerceError(err.code, err.message, err.status));
-    return jsonError(new CommerceError('VALIDATION', 'Invalid shipping request', 400));
+    if (err instanceof CommerceError) return jsonError(err);
+    // A body that is not JSON, or not the expected shape.
+    if (err instanceof SyntaxError || (err && typeof err === 'object' && 'issues' in err)) {
+      return jsonError(new CommerceError('VALIDATION', 'Invalid shipping request', 400));
+    }
+    return internalError(err, 'Shipping estimate failed');
   }
 };

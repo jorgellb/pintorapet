@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { mapPgError } from '@/lib/server/commerce/pgErrors';
 import { hasDatabase } from '@/lib/server/db';
 import { serviceDb } from '@/lib/server/db';
@@ -128,6 +128,6 @@ export const POST: APIRoute = async ({ request }) => {
         new CommerceError('VALIDATION', 'Invalid lookup payload', 400, err),
       );
     }
-    return jsonError(new CommerceError('INTERNAL', 'Order lookup failed', 500));
+    return internalError(err, 'Order lookup failed');
   }
 };

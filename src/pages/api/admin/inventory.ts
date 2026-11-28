@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { adjustProductInventory } from '@/lib/server/admin/products';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
 
@@ -37,8 +37,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         new CommerceError('VALIDATION', 'Invalid inventory payload', 400, err),
       );
     }
-    return jsonError(
-      new CommerceError('INTERNAL', 'Inventory adjust failed', 500),
-    );
+    return internalError(err, 'Inventory adjust failed');
   }
 };

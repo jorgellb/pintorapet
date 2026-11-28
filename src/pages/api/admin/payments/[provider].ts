@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import type { PaymentProvider } from '@/lib/server/payments/config';
 import {
   connectPaypal,
@@ -58,8 +58,7 @@ function failure(err: unknown, fallback: string): Response {
   if (err && typeof err === 'object' && 'issues' in err) {
     return jsonError(new CommerceError('VALIDATION', 'Revisa los datos del formulario.', 400));
   }
-  console.error(fallback, err);
-  return jsonError(new CommerceError('INTERNAL', fallback, 500));
+  return internalError(err, fallback);
 }
 
 type Admin = NonNullable<Awaited<ReturnType<typeof requireAdmin>>>;

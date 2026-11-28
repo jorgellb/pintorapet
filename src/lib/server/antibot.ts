@@ -214,6 +214,12 @@ function challengeSignal(form: AntibotForm, fields: Record<string, unknown>, ipH
 
 export type Submission = {
   form: AntibotForm;
+  /**
+   * Count it under another form's limits; the token is still checked against
+   * `form`. The studio's one login form asks for a link without a password,
+   * and a link is an email: it counts as a password-reset request.
+   */
+  countAs?: AntibotForm;
   /** Every posted field, including the ones the gate added */
   fields: Record<string, unknown>;
   ip: string;
@@ -246,7 +252,7 @@ export async function inspect(submission: Submission): Promise<Verdict> {
   try {
     data = await service.one`
       select public.antibot_gate(
-        p_form => ${GATE_FORM[form]}, p_ip_hash => ${ipHash},
+        p_form => ${GATE_FORM[submission.countAs ?? form]}, p_ip_hash => ${ipHash},
         p_email_hash => ${email ? hashOf('email', canonicalEmail(email)) : null},
         p_email_hint => ${email ? maskEmail(email) : null}, p_nonce => ${nonce}, p_verdict => ${local.verdict},
         p_score => ${score}, p_reasons => ${local.reasons}::text[]) as result`.then((row) => row?.result);

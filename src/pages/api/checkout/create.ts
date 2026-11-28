@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { checkoutCreateSchema } from '@/lib/validation/checkout';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { hasDatabase } from '@/lib/server/db';
 import { ensureCartOwnerHash } from '@/lib/server/commerce/cartOwner';
 import { createCheckout } from '@/lib/server/commerce/checkout';
@@ -102,6 +102,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         new CommerceError('VALIDATION', 'Invalid checkout payload', 400, err),
       );
     }
-    return jsonError(new CommerceError('INTERNAL', 'Checkout create failed', 500));
+    return internalError(err, 'Checkout create failed');
   }
 };

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { processOutboxBatch } from '@/lib/server/commerce/outbox';
 import { hasResend } from '@/lib/server/env';
 import { hasDatabase } from '@/lib/server/db';
@@ -46,7 +46,7 @@ async function run(request: Request): Promise<Response> {
     return Response.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(new CommerceError('INTERNAL', 'Outbox cron failed', 500));
+    return internalError(err, 'Outbox cron failed');
   }
 }
 

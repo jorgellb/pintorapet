@@ -3,7 +3,7 @@ import { audit } from '@/lib/server/shipping/http';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { createAdminProduct, setProductCollection } from '@/lib/server/admin/products';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
 
@@ -59,6 +59,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     if (err && typeof err === 'object' && 'issues' in err) {
       return jsonError(new CommerceError('VALIDATION', 'Invalid product', 400, err));
     }
-    return jsonError(new CommerceError('INTERNAL', 'Product create failed', 500));
+    return internalError(err, 'Product create failed');
   }
 };

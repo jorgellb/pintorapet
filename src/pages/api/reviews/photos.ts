@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
 import { serviceDb, type Db } from '@/lib/server/db';
 import { openReviewLink, type ReviewOrder } from '@/lib/server/reviews/link';
@@ -11,10 +11,9 @@ export const prerender = false;
 const linkSchema = z.object({ r: z.string().trim().min(3).max(40), k: z.string().trim().min(16).max(128) });
 
 function fail(err: unknown): Response {
-  if (err instanceof CommerceError) return jsonError(new CommerceError(err.code, err.message, err.status));
+  if (err instanceof CommerceError) return jsonError(err);
   if (err && typeof err === 'object' && 'issues' in err) return jsonError(new CommerceError('VALIDATION', 'Invalid upload', 400));
-  console.error('[review photo]', err);
-  return jsonError(new CommerceError('INTERNAL', 'Upload failed', 500));
+  return internalError(err, 'Upload failed');
 }
 
 /** The order the link opens and its review, which must exist and still be the customer's to edit. */

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { invoiceCustomerSchema } from '@/lib/domain/checkoutCustomer';
 import { commissionCheckoutQuote } from '@/lib/server/commissionQuotes';
 import { ensureCartOwnerHash } from '@/lib/server/commerce/cartOwner';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { formatEur } from '@/lib/domain/money';
 import { serviceDb } from '@/lib/server/db';
 
@@ -35,7 +35,11 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       subtotalFormatted: formatEur(quote.subtotalCents, body.locale),
     });
   } catch (err) {
-    if (err instanceof CommerceError) return jsonError(new CommerceError(err.code, err.message, err.status));
-    return jsonError(new CommerceError('VALIDATION', 'Invalid request', 400));
+    if (err instanceof CommerceError) return jsonError(err);
+    // A body that is not JSON, or not the expected shape.
+    if (err instanceof SyntaxError || (err && typeof err === 'object' && 'issues' in err)) {
+      return jsonError(new CommerceError('VALIDATION', 'Invalid request', 400));
+    }
+    return internalError(err, 'Commission quote failed');
   }
 };

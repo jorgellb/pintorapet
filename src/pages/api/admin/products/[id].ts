@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
 import { deleteAdminProduct, updateAdminProduct } from '@/lib/server/admin/products';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
 
@@ -56,7 +56,7 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
         new CommerceError('VALIDATION', 'Invalid product patch', 400, err),
       );
     }
-    return jsonError(new CommerceError('INTERNAL', 'Product update failed', 500));
+    return internalError(err, 'Product update failed');
   }
 };
 
@@ -74,6 +74,6 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     return Response.json({ ok: true, result });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(new CommerceError('INTERNAL', 'Product delete failed', 500));
+    return internalError(err, 'Product delete failed');
   }
 };

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import {
   constructStripeEvent,
   handleStripeEvent,
@@ -58,8 +58,6 @@ export const POST: APIRoute = async ({ request }) => {
     return Response.json({ received: true, ...result });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(
-      new CommerceError('INTERNAL', 'Webhook processing failed', 500, err),
-    );
+    return internalError(err, 'Webhook processing failed');
   }
 };

@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { loadPublicCatalog } from '@/lib/catalog/loadProducts';
 import { productPath } from '@/i18n/routes';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 
 export const prerender = false;
 
@@ -39,6 +39,6 @@ export const POST: APIRoute = async ({ request }) => {
     if (err && typeof err === 'object' && 'issues' in err) {
       return jsonError(new CommerceError('VALIDATION', 'Invalid cart', 400));
     }
-    return jsonError(new CommerceError('INTERNAL', 'Cart lines failed', 500));
+    return internalError(err, 'Cart lines failed');
   }
 };

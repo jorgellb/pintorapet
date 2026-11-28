@@ -72,7 +72,8 @@ function create() {
       sendVerificationEmail: async ({ user, url }) => sendAuthEmail('verify', user.email, { url, name: user.name }),
     },
     plugins: [
-      // The studio's "send me a link": only for accounts that already exist.
+      // The studio's "send me a link". Better Auth sends it to any address and only
+      // refuses unknown accounts when it is clicked: sendAdminLink asks for admins only.
       magicLink({
         disableSignUp: true,
         expiresIn: 5 * 60,

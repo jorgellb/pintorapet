@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { checkoutCustomerSchema, shippingAddressFrom } from '@/lib/domain/checkoutCustomer';
 import { commissionConfig, commissionManualOrder } from '@/lib/server/commissionQuotes';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
@@ -41,7 +41,11 @@ export const POST: APIRoute = async ({ request }) => {
       ...(body.method === 'transfer' ? { iban: config.transferIban, holder: config.transferHolder } : {}),
     });
   } catch (err) {
-    if (err instanceof CommerceError) return jsonError(new CommerceError(err.code, err.message, err.status));
-    return jsonError(new CommerceError('VALIDATION', 'Invalid request', 400));
+    if (err instanceof CommerceError) return jsonError(err);
+    // A body that is not JSON, or not the expected shape.
+    if (err instanceof SyntaxError || (err && typeof err === 'object' && 'issues' in err)) {
+      return jsonError(new CommerceError('VALIDATION', 'Invalid request', 400));
+    }
+    return internalError(err, 'Commission order failed');
   }
 };

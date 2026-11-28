@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 import { addPhoto } from '@/lib/server/commissionPhotos';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { serviceDb } from '@/lib/server/db';
 
 export const prerender = false;
@@ -24,9 +24,8 @@ export const POST: APIRoute = async ({ request }) => {
     const saved = await addPhoto(db, { ...fields, file });
     return Response.json({ ok: true, count: saved.count });
   } catch (err) {
-    if (err instanceof CommerceError) return jsonError(new CommerceError(err.code, err.message, err.status));
+    if (err instanceof CommerceError) return jsonError(err);
     if (err && typeof err === 'object' && 'issues' in err) return jsonError(new CommerceError('VALIDATION', 'Invalid upload', 400));
-    console.error('[commission photo]', err);
-    return jsonError(new CommerceError('INTERNAL', 'Upload failed', 500));
+    return internalError(err, 'Upload failed');
   }
 };

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { APIRoute } from 'astro';
 import { commissionSchema } from '@/lib/validation/checkout';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { parseRequestBody } from '@/lib/server/parseBody';
 import { submitCommission } from '@/lib/server/commerce/forms';
 import { hasResend } from '@/lib/server/env';
@@ -85,6 +85,6 @@ export const POST: APIRoute = async (context) => {
         new CommerceError('VALIDATION', 'Invalid commission payload', 400, err),
       );
     }
-    return jsonError(new CommerceError('INTERNAL', 'Commission failed', 500));
+    return internalError(err, 'Commission failed');
   }
 };

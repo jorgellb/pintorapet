@@ -32,8 +32,8 @@ export const shippingEstimateSchema = z
 
 export const checkoutCreateSchema = z
   .object({
-    quoteId: z.string().min(1).max(128),
-    attemptId: z.string().uuid(),
+    quoteId: z.uuid(),
+    attemptId: z.uuid(),
     locale: z.enum(['en', 'es']),
     provider: z.enum(['stripe', 'paypal']).default('stripe'),
     items: z.array(cartItemSchema).min(1).max(20).optional(),

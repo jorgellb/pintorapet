@@ -3,7 +3,7 @@ import { audit } from '@/lib/server/shipping/http';
 import { setColumns } from '@/lib/server/db';
 import { z } from 'zod';
 import { requireAdmin } from '@/lib/server/adminAuth';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { dbCall } from '@/lib/server/commerce/pgErrors';
 
 export const prerender = false;
@@ -30,7 +30,7 @@ export const GET: APIRoute = async ({ request, cookies }) => {
     return Response.json({ settings: data });
   } catch (err) {
     if (err instanceof CommerceError) return jsonError(err);
-    return jsonError(new CommerceError('INTERNAL', 'Settings load failed', 500));
+    return internalError(err, 'Settings load failed');
   }
 };
 
@@ -74,8 +74,6 @@ export const PATCH: APIRoute = async ({ request, cookies }) => {
         new CommerceError('VALIDATION', 'Invalid settings patch', 400, err),
       );
     }
-    return jsonError(
-      new CommerceError('INTERNAL', 'Settings update failed', 500),
-    );
+    return internalError(err, 'Settings update failed');
   }
 };

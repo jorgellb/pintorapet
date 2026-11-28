@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { quoteRequestSchema } from '@/lib/validation/checkout';
-import { CommerceError, jsonError } from '@/lib/server/commerce/errors';
+import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { hasDatabase } from '@/lib/server/db';
 import { normalizeCartItems } from '@/lib/domain/cart';
 import { loadManifestProducts } from '@/lib/catalog/loadProducts';
@@ -126,6 +126,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         new CommerceError('VALIDATION', 'Invalid quote payload', 400, err),
       );
     }
-    return jsonError(new CommerceError('INTERNAL', 'Quote failed', 500));
+    return internalError(err, 'Quote failed');
   }
 };
