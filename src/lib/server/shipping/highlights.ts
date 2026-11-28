@@ -25,9 +25,14 @@ async function load(): Promise<{ free: Zone | null; holiday: Zone | null }> {
   };
 }
 
+/** A failed read shows no notices this time and is not kept, so the next page asks again. */
 function zones() {
   if (!cached || Date.now() - cached.at > KEEP_MS) {
-    const value = load().catch(() => ({ free: null, holiday: null }));
+    const value: Promise<{ free: Zone | null; holiday: Zone | null }> = load().catch((err: unknown) => {
+      console.error('[shipping] highlights read failed', err instanceof Error ? err.message : err);
+      if (cached?.value === value) cached = null;
+      return { free: null, holiday: null };
+    });
     cached = { at: Date.now(), value };
   }
   return cached.value;

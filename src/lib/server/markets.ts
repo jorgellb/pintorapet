@@ -61,16 +61,20 @@ export async function allMarkets(client: Db): Promise<Market[]> {
 const KEEP_MS = 5 * 60_000;
 let cached: { at: number; value: Promise<Market[]> } | null = null;
 
-/** Published markets still to come, soonest first (public pages; kept five minutes). */
+/** Published markets still to come, soonest first (public pages; kept five minutes, a failed read is not kept). */
 export function publicMarkets(): Promise<Market[]> {
   if (!cached || Date.now() - cached.at > KEEP_MS) {
     const db = serviceDb();
-    const value = db
+    const value: Promise<Market[]> = db
       ? db.rows<Row>`
           select m.*, ${PHOTOS} from public.markets m
           where m.published and m.ends_on >= ${madridDay()}::date order by m.starts_on, m.name`
           .then((rows) => rows.map(toMarket))
-          .catch(() => [])
+          .catch((err: unknown) => {
+            console.error('[markets] read failed', err instanceof Error ? err.message : err);
+            if (cached?.value === value) cached = null;
+            return [];
+          })
       : Promise.resolve([]);
     cached = { at: Date.now(), value };
   }
