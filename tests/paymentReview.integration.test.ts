@@ -60,9 +60,10 @@ describe.skipIf(!url)('payments, invoices and privileges against PostgreSQL', ()
       from public.orders where id = ${id}`;
   const stock = (productId: string) => stockOf(db(), productId);
   const alerts = (orderId: string) =>
-    db().rows<{ reason: string }>`
-      select payload->>'reason' as reason from public.notification_outbox
-      where template_key = 'payment_review_admin' and payload->>'order_id' = ${orderId}`;
+    db().rows<{ reason: string; payment?: string }>`
+      select payload->>'reason' as reason, payload->>'payment' as payment from public.notification_outbox
+      where template_key = 'payment_review_admin' and payload->>'order_id' = ${orderId} order by created_at`
+      .then((rows) => rows.map((row) => (row.payment ? row : { reason: row.reason })));
 
   it('a payment that fits is paid and takes the piece', async () => {
     const f = await openOrder();
@@ -104,13 +105,37 @@ describe.skipIf(!url)('payments, invoices and privileges against PostgreSQL', ()
     expect(await stock(f.productId)).toEqual({ stock_on_hand: 0, stock_reserved: 0 });
   });
 
-  it('quoted to Canarias, delivered in Madrid: sold but not invoiced; confirming applies Spanish VAT', async () => {
+  it('quoted to Canarias, delivered in Madrid: held, not sold or invoiced; confirming applies Spanish VAT', async () => {
     const f = await openOrder({ postal: '35001' });
     expect((await order(f.orderId))?.vat_regime).toBe('no_vat');
     expect(await pay(f, { postal: '28013' })).toMatchObject({ status: 'review', reason: 'DESTINATION_CHANGED' });
-    expect(await stock(f.productId)).toEqual({ stock_on_hand: 0, stock_reserved: 0 });
+    // The piece stays reserved for this customer until Meili decides.
+    expect(await stock(f.productId)).toEqual({ stock_on_hand: 1, stock_reserved: 1 });
     await mod.asUser(adminId, (tx) => tx.call('admin_resolve_payment_review', { p_order_id: f.orderId, p_action: 'confirm' }));
     expect(await order(f.orderId)).toMatchObject({ payment_status: 'paid', vat_regime: 'es_vat', shipping_postal_code: '28013' });
+    expect(await stock(f.productId)).toEqual({ stock_on_hand: 0, stock_reserved: 0 });
+  });
+
+  it('cancelling a payment delivered elsewhere puts its piece back on sale', async () => {
+    const f = await openOrder({ postal: '28001' });
+    await pay(f, { postal: '35001' });
+    await mod.asUser(adminId, (tx) => tx.call('admin_resolve_payment_review', { p_order_id: f.orderId, p_action: 'cancel' }));
+    expect(await order(f.orderId)).toMatchObject({ payment_status: 'cancelled' });
+    expect(await stock(f.productId)).toEqual({ stock_on_hand: 1, stock_reserved: 0 });
+  });
+
+  it('a payment whose stock could not be taken can still be confirmed or cancelled', async () => {
+    const confirmed = await openOrder({ held: 0 });
+    await pay(confirmed);
+    await mod.asUser(adminId, (tx) => tx.call('admin_resolve_payment_review', { p_order_id: confirmed.orderId, p_action: 'confirm' }));
+    expect(await order(confirmed.orderId)).toMatchObject({ payment_status: 'paid' });
+    expect(await stock(confirmed.productId)).toEqual({ stock_on_hand: 0, stock_reserved: 0 });
+
+    const cancelled = await openOrder({ held: 0 });
+    await pay(cancelled);
+    await mod.asUser(adminId, (tx) => tx.call('admin_resolve_payment_review', { p_order_id: cancelled.orderId, p_action: 'cancel' }));
+    expect(await order(cancelled.orderId)).toMatchObject({ payment_status: 'cancelled' });
+    expect(await stock(cancelled.productId)).toEqual({ stock_on_hand: 1, stock_reserved: 0 });
   });
 
   it('an order delivered outside its quoted region is never invoiced', async () => {
@@ -152,15 +177,51 @@ describe.skipIf(!url)('payments, invoices and privileges against PostgreSQL', ()
     // Paid in a second tab: another session, another payment.
     const again = { paymentIntent: `pi_other_${f.orderId}`, sessionId: `cs_other_${f.orderId}` };
     expect(await pay(f, again)).toMatchObject({ status: 'paid', reason: 'PAID_AGAIN' });
-    expect(await alerts(f.orderId)).toEqual([{ reason: 'PAID_AGAIN' }]);
+    expect(await alerts(f.orderId)).toEqual([{ reason: 'PAID_AGAIN', payment: again.paymentIntent }]);
+    // A third one is reported on its own.
+    await pay(f, { paymentIntent: `pi_third_${f.orderId}`, sessionId: `cs_third_${f.orderId}` });
+    expect(await alerts(f.orderId)).toHaveLength(2);
     // The same payment under another event (async success after completed) is a replay.
     expect(await pay(f)).toMatchObject({ status: 'paid', replay: true });
   });
 
-  it('paid after it was cancelled: review, with the payment kept', async () => {
+  it('paid after it was cancelled: review, with the payment kept; a wrong amount is still a wrong amount', async () => {
     const f = await openOrder();
     await db().one`select public.release_reservations(${f.attemptId}, 'cancelled')`;
     expect(await pay(f)).toMatchObject({ status: 'review', reason: 'PAID_AFTER_CANCEL' });
+
+    const short = await openOrder();
+    await db().one`select public.release_reservations(${short.attemptId}, 'cancelled')`;
+    expect(await pay(short, { amount: 900 })).toMatchObject({ status: 'review', reason: 'AMOUNT_MISMATCH' });
+    await expect(
+      mod.asUser(adminId, (tx) => tx.call('admin_resolve_payment_review', { p_order_id: short.orderId, p_action: 'confirm' })),
+    ).rejects.toThrow(/REVIEW_NOT_CONFIRMABLE/);
+  });
+
+  it('a review with no known reason can only be cancelled', async () => {
+    const f = await openOrder();
+    await db().run`update public.orders set payment_status = 'review', paid_at = now() where id = ${f.orderId}`;
+    await expect(
+      mod.asUser(adminId, (tx) => tx.call('admin_resolve_payment_review', { p_order_id: f.orderId, p_action: 'confirm' })),
+    ).rejects.toThrow(/REVIEW_NOT_CONFIRMABLE/);
+  });
+
+  it('a paid order delivered elsewhere that skipped review is invoiced with the delivery address', async () => {
+    const f = await openOrder({ postal: '35001' });
+    const address = JSON.stringify({ line1: 'Calle Mayor 1', city: 'Madrid', country: 'ES', postal_code: '28013' });
+    await db().run`update public.orders set shipping_address = ${address}::jsonb where id = ${f.orderId}`;
+    await db().run`update public.orders set payment_status = 'paid', paid_at = now() where id = ${f.orderId}`;
+    await db().run`
+      insert into public.shop_settings (id, invoice_config) values (1, '{"issuerName":"Test","issuerNif":"12345678Z","issuerAddress":"C/ Uno 1","issuerPostalCode":"28001","issuerCity":"Madrid"}')
+      on conflict (id) do update set invoice_config = excluded.invoice_config`;
+    const result = await mod.asUser(adminId, (tx) =>
+      tx.call<{ invoice_id: string | null }>('admin_accept_destination', { p_order_id: f.orderId }),
+    );
+    expect(await order(f.orderId)).toMatchObject({ vat_regime: 'es_vat', shipping_postal_code: '28013' });
+    const invoice = await db().one<{ vat_regime: string; vat_cents: number }>`
+      select vat_regime, vat_cents from public.invoices where id = ${result.invoice_id}`;
+    expect(invoice).toEqual({ vat_regime: 'es_vat', vat_cents: expect.any(Number) });
+    expect(invoice!.vat_cents).toBeGreaterThan(0);
   });
 
   it('"delete abandoned" keeps an old open order that has a payment event', async () => {

@@ -31,8 +31,9 @@ COMMENT ON COLUMN public.orders.review_reason IS
 -- Helpers (service only)
 -- ---------------------------------------------------------------------------
 
--- Tells Meili, once per order and reason.
-CREATE OR REPLACE FUNCTION public.payment_review_alert(p_order_id uuid, p_reason text)
+-- Tells Meili, once per order and reason (and per payment, for one that
+-- arrives on top of the order's own: p_payment names it).
+CREATE OR REPLACE FUNCTION public.payment_review_alert(p_order_id uuid, p_reason text, p_payment text DEFAULT NULL)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -40,8 +41,10 @@ SET search_path = pg_catalog, public
 AS $$
 BEGIN
   INSERT INTO public.notification_outbox (dedupe_key, recipient, locale, template_key, payload, status, next_run_at)
-  SELECT 'payment_review_admin:' || o.id || ':' || p_reason, 'admin', o.locale, 'payment_review_admin',
-         jsonb_build_object('order_id', o.id, 'reference', o.reference, 'reason', p_reason), 'pending', now()
+  SELECT 'payment_review_admin:' || o.id || ':' || p_reason || coalesce(':' || p_payment, ''), 'admin', o.locale,
+         'payment_review_admin',
+         jsonb_build_object('order_id', o.id, 'reference', o.reference, 'reason', p_reason, 'payment', p_payment),
+         'pending', now()
   FROM public.orders o
   WHERE o.id = p_order_id
   ON CONFLICT (dedupe_key) DO NOTHING;
@@ -181,19 +184,14 @@ BEGIN
       RETURN jsonb_build_object('order_id', v_order.id, 'status', v_order.payment_status, 'replay', true);
     END IF;
     -- Another payment for an order already settled: the order stays as it is,
-    -- the money is on record and Meili is told (it is refunded from Stripe or PayPal).
+    -- the money is on record (the event, shown on the order page) and Meili
+    -- is told which payment to refund from Stripe or PayPal.
     UPDATE public.stripe_events
     SET status = 'processed', processed_at = now(), last_error = 'PAID_AGAIN',
         payload_summary = payload_summary || jsonb_build_object('payment_intent_id', p_stripe_payment_intent_id)
     WHERE event_id = p_stripe_event_id;
-    PERFORM public.payment_review_alert(v_order.id, 'PAID_AGAIN');
+    PERFORM public.payment_review_alert(v_order.id, 'PAID_AGAIN', coalesce(p_stripe_payment_intent_id, p_stripe_event_id));
     RETURN jsonb_build_object('order_id', v_order.id, 'status', v_order.payment_status, 'reason', 'PAID_AGAIN', 'replay', false);
-  END IF;
-
-  -- Paid after it was cancelled (its pieces already back on sale).
-  IF v_order.payment_status = 'cancelled' THEN
-    RETURN public.mark_payment_review(v_order.id, 'PAID_AFTER_CANCEL', p_stripe_event_id, p_stripe_session_id,
-      p_stripe_payment_intent_id, p_customer_email, p_customer_name, p_shipping_address);
   END IF;
 
   SELECT * INTO v_attempt
@@ -225,6 +223,13 @@ BEGIN
     END IF;
   END IF;
 
+  -- Paid after it was cancelled (its pieces already back on sale); the amount
+  -- and the commission were checked above.
+  IF v_order.payment_status = 'cancelled' THEN
+    RETURN public.mark_payment_review(v_order.id, 'PAID_AFTER_CANCEL', p_stripe_event_id, p_stripe_session_id,
+      p_stripe_payment_intent_id, p_customer_email, p_customer_name, p_shipping_address);
+  END IF;
+
   SELECT count(*) INTO v_active_count
   FROM public.stock_reservations
   WHERE checkout_attempt_id = v_attempt.id AND status = 'active';
@@ -232,6 +237,16 @@ BEGIN
   IF v_active_count = 0 AND v_order.commission_request_id IS NULL THEN
     -- Paid without usable reservation → review, do not force negative stock
     RETURN public.mark_payment_review(v_order.id, 'PAID_WITHOUT_RESERVATION', p_stripe_event_id, p_stripe_session_id,
+      p_stripe_payment_intent_id, p_customer_email, p_customer_name, p_shipping_address);
+  END IF;
+
+  -- Delivered outside the quoted region: VAT or shipping may not fit. Its
+  -- pieces stay reserved for this customer until Meili confirms or cancels.
+  v_fits := public.destination_fits(v_order, coalesce(p_shipping_address, v_order.shipping_address));
+  IF NOT v_fits THEN
+    UPDATE public.checkout_attempts SET status = 'review'
+    WHERE id = v_attempt.id AND status IN ('creating_session', 'session_open');
+    RETURN public.mark_payment_review(v_order.id, 'DESTINATION_CHANGED', p_stripe_event_id, p_stripe_session_id,
       p_stripe_payment_intent_id, p_customer_email, p_customer_name, p_shipping_address);
   END IF;
 
@@ -292,14 +307,6 @@ BEGIN
   SET status = 'paid'
   WHERE id = v_attempt.id;
 
-  -- Delivered outside the quoted region: sold (the pieces are taken), but not
-  -- invoiced with the quoted VAT until Meili confirms it.
-  v_fits := public.destination_fits(v_order, coalesce(p_shipping_address, v_order.shipping_address));
-  IF NOT v_fits THEN
-    RETURN public.mark_payment_review(v_order.id, 'DESTINATION_CHANGED', p_stripe_event_id, p_stripe_session_id,
-      p_stripe_payment_intent_id, p_customer_email, p_customer_name, p_shipping_address);
-  END IF;
-
   UPDATE public.orders
   SET
     payment_status = 'paid',
@@ -356,22 +363,50 @@ $$;
 -- ---------------------------------------------------------------------------
 
 -- What can be confirmed: the money matches the order. A wrong amount, a
--- commission paid twice or a second payment are refunded instead.
+-- commission paid twice, or a review whose reason is not known are refunded
+-- instead.
 CREATE OR REPLACE FUNCTION public.payment_review_confirmable(p_reason text)
 RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
 SET search_path = pg_catalog, public
 AS $$
-  SELECT p_reason IS NULL OR p_reason IN (
+  SELECT coalesce(p_reason IN (
     'PAID_WITHOUT_RESERVATION', 'STOCK_CONSUME_FAILED', 'DESTINATION_CHANGED', 'COMMISSION_QUOTE_CHANGED', 'PAID_AFTER_CANCEL'
-  );
+  ), false);
+$$;
+
+-- Orders already in review keep the reason their payment event recorded.
+UPDATE public.orders o
+SET review_reason = (
+  SELECT e.last_error FROM public.stripe_events e
+  WHERE e.payload_summary->>'order_id' = o.id::text AND e.last_error IS NOT NULL
+  ORDER BY e.created_at DESC LIMIT 1)
+WHERE o.payment_status = 'review' AND o.review_reason IS NULL;
+
+-- The VAT and the exemption note follow the address it is delivered to.
+CREATE OR REPLACE FUNCTION public.order_take_delivered_destination(p_order_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  UPDATE public.orders
+  SET shipping_country = upper(shipping_address->>'country'),
+      shipping_postal_code = shipping_address->>'postal_code',
+      vat_regime = coalesce(public.vat_regime(upper(shipping_address->>'country'), shipping_address->>'postal_code'), vat_regime),
+      shipping_destination_ok = true
+  WHERE id = p_order_id AND shipping_destination_ok IS FALSE AND shipping_address IS NOT NULL;
+END;
 $$;
 
 -- p_action 'confirm': the order is paid (and invoiced, with the VAT of the
--- address it goes to); pieces not reserved any more are taken from the free
--- stock. 'cancel': its reserved pieces go back on sale and it stays on record
--- as cancelled with its payment, to be refunded from Stripe or PayPal.
+-- address it goes to); its reserved pieces are taken, and any not reserved
+-- any more come from the free stock. 'cancel': its reserved pieces go back on
+-- sale and it stays on record as cancelled with its payment, to be refunded
+-- from Stripe or PayPal. Both cope with a stock_reserved counter that is
+-- already short (what makes a payment STOCK_CONSUME_FAILED).
 CREATE OR REPLACE FUNCTION public.admin_resolve_payment_review(p_order_id uuid, p_action text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -380,11 +415,8 @@ SET search_path = pg_catalog, public
 AS $$
 DECLARE
   v_order public.orders%ROWTYPE;
-  v_attempt record;
   v_res public.stock_reservations%ROWTYPE;
   v_item record;
-  v_country text;
-  v_postal text;
 BEGIN
   IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
@@ -404,65 +436,59 @@ BEGIN
     RAISE EXCEPTION 'REVIEW_NOT_CONFIRMABLE' USING ERRCODE = 'P0001';
   END IF;
 
-  -- The VAT and the exemption note follow the address it is delivered to.
-  IF v_order.shipping_destination_ok IS FALSE THEN
-    v_country := upper(v_order.shipping_address->>'country');
-    v_postal := v_order.shipping_address->>'postal_code';
-    UPDATE public.orders
-    SET shipping_country = v_country,
-        shipping_postal_code = v_postal,
-        vat_regime = coalesce(public.vat_regime(v_country, v_postal), vat_regime),
-        shipping_destination_ok = true
-    WHERE id = v_order.id;
-  END IF;
+  PERFORM public.order_take_delivered_destination(v_order.id);
 
-  IF p_action = 'cancel' THEN
-    FOR v_attempt IN
-      SELECT a.id FROM public.checkout_attempts a
-      WHERE a.order_id = v_order.id
-        AND EXISTS (SELECT 1 FROM public.stock_reservations r WHERE r.checkout_attempt_id = a.id AND r.status = 'active')
-      ORDER BY a.created_at
-    LOOP
-      UPDATE public.checkout_attempts SET status = 'session_open' WHERE id = v_attempt.id AND status = 'review';
-      PERFORM public.release_reservations(v_attempt.id, 'cancelled');
-    END LOOP;
-    UPDATE public.orders SET payment_status = 'cancelled' WHERE id = v_order.id;
-  ELSE
-    -- Reserved pieces are taken as a normal sale; others from the free stock.
-    FOR v_res IN
-      SELECT r.* FROM public.stock_reservations r
-      JOIN public.checkout_attempts a ON a.id = r.checkout_attempt_id
-      WHERE a.order_id = v_order.id AND r.status = 'active'
-      ORDER BY r.product_id
-      FOR UPDATE OF r
-    LOOP
+  -- The order's checkouts, locked after the order (the order apply_payment uses).
+  PERFORM 1 FROM public.checkout_attempts WHERE order_id = v_order.id FOR UPDATE;
+
+  FOR v_res IN
+    SELECT r.* FROM public.stock_reservations r
+    JOIN public.checkout_attempts a ON a.id = r.checkout_attempt_id
+    WHERE a.order_id = v_order.id AND r.status = 'active'
+    ORDER BY r.product_id
+    FOR UPDATE OF r
+  LOOP
+    IF p_action = 'cancel' THEN
+      UPDATE public.inventory
+      SET stock_reserved = stock_reserved - least(stock_reserved, v_res.quantity), version = version + 1
+      WHERE product_id = v_res.product_id;
+      UPDATE public.stock_reservations SET status = 'released', released_at = now() WHERE id = v_res.id;
+      INSERT INTO public.stock_movements (product_id, quantity_delta, reason, order_id, reservation_id, dedupe_key, note)
+      VALUES (v_res.product_id, v_res.quantity, 'release', v_order.id, v_res.id,
+              'release:' || v_res.checkout_attempt_id || ':' || v_res.id, 'cancelled')
+      ON CONFLICT (dedupe_key) DO NOTHING;
+    ELSE
       UPDATE public.inventory
       SET stock_on_hand = CASE WHEN inventory_mode = 'tracked' THEN stock_on_hand - v_res.quantity ELSE stock_on_hand END,
-          stock_reserved = stock_reserved - v_res.quantity,
+          stock_reserved = stock_reserved - least(stock_reserved, v_res.quantity),
           version = version + 1
       WHERE product_id = v_res.product_id
-        AND stock_reserved >= v_res.quantity
-        AND (inventory_mode <> 'tracked' OR stock_on_hand >= v_res.quantity);
+        AND (inventory_mode <> 'tracked'
+             OR stock_on_hand - v_res.quantity >= stock_reserved - least(stock_reserved, v_res.quantity));
       IF NOT FOUND THEN
         RAISE EXCEPTION 'STOCK_UNAVAILABLE' USING ERRCODE = 'P0001';
       END IF;
       UPDATE public.stock_reservations SET status = 'consumed', consumed_at = now() WHERE id = v_res.id;
-    END LOOP;
+    END IF;
+  END LOOP;
 
+  IF p_action = 'cancel' THEN
+    UPDATE public.checkout_attempts SET status = 'cancelled'
+    WHERE order_id = v_order.id AND status NOT IN ('paid', 'cancelled', 'expired');
+    UPDATE public.orders SET payment_status = 'cancelled' WHERE id = v_order.id;
+  ELSE
     FOR v_item IN
       SELECT oi.id, oi.product_id, oi.quantity FROM public.order_items oi
       WHERE oi.order_id = v_order.id AND oi.product_id IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM public.stock_movements m WHERE m.dedupe_key = 'sale:' || v_order.id || ':' || oi.id)
       ORDER BY oi.product_id
     LOOP
-      IF EXISTS (
+      -- Not taken through a reservation just above: from the free stock.
+      IF NOT EXISTS (
         SELECT 1 FROM public.stock_reservations r
         JOIN public.checkout_attempts a ON a.id = r.checkout_attempt_id
         WHERE a.order_id = v_order.id AND r.product_id = v_item.product_id AND r.status = 'consumed'
       ) THEN
-        -- Taken through its reservation just above.
-        NULL;
-      ELSE
         UPDATE public.inventory
         SET stock_on_hand = CASE WHEN inventory_mode = 'tracked' THEN stock_on_hand - v_item.quantity ELSE stock_on_hand END,
             version = version + 1
@@ -499,6 +525,46 @@ BEGIN
 END;
 $$;
 
+-- A paid order delivered outside its quoted region that never went through
+-- review (paid by transfer or Bizum, say) cannot be invoiced as it is: Meili
+-- takes the delivery address for it, and its invoice is issued with that VAT.
+CREATE OR REPLACE FUNCTION public.admin_accept_destination(p_order_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, extensions
+AS $$
+DECLARE
+  v_order public.orders%ROWTYPE;
+  v_invoice uuid;
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+  IF v_order.payment_status NOT IN ('paid', 'partially_refunded', 'refunded') OR v_order.shipping_destination_ok IS NOT FALSE THEN
+    RAISE EXCEPTION 'DESTINATION_NOT_PENDING' USING ERRCODE = 'P0001';
+  END IF;
+  IF (public.current_invoice(v_order.id)).id IS NOT NULL THEN
+    RAISE EXCEPTION 'INVOICE_IMMUTABLE' USING ERRCODE = 'P0001';
+  END IF;
+  PERFORM public.order_take_delivered_destination(v_order.id);
+  INSERT INTO public.admin_audit_log (actor_user_id, operation, entity_type, entity_id, change)
+  VALUES (auth.uid(), 'accept_destination', 'order', v_order.id::text,
+          jsonb_build_object('country', v_order.shipping_address->>'country', 'postal_code', v_order.shipping_address->>'postal_code'));
+  -- Without the tax data it waits for "Emitir facturas pendientes", like any other.
+  BEGIN
+    v_invoice := public.issue_invoice(v_order.id);
+  EXCEPTION WHEN raise_exception THEN
+    RAISE LOG 'issue_invoice %: %', v_order.id, SQLERRM;
+  END;
+  RETURN jsonb_build_object('order_id', v_order.id, 'invoice_id', v_invoice);
+END;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- "Delete abandoned" never touches an order with a payment on record
 -- ---------------------------------------------------------------------------
@@ -528,9 +594,8 @@ BEGIN
       AND NOT EXISTS (SELECT 1 FROM public.invoices i WHERE i.order_id = o.id)
       AND NOT EXISTS (SELECT 1 FROM public.stock_movements m
                       WHERE m.order_id = o.id AND m.reason NOT IN ('reservation', 'release'))
-      -- A payment event for it (even a failed one) means money may have moved.
-      AND NOT EXISTS (SELECT 1 FROM public.stripe_events e
-                      WHERE e.payload_summary->>'order_id' = o.id::text AND e.status <> 'ignored')
+      -- Any payment event for it (even one still waiting for the money) means it may have moved.
+      AND NOT EXISTS (SELECT 1 FROM public.stripe_events e WHERE e.payload_summary->>'order_id' = o.id::text)
     ORDER BY o.created_at
   LOOP
     IF (SELECT payment_status FROM public.orders WHERE id = v_id) = 'checkout_open' THEN
@@ -670,10 +735,14 @@ ALTER TABLE public.checkout_quotes ADD CONSTRAINT checkout_quotes_vat_regime_kno
 -- Privileges of what this file adds
 -- ---------------------------------------------------------------------------
 
-REVOKE ALL ON FUNCTION public.payment_review_alert(uuid, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.payment_review_alert(uuid, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.order_take_delivered_destination(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_accept_destination(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_accept_destination(uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.mark_payment_review(uuid, text, text, text, text, text, text, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.invoices_check_insert() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_resolve_payment_review(uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.admin_resolve_payment_review(uuid, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.payment_review_alert(uuid, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.payment_review_alert(uuid, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.order_take_delivered_destination(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mark_payment_review(uuid, text, text, text, text, text, text, jsonb) TO service_role;

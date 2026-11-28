@@ -15,6 +15,7 @@ import { CommerceError } from './errors';
 import { COUPON_WHO_REASONS, couponMessage, isCouponReason } from '@/lib/domain/coupons';
 import { dbCall, mapPgError } from './pgErrors';
 import { stripeFor } from './stripeClient';
+import { releaseLapsedCheckouts } from './lapsed';
 
 function requestHash(input: {
   quoteId: string;
@@ -102,8 +103,9 @@ export async function createCheckout(
     throw new CommerceError('NOT_CONFIGURED', 'Payment provider not connected', 503);
   }
 
-  // Checkouts whose time is up (any provider) give their stock back first.
-  await supabase.run`select public.release_lapsed_attempts()`.catch((err: unknown) =>
+  // Checkouts whose time is up give their stock back first (the ones Stripe
+  // has to confirm are left to the cart and the cron, so this does not wait).
+  await releaseLapsedCheckouts(supabase, { askStripe: false }).catch((err: unknown) =>
     console.error('[checkout] lapsed checkouts not released', err),
   );
 
@@ -129,6 +131,16 @@ export async function createCheckout(
 
   const hash = requestHash(opts);
   const idempotencyKey = `checkout:${opts.attemptId}`;
+
+  // This cart's earlier checkouts end first, so their pieces (a unique one the
+  // same person reserved a minute ago, say) can be reserved again here.
+  const stripeKey = payments.stripe?.secretKey;
+  await releaseOwnerOpenOrders(
+    supabase,
+    opts.cartOwnerHash,
+    opts.attemptId,
+    stripeKey ? (sessionId) => stripeFor(stripeKey).checkout.sessions.expire(sessionId) : null,
+  );
 
   const reserve = (
     await dbCall(() => supabase.one<{ result: ReserveResult }>`
@@ -161,12 +173,6 @@ export async function createCheckout(
       where id = ${reserve.order_id} and payment_status in ('pending_session', 'checkout_open')`);
   }
 
-  const stripeKey = payments.stripe?.secretKey;
-  await releaseOwnerOpenOrders(
-    supabase,
-    reserve.order_id,
-    stripeKey ? (sessionId) => stripeFor(stripeKey).checkout.sessions.expire(sessionId) : null,
-  );
   await claimCoupon(
     supabase,
     reserve.order_id,
@@ -233,25 +239,28 @@ export async function claimCoupon(
 type ReleasedOrder = { order_id: string; stripe_session_id: string | null };
 
 /**
- * Before the coupon claim: the same cart's other unpaid shop orders (a payment
- * page left behind, «Pagar» pressed again) end as expired, so their stock goes
- * back on sale and their coupon use no longer counts against this one, and
- * their open Stripe sessions are expired too. A cart holds one checkout at a
- * time. Best effort: a failure is logged, and the claim then judges the uses as
- * before. One of those sessions paid anyway is a late payment (review).
+ * Before a cart's new checkout reserves: its other unpaid shop orders (a
+ * payment page left behind, «Pagar» pressed again) end as expired, so their
+ * stock goes back on sale (and can be reserved again by this checkout) and
+ * their coupon use no longer counts against it, and their open Stripe sessions
+ * are expired too. A cart holds one checkout at a time; a retry of this very
+ * checkout (keepAttemptId) keeps its order. Best effort: a failure is logged,
+ * and the reservation and the coupon claim then judge as before. One of those
+ * sessions paid anyway is a late payment (review).
  */
 export async function releaseOwnerOpenOrders(
   supabase: Db,
-  orderId: string,
+  cartOwnerHash: string,
+  keepAttemptId: string,
   expireSession: ((sessionId: string) => Promise<unknown>) | null,
 ): Promise<void> {
   let released: ReleasedOrder[];
   try {
     released =
       (await supabase.one<{ result: ReleasedOrder[] }>`
-        select public.release_owner_open_orders(${orderId}) as result`)?.result ?? [];
+        select public.release_owner_open_orders(${cartOwnerHash}, ${keepAttemptId}) as result`)?.result ?? [];
   } catch (err) {
-    console.error('[checkout] earlier orders of this cart not released', orderId, err);
+    console.error('[checkout] earlier orders of this cart not released', keepAttemptId, err);
     return;
   }
   for (const old of released) {

@@ -74,6 +74,7 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   REVIEW_NOT_CONFIRMABLE: { code: 'CONFLICT', status: 409 },
   STOCK_UNAVAILABLE: { code: 'CONFLICT', status: 409 },
   INVOICE_DESTINATION_MISMATCH: { code: 'CONFLICT', status: 409 },
+  DESTINATION_NOT_PENDING: { code: 'CONFLICT', status: 409 },
 };
 
 /** What Admin reads for the codes that have a sentence; any other code is its own message. */
@@ -101,7 +102,8 @@ const TEXT: Record<string, (pg: string) => string> = {
   STOCK_UNAVAILABLE: () =>
     'No queda stock libre de alguna pieza: ajústalo en Productos o cancela el pedido y devuelve el pago.',
   INVOICE_DESTINATION_MISMATCH: () =>
-    'La entrega está en otra zona que la del presupuesto: confirma el pago del pedido antes de facturarlo.',
+    'La entrega está en otra zona que la del presupuesto: confirma el pago o usa «Facturar con la dirección de entrega».',
+  DESTINATION_NOT_PENDING: () => 'Este pedido ya no tiene la dirección pendiente: recarga la página.',
 };
 
 function extractCode(message: string | undefined): string | null {

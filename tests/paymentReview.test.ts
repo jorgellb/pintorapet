@@ -11,12 +11,25 @@ describe('payments under review', () => {
   });
 
   it('only a payment that matches its order can be taken as good (as in payment_review_confirmable)', () => {
-    for (const reason of ['PAID_WITHOUT_RESERVATION', 'STOCK_CONSUME_FAILED', 'DESTINATION_CHANGED', 'COMMISSION_QUOTE_CHANGED', 'PAID_AFTER_CANCEL', null]) {
+    for (const reason of ['PAID_WITHOUT_RESERVATION', 'STOCK_CONSUME_FAILED', 'DESTINATION_CHANGED', 'COMMISSION_QUOTE_CHANGED', 'PAID_AFTER_CANCEL']) {
       expect(reviewConfirmable(reason)).toBe(true);
     }
-    for (const reason of ['AMOUNT_MISMATCH', 'COMMISSION_ALREADY_PAID', 'PAID_AGAIN']) {
+    // A reason not known (an order reviewed before reasons were kept) is refunded, never confirmed.
+    for (const reason of ['AMOUNT_MISMATCH', 'COMMISSION_ALREADY_PAID', 'PAID_AGAIN', null, 'SOMETHING_NEW']) {
       expect(reviewConfirmable(reason)).toBe(false);
     }
+  });
+
+  it('tells Meili which extra payment to refund, and not to refund the order', () => {
+    const mail = renderTemplate('payment_review_admin', 'es', {
+      order_id: '11111111-1111-4111-8111-111111111111',
+      reference: 'PD-ABC',
+      reason: 'PAID_AGAIN',
+      payment: 'pi_123',
+    });
+    expect(mail.subject).toBe('Pago de más en PD-ABC');
+    expect(mail.text).toMatch(/pi_123/);
+    expect(mail.text).toMatch(/no uses «Devolver»/);
   });
 
   it('emails Meili the reason and a link to the order', () => {

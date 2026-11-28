@@ -22,6 +22,8 @@ const patchSchema = z.union([
   z.object({ markPaid: z.literal(true) }).strict(),
   /** A payment under review: taken as good (paid), or cancelled (to refund from Stripe or PayPal). */
   z.object({ review: z.enum(['confirm', 'cancel']) }).strict(),
+  /** Paid, delivered outside its quoted region: invoiced with the delivery address's VAT. */
+  z.object({ acceptDestination: z.literal(true) }).strict(),
 ]);
 
 export const PATCH: APIRoute = async ({ params, request, cookies }) => {
@@ -54,6 +56,11 @@ export const PATCH: APIRoute = async ({ params, request, cookies }) => {
       await audit(admin, 'mark_order_paid', 'orders', id, { by: how?.payment_provider ?? 'transfer' });
       const service = serviceDb();
       if (service) await sendOrderEmails(service, id);
+      return Response.json({ ok: true });
+    }
+
+    if ('acceptDestination' in body) {
+      await dbCall(() => admin.db.call('admin_accept_destination', { p_order_id: id }));
       return Response.json({ ok: true });
     }
 

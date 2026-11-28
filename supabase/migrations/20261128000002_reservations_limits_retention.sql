@@ -2,12 +2,14 @@
 -- stock in a loop, and personal data is kept only as long as the privacy page
 -- says.
 --
---   * release_lapsed_attempts frees the stock of any checkout whose time is
---     up: PayPal ones (as before), and now Stripe ones that never opened a
---     session or whose "expired" webhook never came. A unique piece no longer
---     shows sold out for ever after a Stripe hiccup.
+--   * lapsed_attempts lists checkouts whose time is up, for the server to
+--     free one at a time: PayPal ones (as before), and now Stripe ones that
+--     never opened a session or whose session ended with no "expired" webhook
+--     (those once Stripe confirms it). A unique piece no longer shows sold out
+--     for ever after a Stripe hiccup.
 --   * release_owner_open_orders: a cart has one checkout open at a time (the
---     new one replaces the older ones, as with coupons already).
+--     new one replaces the older ones, as with coupons already), released
+--     before the new one reserves.
 --   * rate_limit_hit: a fixed-window counter per IP for the anonymous routes
 --     that write (checkout, prices, page views).
 --   * purge_expired_data, run daily by the cron: abandoned quotes after 30
@@ -20,76 +22,56 @@
 -- Lapsed checkouts
 -- ---------------------------------------------------------------------------
 
-CREATE OR REPLACE FUNCTION public.release_lapsed_attempts()
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  v_attempt record;
-  v_count integer := 0;
-BEGIN
-  FOR v_attempt IN
-    SELECT a.id, a.payment_provider FROM public.checkout_attempts a
-    WHERE a.status IN ('creating_session', 'session_open')
-      AND (
-        (a.payment_provider = 'paypal' AND a.session_expires_at < now())
-        -- Stripe: its session never opened (the reservation is 35 minutes)...
-        OR (a.payment_provider = 'stripe' AND a.status = 'creating_session' AND a.created_at < now() - interval '40 minutes')
-        -- ...or it ended and its "expired" webhook never came.
-        OR (a.payment_provider = 'stripe' AND a.status = 'session_open' AND a.session_expires_at < now() - interval '1 hour')
-      )
-    ORDER BY a.created_at
-    LIMIT 50
-  LOOP
-    BEGIN
-      PERFORM public.release_reservations(v_attempt.id,
-        CASE WHEN v_attempt.payment_provider = 'paypal' THEN 'paypal_expired' ELSE 'lapsed' END);
-      v_count := v_count + 1;
-    EXCEPTION WHEN raise_exception THEN
-      RAISE LOG 'release_lapsed_attempts %: %', v_attempt.id, SQLERRM;
-    END;
-  END LOOP;
-  RETURN v_count;
-END;
-$$;
-
--- The name the app and the cron already call.
-CREATE OR REPLACE FUNCTION public.release_expired_paypal_attempts()
-RETURNS integer
+-- Checkouts whose time is up, for the server to free one at a time
+-- (lib/server/commerce/lapsed.ts, each in its own transaction):
+--   * PayPal ones past their expiry (as release_expired_paypal_attempts);
+--   * Stripe ones that never opened a session (the reservation is 35 minutes);
+--   * Stripe ones whose session ended an hour ago with no "expired" webhook.
+--     ask_stripe: these are freed only once Stripe says the session expired,
+--     because a paid one's webhook may just be late, or its money may still be
+--     on its way (a slow payment method).
+CREATE OR REPLACE FUNCTION public.lapsed_attempts(p_limit integer DEFAULT 50)
+RETURNS TABLE (attempt_id uuid, provider text, stripe_session_id text, ask_stripe boolean)
 LANGUAGE sql
+STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
-  SELECT public.release_lapsed_attempts();
+  SELECT a.id, a.payment_provider, a.stripe_session_id,
+         (a.payment_provider = 'stripe' AND a.status = 'session_open')
+  FROM public.checkout_attempts a
+  WHERE a.status IN ('creating_session', 'session_open')
+    AND (
+      (a.payment_provider = 'paypal' AND a.session_expires_at < now())
+      OR (a.payment_provider = 'stripe' AND a.status = 'creating_session' AND a.created_at < now() - interval '40 minutes')
+      OR (a.payment_provider = 'stripe' AND a.status = 'session_open' AND a.session_expires_at < now() - interval '1 hour')
+    )
+  ORDER BY a.created_at
+  LIMIT greatest(1, least(coalesce(p_limit, 50), 200));
 $$;
 
 -- ---------------------------------------------------------------------------
 -- One open checkout per cart
 -- ---------------------------------------------------------------------------
 
--- The cart's other shop orders still waiting for payment are released (their
--- pieces back on sale); returns them with their Stripe session, for the app to
--- expire it. Commission payments are left alone.
-CREATE OR REPLACE FUNCTION public.release_owner_open_orders(p_order_id uuid)
+-- Before a cart opens a checkout, its other shop orders still waiting for
+-- payment are released (their pieces back on sale, so a unique piece the same
+-- person reserved a minute ago can be reserved again). p_keep_attempt is the
+-- checkout being opened (a retry of it keeps its order). Returns the released
+-- orders with their Stripe session, for the app to expire it. Commission
+-- payments are left alone.
+CREATE OR REPLACE FUNCTION public.release_owner_open_orders(p_cart_owner_hash text, p_keep_attempt uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
-  v_owner text;
   v_old record;
   v_attempt uuid;
   v_out jsonb := '[]'::jsonb;
 BEGIN
-  SELECT a.cart_owner_hash INTO v_owner
-  FROM public.checkout_attempts a
-  WHERE a.order_id = p_order_id
-  ORDER BY a.created_at DESC
-  LIMIT 1;
-  IF v_owner IS NULL OR EXISTS (SELECT 1 FROM public.orders WHERE id = p_order_id AND commission_request_id IS NOT NULL) THEN
+  IF coalesce(p_cart_owner_hash, '') = '' THEN
     RETURN v_out;
   END IF;
 
@@ -100,11 +82,11 @@ BEGIN
                      WHERE a.order_id = o.id AND a.stripe_session_id IS NOT NULL
                      ORDER BY a.created_at DESC LIMIT 1)) AS stripe_session_id
     FROM public.orders o
-    WHERE o.id <> p_order_id
-      AND o.commission_request_id IS NULL
+    WHERE o.commission_request_id IS NULL
       AND o.payment_status IN ('pending_session', 'checkout_open')
       AND o.paid_at IS NULL
-      AND EXISTS (SELECT 1 FROM public.checkout_attempts a WHERE a.order_id = o.id AND a.cart_owner_hash = v_owner)
+      AND EXISTS (SELECT 1 FROM public.checkout_attempts a WHERE a.order_id = o.id AND a.cart_owner_hash = p_cart_owner_hash)
+      AND NOT EXISTS (SELECT 1 FROM public.checkout_attempts a WHERE a.order_id = o.id AND a.id = p_keep_attempt)
     ORDER BY o.id
   LOOP
     BEGIN
@@ -386,17 +368,15 @@ $$;
 -- Privileges: all of this is for the server only
 -- ---------------------------------------------------------------------------
 
-REVOKE ALL ON FUNCTION public.release_lapsed_attempts() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.release_expired_paypal_attempts() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.release_owner_open_orders(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.lapsed_attempts(integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.release_owner_open_orders(text, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.release_reservations(uuid, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.rate_limit_hit(text, text, integer, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.purge_expired_data() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.stale_commission_requests() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.forget_commission(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.release_lapsed_attempts() TO service_role;
-GRANT EXECUTE ON FUNCTION public.release_expired_paypal_attempts() TO service_role;
-GRANT EXECUTE ON FUNCTION public.release_owner_open_orders(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lapsed_attempts(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.release_owner_open_orders(text, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.release_reservations(uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.rate_limit_hit(text, text, integer, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.purge_expired_data() TO service_role;

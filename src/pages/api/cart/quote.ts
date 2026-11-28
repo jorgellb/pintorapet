@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { waitUntil } from '@vercel/functions';
 import { RATE, withinLimit } from '@/lib/server/rateLimit';
+import { releaseLapsedCheckouts } from '@/lib/server/commerce/lapsed';
 import { quoteRequestSchema } from '@/lib/validation/checkout';
 import { CommerceError, internalError, jsonError } from '@/lib/server/commerce/errors';
 import { hasDatabase } from '@/lib/server/db';
@@ -59,7 +60,7 @@ export const POST: APIRoute = async (context) => {
       }
       // Checkouts whose time is up give their stock back, so the cart sees it (after the answer).
       waitUntil(
-        supabase.run`select public.release_lapsed_attempts()`.catch((err: unknown) =>
+        releaseLapsedCheckouts(supabase, { askStripe: true }).catch((err: unknown) =>
           console.error('[cart quote] lapsed checkouts not released', err),
         ),
       );

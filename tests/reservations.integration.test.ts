@@ -26,7 +26,11 @@ describe.skipIf(!url)('reservations, limits and retention against PostgreSQL', (
     vi.unstubAllEnvs();
   });
 
-  const release = () => db().one<{ n: number }>`select public.release_lapsed_attempts() as n`;
+  // Without Stripe connected (as here), the sessions Stripe has to confirm are left alone.
+  const release = async () => {
+    const { releaseLapsedCheckouts } = await import('../src/lib/server/commerce/lapsed');
+    return releaseLapsedCheckouts(db(), { askStripe: true });
+  };
   const status = (orderId: string) =>
     db().one<{ payment_status: string }>`select payment_status from public.orders where id = ${orderId}`;
 
@@ -39,12 +43,16 @@ describe.skipIf(!url)('reservations, limits and retention against PostgreSQL', (
     expect(await status(stale.orderId)).toEqual({ payment_status: 'expired' });
   });
 
-  it('a Stripe session whose expiry webhook never came is released an hour after it ended', async () => {
+  it('a Stripe session that ended without its webhook is listed, but freed only once Stripe says it expired', async () => {
     const open = await openOrder(db());
     const ended = await openOrder(db(), { sessionExpiresAgo: '2 hours' });
+    const listed = await db().rows<{ attempt_id: string; ask_stripe: boolean }>`
+      select attempt_id, ask_stripe from public.lapsed_attempts(200)`;
+    expect(listed).toContainEqual({ attempt_id: ended.attemptId, ask_stripe: true });
+    expect(listed.map((row) => row.attempt_id)).not.toContain(open.attemptId);
+    // Its payment's webhook may just be late: without Stripe's answer, the piece stays held.
     await release();
-    expect(await stockOf(db(), open.productId)).toMatchObject({ stock_reserved: 1 });
-    expect(await stockOf(db(), ended.productId)).toMatchObject({ stock_reserved: 0 });
+    expect(await stockOf(db(), ended.productId)).toMatchObject({ stock_reserved: 1 });
   });
 
   it('a reviewed payment keeps its pieces however old its checkout is', async () => {
@@ -54,13 +62,13 @@ describe.skipIf(!url)('reservations, limits and retention against PostgreSQL', (
     expect(await stockOf(db(), f.productId)).toMatchObject({ stock_reserved: 1 });
   });
 
-  it('a cart has one checkout open: a new one releases the older ones', async () => {
+  it('a cart has one checkout open: a new one releases the older ones, never itself', async () => {
     const owner = `owner-${randomUUID()}`;
     const first = await openOrder(db(), { owner });
     const second = await openOrder(db(), { owner });
     const other = await openOrder(db());
     const released = await db().one<{ result: { order_id: string; stripe_session_id: string }[] }>`
-      select public.release_owner_open_orders(${second.orderId}) as result`;
+      select public.release_owner_open_orders(${owner}, ${second.attemptId}) as result`;
     expect(released?.result).toEqual([{ order_id: first.orderId, stripe_session_id: first.sessionId }]);
     expect(await stockOf(db(), first.productId)).toMatchObject({ stock_reserved: 0 });
     expect(await stockOf(db(), second.productId)).toMatchObject({ stock_reserved: 1 });
@@ -123,7 +131,7 @@ describe.skipIf(!url)('reservations, limits and retention against PostgreSQL', (
 
   it('none of this can be run by a visitor or a customer', async () => {
     const denied = /permission denied/;
-    await expect(mod.asAnon((tx) => tx.one`select public.release_lapsed_attempts()`)).rejects.toThrow(denied);
+    await expect(mod.asAnon((tx) => tx.one`select * from public.lapsed_attempts()`)).rejects.toThrow(denied);
     await expect(mod.asAnon((tx) => tx.one`select public.rate_limit_hit('x', 'y', 1, 60)`)).rejects.toThrow(denied);
     await expect(mod.asAnon((tx) => tx.one`select public.purge_expired_data()`)).rejects.toThrow(denied);
     await expect(mod.asAnon((tx) => tx.one`select * from public.rate_limits`)).rejects.toThrow(denied);

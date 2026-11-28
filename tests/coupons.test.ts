@@ -384,9 +384,9 @@ describe('releaseOwnerOpenOrders', () => {
       { order_id: 'old-2', stripe_session_id: null },
     ]);
     const expire = vi.fn(async () => ({}));
-    await releaseOwnerOpenOrders(db, 'order-2', expire);
+    await releaseOwnerOpenOrders(db, 'owner-hash', 'attempt-2', expire);
     expect(queries.map((q) => [q.text.replace(/\s+/g, ' ').trim(), q.values])).toEqual([
-      ['select public.release_owner_open_orders($1) as result', ['order-2']],
+      ['select public.release_owner_open_orders($1, $2) as result', ['owner-hash', 'attempt-2']],
     ]);
     expect(expire.mock.calls).toEqual([['cs_old_1']]);
   });
@@ -400,7 +400,7 @@ describe('releaseOwnerOpenOrders', () => {
     const expire = vi.fn(async (id: string) => {
       if (id === 'cs_old_1') throw new Error('session already complete');
     });
-    await expect(releaseOwnerOpenOrders(db, 'order-2', expire)).resolves.toBeUndefined();
+    await expect(releaseOwnerOpenOrders(db, 'owner-hash', 'attempt-2', expire)).resolves.toBeUndefined();
     expect(expire.mock.calls).toEqual([['cs_old_1'], ['cs_old_2']]);
     expect(log).toHaveBeenCalledTimes(1);
     log.mockRestore();
@@ -414,7 +414,7 @@ describe('releaseOwnerOpenOrders', () => {
     });
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const expire = vi.fn(async () => ({}));
-    await expect(releaseOwnerOpenOrders(db, 'order-2', expire)).resolves.toBeUndefined();
+    await expect(releaseOwnerOpenOrders(db, 'owner-hash', 'attempt-2', expire)).resolves.toBeUndefined();
     expect(expire).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledTimes(1);
     log.mockRestore();
@@ -422,7 +422,7 @@ describe('releaseOwnerOpenOrders', () => {
 
   it('only cancels when Stripe is not connected', async () => {
     const { db, queries } = released([{ order_id: 'old-1', stripe_session_id: 'cs_old_1' }]);
-    await expect(releaseOwnerOpenOrders(db, 'order-2', null)).resolves.toBeUndefined();
+    await expect(releaseOwnerOpenOrders(db, 'owner-hash', 'attempt-2', null)).resolves.toBeUndefined();
     expect(queries).toHaveLength(1);
   });
 });

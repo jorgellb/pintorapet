@@ -52,12 +52,21 @@ export function renderTemplate(
     };
   }
   if (templateKey === 'payment_review_admin') {
+    const link = `${siteUrl()}/admin/orders/${payload.order_id ?? ''}/`;
+    if (payload.reason === 'PAID_AGAIN') {
+      return {
+        subject: `Pago de más en ${payload.reference ?? ''}`,
+        text:
+          `${reviewReasonText('PAID_AGAIN')} El pedido no cambia.\n\n` +
+          `Devuelve ese segundo pago desde el panel de Stripe o PayPal (búscalo por ${payload.payment ?? 'su identificador'}); ` +
+          `no uses «Devolver» en el pedido, que devolvería el primero.\n\n${link}`,
+      };
+    }
     return {
       subject: `Pago a revisar: ${payload.reference ?? ''}`,
       text:
         `${reviewReasonText(String(payload.reason ?? ''))}\n\n` +
-        `El dinero está cobrado. Entra en el pedido para darlo por bueno o cancelarlo y devolver el pago:\n` +
-        `${siteUrl()}/admin/orders/${payload.order_id ?? ''}/`,
+        `El dinero está cobrado. Entra en el pedido para darlo por bueno o cancelarlo y devolver el pago:\n${link}`,
     };
   }
   if (templateKey === 'messages_overflow') {

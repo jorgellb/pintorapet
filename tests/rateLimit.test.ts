@@ -26,7 +26,7 @@ describe('rate limits', () => {
   it('counts by a hash of the IP, never the IP itself', async () => {
     expect(await withinLimit(RATE.checkout, visitor('203.0.113.9'))).toBe(true);
     const [bucket, key, limit, windowSeconds] = state.calls[0];
-    expect([bucket, limit, windowSeconds]).toEqual(['checkout', 10, 3600]);
+    expect([bucket, limit, windowSeconds]).toEqual(['checkout', 20, 3600]);
     expect(key).toMatch(/^[0-9a-f]{40}$/);
     expect(JSON.stringify(state.calls)).not.toContain('203.0.113.9');
     await withinLimit(RATE.checkout, visitor('203.0.113.9'));

@@ -189,6 +189,15 @@ const unpaidOrder =
 const cancellable = unpaidOrder && order.payment_status !== 'cancelled';
 // A payment that did not fit its order (see apply_payment): Meili confirms or cancels it.
 const inReview = order.payment_status === 'review';
+// Paid, delivered outside its quoted region, not invoiced yet: invoiced with the delivery address's VAT.
+const destinationPending = order.shipping_destination_ok === false && charged && !inReview && !invoice;
+// Payments that came on top of the order's own (two tabs, say): to refund from Stripe or PayPal.
+const { data: extraRows } = await settle(
+  admin.db.rows<{ event_id: string; payment: string | null; created_at: string }>`
+    select event_id, payload_summary->>'payment_intent_id' as payment, created_at from public.stripe_events
+    where payload_summary->>'order_id' = ${order.id} and last_error = 'PAID_AGAIN' order by created_at`,
+);
+const extraPayments = extraRows ?? [];
 
 // ——— Correos tracking ———
 type TrackingEvent = { at: string | null; text: string };
@@ -352,7 +361,33 @@ const carrierName = (value: string | null) =>
   }
 
   {
-    order.shipping_destination_ok === false && !inReview && (
+    extraPayments.length > 0 && (
+      <p class="alert">
+        <strong>Pago de más.</strong> Para este pedido llegó otro pago además del suyo
+        ({extraPayments.map((p) => p.payment ?? p.event_id.replace(/^paypal:/, 'PayPal ')).join(', ')}). El pedido no
+        cambia: devuelve ese pago desde el panel de {providerName}, buscándolo por ese identificador. No uses «Devolver»
+        aquí, que devolvería el pago del pedido.
+      </p>
+    )
+  }
+
+  {
+    destinationPending && (
+      <div class="alert">
+        <p>
+          La dirección de entrega está en otra zona que la cobrada ({order.shipping_zone_name}), así que la factura no se
+          emite sola: el IVA puede ser otro. «Facturar con la dirección de entrega» la emite con el IVA que corresponde a esa
+          dirección, sobre el importe ya cobrado.
+        </p>
+        <button type="button" class="btn" data-accept-destination data-id={order.id}>
+          Facturar con la dirección de entrega
+        </button>
+      </div>
+    )
+  }
+
+  {
+    order.shipping_destination_ok === false && !inReview && !destinationPending && (
       <p class="alert">
         La dirección que escribió el cliente al pagar está fuera de la zona cobrada (
         {order.shipping_zone_name}). Revisa el envío antes de prepararlo; puede faltar o sobrar
@@ -1305,6 +1340,17 @@ const carrierName = (value: string | null) =>
       const button = event.currentTarget as HTMLButtonElement;
       button.disabled = true;
       const { ok, message } = await call('PATCH', { markPaid: true });
+      if (ok) location.reload();
+      else {
+        say(message);
+        button.disabled = false;
+      }
+    });
+    document.querySelector<HTMLButtonElement>('[data-accept-destination]')?.addEventListener('click', async (event) => {
+      if (!confirm(`¿Emitir la factura del pedido ${reference} con el IVA de su dirección de entrega? Una factura emitida ya no se puede cambiar.`)) return;
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      const { ok, message } = await call('PATCH', { acceptDestination: true });
       if (ok) location.reload();
       else {
         say(message);

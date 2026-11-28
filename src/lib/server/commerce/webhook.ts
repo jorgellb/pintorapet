@@ -42,7 +42,8 @@ export async function handleStripeEvent(
     case 'checkout.session.async_payment_succeeded': {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
-        // Record and wait for a later paid event
+        // Record and wait for a later paid event. The order id marks the order
+        // as having money on its way, so "delete abandoned" leaves it alone.
         await recordEvent(supabase, {
             event_id: event.id,
             event_type: event.type,
@@ -50,6 +51,7 @@ export async function handleStripeEvent(
             status: 'ignored',
             payload_summary: {
               payment_status: session.payment_status,
+              order_id: session.metadata?.order_id || session.client_reference_id || null,
             },
           });
         return { handled: true, detail: { ignored: 'not_paid' } };

@@ -5,8 +5,9 @@ import { serviceDb } from '@/lib/server/db';
 export type RateRule = { bucket: string; limit: number; windowSeconds: number };
 
 export const RATE = {
-  // Each one reserves stock for 35 minutes; a person opens a few at most.
-  checkout: { bucket: 'checkout', limit: 10, windowSeconds: 60 * 60 },
+  // Each one reserves stock for 35 minutes; a person opens a few at most (20 leaves
+  // room for several people behind one mobile-network IP).
+  checkout: { bucket: 'checkout', limit: 20, windowSeconds: 60 * 60 },
   // Every change in the cart or the address prices it again (and tries a coupon).
   quote: { bucket: 'quote', limit: 60, windowSeconds: 10 * 60 },
   pageView: { bucket: 'page_view', limit: 300, windowSeconds: 60 * 60 },

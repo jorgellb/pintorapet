@@ -6,6 +6,7 @@ import { hasDatabase } from '@/lib/server/db';
 import { serviceDb } from '@/lib/server/db';
 import { syncOpenShipments } from '@/lib/server/shipping/trackingSync';
 import { purgeExpiredData } from '@/lib/server/retention';
+import { releaseLapsedCheckouts } from '@/lib/server/commerce/lapsed';
 
 export const prerender = false;
 
@@ -22,9 +23,11 @@ async function run(request: Request): Promise<Response> {
   const quick = new URL(request.url).searchParams.has('quick');
 
   // Checkouts whose time is up give their stock back (PayPal and Stripe).
-  await serviceDb()?.call('release_lapsed_attempts').catch((err: unknown) => console.error('lapsed checkouts cron', err));
-  // Parcels on their way: their Correos state (nothing to do when Correos is not connected).
   const tracker = serviceDb();
+  if (tracker) {
+    await releaseLapsedCheckouts(tracker, { askStripe: true }).catch((err: unknown) => console.error('lapsed checkouts cron', err));
+  }
+  // Parcels on their way: their Correos state (nothing to do when Correos is not connected).
   if (tracker && !quick) await syncOpenShipments(tracker).catch((err) => console.error('tracking cron', err));
   // Personal data past its retention period (see the privacy page).
   if (tracker && !quick) {

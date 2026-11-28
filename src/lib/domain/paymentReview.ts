@@ -37,7 +37,7 @@ export function reviewReasonText(reason: string | null | undefined): string {
   return (reason && TEXT[reason as ReviewReason]) || 'El pago no encaja con el pedido y hay que revisarlo.';
 }
 
-/** Same rule as public.payment_review_confirmable. An order reviewed before reasons were kept can be confirmed. */
+/** Same rule as public.payment_review_confirmable: a reason not known is refunded, never confirmed. */
 export function reviewConfirmable(reason: string | null | undefined): boolean {
-  return !reason || CONFIRMABLE.has(reason);
+  return Boolean(reason) && CONFIRMABLE.has(reason!);
 }
