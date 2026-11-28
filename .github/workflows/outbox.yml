@@ -1,0 +1,33 @@
+# Sends the queued emails that failed (and frees lapsed checkouts) every 15 minutes:
+# Vercel Cron on this plan runs once a day, so a failed order email could wait a day.
+# Secret (repository settings › Secrets and variables › Actions): CRON_SECRET, the
+# same value as in Vercel. Without it the job only says so.
+name: Outbox
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: outbox
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Run the quick outbox pass
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::notice::CRON_SECRET is not set in the repository secrets; nothing sent."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 60 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://petsdrawings.com/api/cron/outbox/?quick=1"

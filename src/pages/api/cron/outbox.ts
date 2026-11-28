@@ -17,13 +17,17 @@ async function run(request: Request): Promise<Response> {
     return jsonError(new CommerceError('FORBIDDEN', 'Unauthorized cron', 401));
   }
 
+  // `?quick=1` (every few minutes, .github/workflows/outbox.yml): stock and emails only.
+  // The daily run (Vercel Cron) also asks Correos about parcels and forgets old data.
+  const quick = new URL(request.url).searchParams.has('quick');
+
   // Checkouts whose time is up give their stock back (PayPal and Stripe).
   await serviceDb()?.call('release_lapsed_attempts').catch((err: unknown) => console.error('lapsed checkouts cron', err));
   // Parcels on their way: their Correos state (nothing to do when Correos is not connected).
   const tracker = serviceDb();
-  if (tracker) await syncOpenShipments(tracker).catch((err) => console.error('tracking cron', err));
+  if (tracker && !quick) await syncOpenShipments(tracker).catch((err) => console.error('tracking cron', err));
   // Personal data past its retention period (see the privacy page).
-  if (tracker) {
+  if (tracker && !quick) {
     await purgeExpiredData(tracker)
       .then((counts) => console.log('[retention] %s', JSON.stringify(counts)))
       .catch((err) => console.error('retention cron', err));
