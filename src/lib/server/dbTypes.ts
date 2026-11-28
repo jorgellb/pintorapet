@@ -615,6 +615,8 @@ export type OrdersRow = {
   shipping_postal_code: string | null;
   shipping_weight_grams: number | null;
   shipping_destination_ok: boolean | null;
+  /** Why the payment waits for Meili (payment_status review); see lib/domain/paymentReview. */
+  review_reason: string | null;
   carrier: string | null;
   carrier_shipment_code: string | null;
   tracking_code: string | null;

@@ -32,12 +32,20 @@ END
 $$;
 SET search_path = "$user", public, extensions;
 
--- Supabase's default privileges on public: everything for the three roles,
--- narrowed by RLS and by the REVOKEs in the migrations.
+-- Default privileges on public (see 20261128000001_privileges.sql): visitors
+-- get nothing until a migration grants it; signed-in users read and write
+-- under RLS; functions keep PostgreSQL's own default (PUBLIC), which a
+-- migration revokes for service-only ones. Revoked first, because this file
+-- runs again on every apply and Supabase's old defaults gave ALL to both.
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- auth: Better Auth's tables (users, session, account, verification), plus the

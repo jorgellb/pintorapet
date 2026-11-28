@@ -69,6 +69,11 @@ const MAP: Record<string, { code: CommerceError['code']; status: number }> = {
   CUSTOMER_HAS_DUE_ORDERS: { code: 'CONFLICT', status: 409 },
   CUSTOMER_HAS_UNINVOICED_ORDERS: { code: 'CONFLICT', status: 409 },
   CUSTOMER_HAS_UNFINISHED_ORDERS: { code: 'CONFLICT', status: 409 },
+  // A payment under review (Admin › Pedidos).
+  ORDER_NOT_IN_REVIEW: { code: 'CONFLICT', status: 409 },
+  REVIEW_NOT_CONFIRMABLE: { code: 'CONFLICT', status: 409 },
+  STOCK_UNAVAILABLE: { code: 'CONFLICT', status: 409 },
+  INVOICE_DESTINATION_MISMATCH: { code: 'CONFLICT', status: 409 },
 };
 
 /** What Admin reads for the codes that have a sentence; any other code is its own message. */
@@ -90,6 +95,13 @@ const TEXT: Record<string, (pg: string) => string> = {
   // A checkout that never ended is not listed in the guest's record: it is deleted from Pedidos.
   CUSTOMER_HAS_UNFINISHED_ORDERS: (pg) =>
     `Tiene pedidos sin terminar (${refsAfter(pg, 'CUSTOMER_HAS_UNFINISHED_ORDERS')}): bórralos en Pedidos antes de borrar sus datos.`,
+  ORDER_NOT_IN_REVIEW: () => 'Este pedido ya no está en revisión: recarga la página.',
+  REVIEW_NOT_CONFIRMABLE: () =>
+    'Este pago no se puede dar por bueno: devuélvelo desde Stripe o PayPal y cancela el pedido.',
+  STOCK_UNAVAILABLE: () =>
+    'No queda stock libre de alguna pieza: ajústalo en Productos o cancela el pedido y devuelve el pago.',
+  INVOICE_DESTINATION_MISMATCH: () =>
+    'La entrega está en otra zona que la del presupuesto: confirma el pago del pedido antes de facturarlo.',
 };
 
 function extractCode(message: string | undefined): string | null {

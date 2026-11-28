@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { emailAdmin, emailFrom, hasResend, siteUrl } from '@/lib/server/env';
 import { dbCall } from './pgErrors';
 import { CommerceError } from './errors';
+import { reviewReasonText } from '@/lib/domain/paymentReview';
 
 type OutboxRow = {
   id: string;
@@ -48,6 +49,15 @@ export function renderTemplate(
     return {
       subject: `Pedido nuevo ${payload.reference ?? ''}`,
       text: `Hay un pedido nuevo pagado: ${payload.reference ?? ''}\n\n${siteUrl()}/admin/orders/${payload.order_id ?? ''}/`,
+    };
+  }
+  if (templateKey === 'payment_review_admin') {
+    return {
+      subject: `Pago a revisar: ${payload.reference ?? ''}`,
+      text:
+        `${reviewReasonText(String(payload.reason ?? ''))}\n\n` +
+        `El dinero está cobrado. Entra en el pedido para darlo por bueno o cancelarlo y devolver el pago:\n` +
+        `${siteUrl()}/admin/orders/${payload.order_id ?? ''}/`,
     };
   }
   if (templateKey === 'messages_overflow') {

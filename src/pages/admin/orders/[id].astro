@@ -11,6 +11,7 @@ import { trackingUrl } from '@/lib/server/shipping/correos';
 import { carrierRow, ON_ITS_WAY } from '@/lib/server/shipping/admin';
 import { loadShippingSettings } from '@/lib/server/shipping/correos';
 import { reviewEligible, reviewUrl } from '@/lib/server/reviews/link';
+import { reviewConfirmable, reviewReasonText } from '@/lib/domain/paymentReview';
 
 export const prerender = false;
 
@@ -186,6 +187,8 @@ const awaitingTransfer = order.payment_status === 'awaiting_transfer';
 const unpaidOrder =
   ['pending_session', 'checkout_open', 'expired', 'cancelled', 'awaiting_transfer'].includes(order.payment_status) && !order.paid_at;
 const cancellable = unpaidOrder && order.payment_status !== 'cancelled';
+// A payment that did not fit its order (see apply_payment): Meili confirms or cancels it.
+const inReview = order.payment_status === 'review';
 
 // ——— Correos tracking ———
 type TrackingEvent = { at: string | null; text: string };
@@ -273,6 +276,16 @@ const carrierName = (value: string | null) =>
             Marcar como pagado
           </button>
         )}
+        {inReview && reviewConfirmable(order.review_reason) && (
+          <button type="button" class="btn" data-review="confirm">
+            Dar el pago por bueno
+          </button>
+        )}
+        {inReview && (
+          <button type="button" class="btn--quiet" data-review="cancel">
+            Cancelar y devolver
+          </button>
+        )}
         {cancellable && (
           <button type="button" class="btn--quiet" data-cancel-unpaid>
             Cancelar pedido
@@ -327,7 +340,19 @@ const carrierName = (value: string | null) =>
   }
 
   {
-    order.shipping_destination_ok === false && (
+    inReview && (
+      <p class="alert">
+        <strong>Pago a revisar.</strong> {reviewReasonText(order.review_reason)}{' '}
+        {reviewConfirmable(order.review_reason)
+          ? '«Dar el pago por bueno» lo deja pagado: descuenta del stock las piezas que falten y emite la factura con el IVA de la dirección de entrega. Si no puedes servirlo, '
+          : 'Este pago no se puede dar por bueno: '}
+        «Cancelar y devolver» devuelve sus piezas a la venta; el dinero se devuelve desde el panel de {providerName}.
+      </p>
+    )
+  }
+
+  {
+    order.shipping_destination_ok === false && !inReview && (
       <p class="alert">
         La dirección que escribió el cliente al pagar está fuera de la zona cobrada (
         {order.shipping_zone_name}). Revisa el envío antes de prepararlo; puede faltar o sobrar
@@ -1286,6 +1311,23 @@ const carrierName = (value: string | null) =>
         button.disabled = false;
       }
     });
+    actions.querySelectorAll<HTMLButtonElement>('[data-review]').forEach((button) =>
+      button.addEventListener('click', async () => {
+        const action = button.dataset.review === 'confirm' ? 'confirm' : 'cancel';
+        const question =
+          action === 'confirm'
+            ? `¿Dar por bueno el pago del pedido ${reference}? Queda pagado, se descuentan las piezas del stock y se emite la factura.`
+            : `¿Cancelar el pedido ${reference}? Sus piezas vuelven a la venta. El dinero no se devuelve solo: hazlo después desde Stripe o PayPal.`;
+        if (!confirm(question)) return;
+        button.disabled = true;
+        const { ok, message } = await call('PATCH', { review: action });
+        if (ok) location.reload();
+        else {
+          say(message);
+          button.disabled = false;
+        }
+      }),
+    );
     actions.querySelector<HTMLButtonElement>('[data-cancel-unpaid]')?.addEventListener('click', async (event) => {
       if (!confirm(`¿Cancelar el pedido ${reference}? No está pagado: se libera su stock y ya no se podrá pagar.`)) return;
       const button = event.currentTarget as HTMLButtonElement;
