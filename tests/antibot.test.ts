@@ -113,21 +113,36 @@ describe('leadingZeroBits', () => {
 describe('challenge and proof of work', async () => {
   const { issueChallenge, inspect, powValid, withoutAntibotFields } = await import('../src/lib/server/antibot');
 
+  const works = (nonce: string, counter: string, difficulty: number) =>
+    leadingZeroBits(createHash('sha256').update(`${nonce}:${counter}`).digest()) >= difficulty;
+
   const solve = (nonce: string, difficulty: number) => {
     for (let counter = 0; ; counter += 1) {
-      const digest = createHash('sha256').update(`${nonce}:${counter}`).digest();
-      if (leadingZeroBits(digest) >= difficulty) return String(counter);
+      if (works(nonce, String(counter), difficulty)) return String(counter);
+    }
+  };
+
+  /** A counter starting with `prefix` that misses the target: at 8 bits, 1 in 256 would hit it by chance. */
+  const wrong = (nonce: string, difficulty: number, prefix: string) => {
+    for (let i = 0; ; i += 1) {
+      if (!works(nonce, `${prefix}${i}`, difficulty)) return `${prefix}${i}`;
     }
   };
 
   const person = { k: 40, p: 3, w: false };
 
+  it('asks for 18 zero bits by default', async () => {
+    expect((await issueChallenge('register', '203.0.113.7')).difficulty).toBe(18);
+  });
+
   it('lets a person through and stops replays of the parts', async () => {
     vi.useFakeTimers({ now: Date.now() });
-    const challenge = await issueChallenge('register', '203.0.113.7');
+    // 8 bits takes about 256 hashes; the default 18 can take seconds on a busy machine.
+    const challenge = await issueChallenge('register', '203.0.113.7', { baseDifficulty: 8 });
+    expect(challenge.difficulty).toBe(8);
     const counter = solve(challenge.nonce, challenge.difficulty);
     expect(powValid(challenge.nonce, counter, challenge.difficulty)).toBe(true);
-    expect(powValid(challenge.nonce, `${counter}x`, challenge.difficulty)).toBe(false);
+    expect(powValid(challenge.nonce, wrong(challenge.nonce, challenge.difficulty, `${counter}x`), challenge.difficulty)).toBe(false);
 
     const fields = { _ab_token: challenge.token, _ab_pow: counter, _ab_i: JSON.stringify(person), website: '' };
     const base = { form: 'register' as const, ip: '203.0.113.7', email: 'ana.garcia@gmail.com', name: 'Ana García' };
@@ -137,7 +152,8 @@ describe('challenge and proof of work', async () => {
     vi.advanceTimersByTime(5000);
     expect(await inspect({ ...base, fields })).toEqual({ verdict: 'allow', score: 0, reasons: [] });
     expect((await inspect({ ...base, fields: { ...fields, website: 'http://x' } })).reasons).toEqual(['honeypot']);
-    expect((await inspect({ ...base, fields: { ...fields, _ab_pow: '1' } })).verdict).toBe('block');
+    const unsolved = wrong(challenge.nonce, challenge.difficulty, '');
+    expect((await inspect({ ...base, fields: { ...fields, _ab_pow: unsolved } })).verdict).toBe('block');
     expect((await inspect({ ...base, form: 'contact', fields })).reasons).toContain('token_form');
     expect((await inspect({ ...base, fields: { ...fields, _ab_token: challenge.token.slice(0, -2) + 'xx' } })).reasons).toEqual([
       'token_invalid',

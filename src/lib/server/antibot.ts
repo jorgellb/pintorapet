@@ -118,15 +118,16 @@ export function clientIp(context: { request: Request; clientAddress?: string }):
 
 type TokenPayload = { f: AntibotForm; t: number; n: string; d: number; ip: string };
 
-export async function issueChallenge(form: AntibotForm, ip: string) {
+/** `baseDifficulty` lets tests solve the proof of work instantly; the route always uses the default. */
+export async function issueChallenge(form: AntibotForm, ip: string, { baseDifficulty = BASE_DIFFICULTY } = {}) {
   const ipHash = hashOf('ip', ip);
-  let difficulty = BASE_DIFFICULTY;
+  let difficulty = baseDifficulty;
   const service = serviceDb();
   if (service) {
     const data = await service.call<number>('antibot_pressure', { p_ip_hash: ipHash }).catch(() => 0);
     const stopped = Number(data ?? 0);
-    if (stopped >= 3) difficulty = BASE_DIFFICULTY + 4;
-    else if (stopped >= 1) difficulty = BASE_DIFFICULTY + 2;
+    if (stopped >= 3) difficulty = baseDifficulty + 4;
+    else if (stopped >= 1) difficulty = baseDifficulty + 2;
   }
   const payload: TokenPayload = { f: form, t: Date.now(), n: randomBytes(16).toString('base64url'), d: difficulty, ip: ipHash.slice(0, 12) };
   const body = b64(JSON.stringify(payload));
