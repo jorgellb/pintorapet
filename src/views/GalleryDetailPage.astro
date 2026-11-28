@@ -1,25 +1,25 @@
 ---
-import { loadGallery } from '@/lib/content/editorial';
+import type { GalleryEntry } from '@/lib/content/editorial';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
 import ImageLightbox from '@/components/art/ImageLightbox.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { galleryMeta } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
-  slug: string;
+  /** Found by the route (src/pages/…/[slug].astro), which answers 404 for an unknown slug. */
+  items: GalleryEntry[];
+  index: number;
 }
 
-const { locale, slug } = Astro.props;
+const { locale, items, index } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const items = await loadGallery();
-const index = items.findIndex((item) => item.data.id === slug);
-const entry = items[index];
-if (!entry) {
-  return Astro.redirect(localizedPath(locale, 'gallery'));
-}
+const entry = items[index]!;
+const meta = galleryMeta(entry, items, locale);
 
 const title = entry.data.title[locale];
 const assets = entry.data.assets.filter((asset) => Boolean(asset.src));
@@ -37,7 +37,14 @@ const groups: Record<string, { en: string; es: string }> = {
 };
 ---
 
-<PublicLayout locale={locale} title={title} description={description || title}>
+<PublicLayout
+  locale={locale}
+  title={title}
+  seoTitle={meta.title}
+  description={meta.description}
+  image={drawing?.src}
+  imageAlt={drawing?.alt?.[locale] || title}
+>
   <article>
     <section class="piece">
       <div class="site-shell piece__grid">
@@ -59,7 +66,7 @@ const groups: Record<string, { en: string; es: string }> = {
                 data-lightbox-alt={drawing.alt?.[locale] ?? title}
               >
                 <img
-                  src={drawing.src}
+                  {...responsiveImage(drawing.src, WIDTHS.wide, '(min-width: 64rem) 60vw, 100vw')}
                   alt={drawing.alt?.[locale] ?? title}
                   loading="eager"
                   decoding="async"
@@ -133,7 +140,12 @@ const groups: Record<string, { en: string; es: string }> = {
                 data-lightbox-src={asset.src}
                 data-lightbox-alt={asset.alt?.[locale] ?? title}
               >
-                <img src={asset.src} alt={asset.alt?.[locale] ?? title} loading="lazy" decoding="async" />
+                <img
+                  {...responsiveImage(asset.src!, WIDTHS.card, '(min-width: 64rem) 16vw, 45vw')}
+                  alt={asset.alt?.[locale] ?? title}
+                  loading="lazy"
+                  decoding="async"
+                />
               </button>
             </li>
           ))}

@@ -16,11 +16,15 @@ import { jsonLdText, productJsonLd } from '@/lib/catalog/productJsonLd';
 import { productQuestion, whatsappLink } from '@/lib/domain/whatsapp';
 import { shippingHighlights } from '@/lib/server/shipping/highlights';
 import { productReviews } from '@/lib/server/reviews/store';
+import { singleUnitRates } from '@/lib/server/shipping/offerRates';
+import { SHIPPING_COUNTRIES } from '@/lib/domain/countries';
+import { returnPolicyJsonLd, shippingDetailsJsonLd } from '@/lib/seo/structuredData';
+import { productFallbackDescription } from '@/lib/seo/pageMeta';
 import type { ProductPublic } from '@/lib/domain/types';
 
 interface Props {
   locale: Locale;
-  /** Found by the route (src/pages/…/[slug].astro), which sends unknown products back to the shop. */
+  /** Found by the route (src/pages/…/[slug].astro), which answers 404 for an unknown product. */
   page: NonNullable<Awaited<ReturnType<typeof loadProductPage>>>;
 }
 
@@ -29,10 +33,11 @@ const es = locale === 'es';
 const dict = t(locale);
 const { product, options, selected } = page;
 
-// Product slugs are translated, so find this option's slug in the other locale.
+// Product slugs are translated, so find the slugs in the other locale.
 const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
 // The page's reviews are the product's and its options' (a keyring's shapes share one page).
-const [catalog, otherCatalog, collections, types, highlights, reviewed] = await Promise.all([
+// The shipping rates are for one unit of the option on show, for the structured data.
+const [catalog, otherCatalog, collections, types, highlights, reviewed, rates] = await Promise.all([
   loadPublicCatalogForPages(locale),
   loadPublicCatalogForPages(otherLocale),
   loadShopCollections(locale),
@@ -42,9 +47,17 @@ const [catalog, otherCatalog, collections, types, highlights, reviewed] = await 
     product.id,
     options.slice(1).map((option) => option.id),
   ),
+  singleUnitRates(selected.id),
 ]);
-const otherSlug = otherCatalog.products.find((p) => p.id === selected.id)?.slug;
-const alternate = otherSlug ? productPath(otherLocale, otherSlug) : localizedPath(otherLocale, 'shop');
+// An option's page counts as its product's page (the canonical), so for search
+// engines the other language is the product's too: canonical, hreflang and offer
+// name one URL. The visitor's language link keeps the option on show.
+const otherPath = (id: string) => {
+  const slug = otherCatalog.products.find((p) => p.id === id)?.slug;
+  return slug ? productPath(otherLocale, slug) : localizedPath(otherLocale, 'shop');
+};
+const alternate = otherPath(product.id);
+const languageHref = otherPath(selected.id);
 
 const canAddOf = (p: ProductPublic) =>
   p.saleEnabled && p.availability !== 'sold_out' && p.availability !== 'unavailable';
@@ -120,18 +133,23 @@ const details = productDetails(product.category, locale);
 const origin = Astro.site ?? new URL('https://petsdrawings.com');
 const abs = (path: string) => new URL(path, origin).href;
 const canonicalPath = productPath(locale, product.slug);
+// The portrait's crumb links to a filtered shop (?breed=), which is the shop's page for
+// search engines: the structured trail goes from the shop to the product.
 const breadcrumbs = [
   { name: dict.shop.title, url: abs(shopPath) },
-  ...(collection && breedPath ? [{ name: collection.name, url: abs(breedPath.replace('#stall', '')) }] : []),
   { name: product.title, url: abs(canonicalPath) },
 ];
 const structured = productJsonLd({
   product: { ...product, imageUrls: images.map((url) => abs(url)) },
   selected,
-  url: abs(productPath(locale, selected.slug)),
+  url: abs(canonicalPath),
   breadcrumbs,
   reviews: reviewed.jsonLd,
+  shippingDetails: shippingDetailsJsonLd(rates),
+  returnPolicies: returnPolicyJsonLd({ countries: SHIPPING_COUNTRIES, policyUrl: abs(localizedPath(locale, 'shipping')) }),
 });
+const description =
+  product.seoDescription?.trim() || product.summary?.trim() || productFallbackDescription(product.title, locale);
 
 const rated = reviewed.average !== null && reviewed.count > 0;
 const oneDecimal = new Intl.NumberFormat(locale === 'es' ? 'es-ES' : 'en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -155,10 +173,12 @@ const assurances = [
   locale={locale}
   title={product.title}
   seoTitle={product.seoTitle}
-  description={product.seoDescription ?? product.summary}
+  description={description}
   image={product.coverImageUrl}
+  imageAlt={imageAlt(0)}
   canonicalPath={canonicalPath}
   alternatePath={alternate}
+  languageHref={languageHref}
   ogType="product"
 >
   <script slot="head" type="application/ld+json" set:html={jsonLdText(structured)} />
@@ -424,6 +444,7 @@ const assurances = [
                 kind={typeOf.get(p.category)?.singular ?? ''}
                 tilt={[-5, 4, -3, 6][i % 4]}
                 eager={false}
+                sizes="(min-width: 40rem) 18rem, 45vw"
                 locale={locale}
               />
             ))}

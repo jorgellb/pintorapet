@@ -1,7 +1,17 @@
 ---
 import GalleryDetailPage from '@/views/GalleryDetailPage.astro';
+import NotFoundPage from '@/views/NotFoundPage.astro';
+import { loadGalleryFrom } from '@/lib/content/editorial';
+import { tryLaterResponse } from '@/lib/seo/status';
 
-const { slug } = Astro.params;
+// Looked up here, before anything is sent: an unknown piece answers 404 with
+// the error page (503 while the database cannot be read).
+const { items, stale } = await loadGalleryFrom();
+const index = items.findIndex((item) => item.data.id === Astro.params.slug);
+if (index < 0) {
+  if (stale) return tryLaterResponse('es');
+  Astro.response.status = 404;
+}
 ---
 
-<GalleryDetailPage locale="es" slug={slug!} />
+{index < 0 ? <NotFoundPage locale="es" /> : <GalleryDetailPage locale="es" items={items} index={index} />}

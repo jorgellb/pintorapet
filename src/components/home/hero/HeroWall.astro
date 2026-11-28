@@ -1,6 +1,7 @@
 ---
 import type { Locale } from '@/i18n';
 import type { ResolvedHero } from '@/lib/content/homeHero';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
 
 /**
  * Design 3 · En la pared: one drawing, framed and hung from a nail under a
@@ -36,7 +37,7 @@ const { hero } = Astro.props;
           <div class="wall__frame">
             <div class="wall__mat">
               <img
-                src={hero.main.src}
+                {...responsiveImage(hero.main.src, WIDTHS.half, '(min-width: 64rem) 34rem, (min-width: 36rem) 36rem, 100vw')}
                 alt={hero.main.alt}
                 fetchpriority="high"
                 decoding="async"

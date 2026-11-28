@@ -4,6 +4,8 @@ import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { getPageCopy } from '@/lib/content/pages';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { SECTION_META } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
@@ -20,7 +22,12 @@ const intro =
     : 'Here you will find portraits of people and other drawings.');
 ---
 
-<PublicLayout locale={locale} title={migrated.title ?? dict.nav.gallery} description={intro}>
+<PublicLayout
+  locale={locale}
+  title={migrated.title ?? dict.nav.gallery}
+  seoTitle={SECTION_META.gallery[locale].title}
+  description={intro}
+>
   <section class="section">
     <div class="site-shell">
       <h1 class="display h1-display">{migrated.title ?? dict.nav.gallery}</h1>
@@ -44,7 +51,7 @@ const intro =
               <li>
                 <a class="thumb" href={localizedPath(locale, 'gallery', entry.data.id)}>
                   <img
-                    src={cover.src}
+                    {...responsiveImage(cover.src, WIDTHS.card, '(min-width: 64rem) 30vw, 46vw')}
                     alt={cover.alt?.[locale] ?? entry.data.title[locale]}
                     loading="lazy"
                     decoding="async"

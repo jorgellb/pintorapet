@@ -10,6 +10,8 @@ import { loadWorks } from '@/lib/content/editorial';
 import { getCommissionExamples } from '@/lib/content/siteExtras';
 import { commissionPrices, MAX_SUBJECTS } from '@/lib/domain/commissionPricing';
 import { commissionReviews } from '@/lib/server/reviews/store';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { SECTION_META } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
@@ -101,7 +103,14 @@ const sizeChoices = [
 ];
 ---
 
-<PublicLayout locale={locale} title={copy.title} description={copy.intro}>
+<PublicLayout
+  locale={locale}
+  title={copy.title}
+  seoTitle={SECTION_META.commissions[locale].title}
+  description={copy.intro}
+  image={sizes[1].image}
+  imageAlt={sizes[1].alt}
+>
   <section class="section intro" aria-labelledby="commission-title">
     <div class="site-shell intro__grid">
       <div class="intro__copy">
@@ -122,7 +131,17 @@ const sizeChoices = [
               <div class={`size size--${size.id.toLowerCase()}`} style={`--w:${size.width};--ar:${size.width} / ${size.height}`}>
                 <div class="size__sheet">
                   {size.image ? (
-                    <img src={size.image} alt={size.alt} loading="eager" decoding="async" />
+                    <img
+                      {...responsiveImage(
+                        size.image,
+                        WIDTHS.half,
+                        // A3 takes two thirds of the row, A4 one third; the row is 7/12 of a desktop page.
+                        size.id === 'A3' ? '(min-width: 64rem) 38vw, 66vw' : '(min-width: 64rem) 19vw, 33vw',
+                      )}
+                      alt={size.alt}
+                      loading="eager"
+                      decoding="async"
+                    />
                   ) : (
                     <span class="size__blank display" aria-hidden="true">{size.id}</span>
                   )}
@@ -176,7 +195,7 @@ const sizeChoices = [
         referencePhoto && (
           <figure class="polaroid">
             <img
-              src={referencePhoto}
+              {...responsiveImage(referencePhoto, WIDTHS.card, '(min-width: 26rem) 24rem, 90vw')}
               alt={es ? 'Fotografía de referencia de Frankie' : 'Reference photograph of Frankie'}
               loading="lazy"
               decoding="async"
@@ -221,6 +240,7 @@ const sizeChoices = [
             {examplePairs.map((pair) => (
               <article class="example">
                 <PhotoDrawingCompare
+                  sizes="(min-width: 56rem) 45vw, 100vw"
                   photoSrc={pair.photo}
                   drawingSrc={pair.drawing}
                   photoAlt={`${pair.title}: ${dict.art.photo}`}

@@ -1,6 +1,7 @@
 ---
 import type { Locale } from '@/i18n';
 import type { ResolvedHero } from '@/lib/content/homeHero';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
 
 /** Design 1 · Estudio: sheets pinned to the studio wall around the drawing, the photo it came from, a pencil arrow between them. */
 interface Props {
@@ -26,7 +27,7 @@ const pieces = hero.extras.slice(0, 4);
           const image = (
             <span class="piece__sheet">
               <img
-                src={piece.src}
+                {...responsiveImage(piece.src, WIDTHS.thumb, '(min-width: 64rem) 12vw, 33vw')}
                 alt={piece.alt}
                 loading="eager"
                 decoding="async"
@@ -50,7 +51,12 @@ const pieces = hero.extras.slice(0, 4);
         hero.photo && (
           <figure class="piece piece--photo" style="--i:5">
             <span class="piece__sheet polaroid">
-              <img src={hero.photo.src} alt={hero.photo.alt} loading="eager" decoding="async" />
+              <img
+                {...responsiveImage(hero.photo.src, WIDTHS.thumb, '(min-width: 64rem) 12vw, 36vw')}
+                alt={hero.photo.alt}
+                loading="eager"
+                decoding="async"
+              />
               <figcaption>{hero.photo.caption}</figcaption>
             </span>
           </figure>
@@ -71,7 +77,7 @@ const pieces = hero.extras.slice(0, 4);
           {
             hero.main && (
               <img
-                src={hero.main.src}
+                {...responsiveImage(hero.main.src, WIDTHS.half, '(min-width: 64rem) 30vw, 85vw')}
                 alt={hero.main.alt}
                 width="1551"
                 height="1080"

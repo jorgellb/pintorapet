@@ -3,6 +3,7 @@ import { t, type Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { formatEur } from '@/lib/domain/money';
 import type { ProductPublic } from '@/lib/domain/types';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
 
 /** One piece on the shop's stall: framed photo, hanging price tag, add to cart. */
 interface Props {
@@ -15,9 +16,19 @@ interface Props {
   tilt: number;
   eager: boolean;
   locale: Locale;
+  /** How wide the photo shows; by default a card in the shop's sliding rows. */
+  sizes?: string;
 }
 
-const { product, title, kind, tilt, eager, locale } = Astro.props;
+const {
+  product,
+  title,
+  kind,
+  tilt,
+  eager,
+  locale,
+  sizes = '(min-width: 64rem) 36vw, (min-width: 48rem) 56vw, 75vw',
+} = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
 const href = localizedPath(locale, 'shop', product.slug);
@@ -37,7 +48,7 @@ const status =
       product.coverImageUrl ? (
         <img
           class="item__img"
-          src={product.coverImageUrl}
+          {...responsiveImage(product.coverImageUrl, WIDTHS.half, sizes)}
           alt={product.title}
           loading={eager ? 'eager' : 'lazy'}
           decoding="async"
@@ -46,7 +57,17 @@ const status =
         <span class="item__ph" />
       )
     }
-    {alt && <img class="item__img item__img--alt" src={alt} alt="" loading="lazy" decoding="async" />}
+    {
+      alt && (
+        <img
+          class="item__img item__img--alt"
+          {...responsiveImage(alt, WIDTHS.half, sizes)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      )
+    }
   </a>
 
   <span class="tag" aria-hidden="true">

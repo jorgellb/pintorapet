@@ -1,5 +1,17 @@
 ---
 import WorkDetailPage from '@/views/WorkDetailPage.astro';
-const { slug } = Astro.params;
+import NotFoundPage from '@/views/NotFoundPage.astro';
+import { loadWorksFrom } from '@/lib/content/editorial';
+import { tryLaterResponse } from '@/lib/seo/status';
+
+// Looked up here, before anything is sent: an unknown work answers 404 with
+// the error page (503 while the database cannot be read).
+const { items: works, stale } = await loadWorksFrom();
+const index = works.findIndex((w) => w.data.pathSlugs.en === Astro.params.slug);
+if (index < 0) {
+  if (stale) return tryLaterResponse('en');
+  Astro.response.status = 404;
+}
 ---
-<WorkDetailPage locale="en" slug={slug!} />
+
+{index < 0 ? <NotFoundPage locale="en" /> : <WorkDetailPage locale="en" works={works} index={index} />}

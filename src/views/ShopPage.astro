@@ -11,6 +11,8 @@ import { publicMarkets } from '@/lib/server/markets';
 import NextMarket from '@/components/markets/NextMarket.astro';
 import CouponBanner from '@/components/shop/CouponBanner.astro';
 import { announcedCoupon } from '@/lib/server/coupons';
+import { sizedImage } from '@/lib/catalog/imageSize';
+import { SECTION_META } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
@@ -75,9 +77,18 @@ const categories = [
 
 const swing = [-6, 4, -3, 7, -5, 3];
 const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) => p.category))];
+// Portrait medallions: at most 7.5rem across with the drawing at 235% on hover, so about 560 px on a 2x screen.
+const portraitBg = (url: string | null | undefined) => (url ? `background-image:url('${sizedImage(url, 560)}')` : undefined);
+// One type or one portrait chosen: a grid of cards; otherwise sliding rows.
+const gridSizes = '(min-width: 64rem) 22vw, (min-width: 40rem) 45vw, 90vw';
 ---
 
-<PublicLayout locale={locale} title={dict.shop.title} description={dict.shop.lead}>
+<PublicLayout
+  locale={locale}
+  title={dict.shop.title}
+  seoTitle={SECTION_META.shop[locale].title}
+  description={SECTION_META.shop[locale].description}
+>
   <div class="canopy" aria-hidden="true">
     <span class="canopy__valance"></span>
   </div>
@@ -134,10 +145,7 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
                 href={filterHref({ breed: breed === set.id ? 'all' : set.id })}
                 aria-current={breed === set.id ? 'true' : undefined}
               >
-                <span
-                  class="medallion__face"
-                  style={set.portrait ? `background-image:url('${set.portrait}')` : undefined}
-                />
+                <span class="medallion__face" style={portraitBg(set.portrait)} />
                 <span class="medallion__name">{set.name}</span>
               </a>
             </li>
@@ -194,6 +202,7 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
                   kind={singular(product.category)}
                   tilt={swing[i % swing.length]}
                   eager={i < 4}
+                  sizes={gridSizes}
                   locale={locale}
                 />
               ))}
@@ -202,11 +211,7 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
         ) : portrait ? (
           <section class="kindgrid" data-portrait-grid aria-labelledby={`set-${portrait.id}`}>
             <header class="set__head">
-              <span
-                class="set__portrait"
-                style={portrait.portrait ? `background-image:url('${portrait.portrait}')` : undefined}
-                aria-hidden="true"
-              />
+              <span class="set__portrait" style={portraitBg(portrait.portrait)} aria-hidden="true" />
               <div class="set__titles">
                 <h2 id={`set-${portrait.id}`} class="display set__name">
                   {portrait.name}
@@ -234,6 +239,7 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
                   kind={singular(product.category)}
                   tilt={swing[i % swing.length]}
                   eager={i < 4}
+                  sizes={gridSizes}
                   locale={locale}
                 />
               ))}
@@ -243,11 +249,7 @@ const kindsOf = (set: (typeof sets)[number]) => [...new Set(set.items.map((p) =>
           sets.map((set, setIndex) => (
             <article class="set" aria-labelledby={`set-${set.id}`}>
               <header class="set__head">
-                <span
-                  class="set__portrait"
-                  style={set.portrait ? `background-image:url('${set.portrait}')` : undefined}
-                  aria-hidden="true"
-                />
+                <span class="set__portrait" style={portraitBg(set.portrait)} aria-hidden="true" />
                 <div class="set__titles">
                   <div class="set__line">
                     <h2 id={`set-${set.id}`} class="display set__name">

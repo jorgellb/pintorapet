@@ -6,6 +6,14 @@ import VisitBeacon from '@/components/analytics/VisitBeacon.astro';
 import CartDrawer from '@/components/shop/CartDrawer.astro';
 import { t, type Locale } from '@/i18n';
 import { alternatePath } from '@/i18n/routes';
+import { hreflangLinks, OG_LOCALES, otherLocaleOf, visitorAlternateHref } from '@/lib/seo/head';
+import { siteJsonLd } from '@/lib/seo/structuredData';
+import { shareImage } from '@/lib/catalog/imageSize';
+import { jsonLdText } from '@/lib/catalog/productJsonLd';
+import { getCommissionExamples, getLogoUrl } from '@/lib/content/siteExtras';
+// The two faces above the fold (body text and the display headings), fetched with the HTML.
+import bodyFont from '@fontsource/outfit/files/outfit-latin-400-normal.woff2?url';
+import displayFont from '@fontsource/fraunces/files/fraunces-latin-400-normal.woff2?url';
 
 interface Props {
   locale: Locale;
@@ -13,13 +21,17 @@ interface Props {
   description?: string;
   /** Replaces the whole `<title>`, brand included. */
   seoTitle?: string | null;
-  /** Absolute or root-relative image for link previews. */
+  /** Absolute or root-relative image for link previews. Defaults to a drawing of the site's. */
   image?: string | null;
+  /** What the preview image shows. Defaults to the title. */
+  imageAlt?: string | null;
   /** Defaults to the current path. */
   canonicalPath?: string;
   noindex?: boolean;
   /** Same page in the other locale. Defaults to a translation of the current path. */
   alternatePath?: string;
+  /** The header's language link, when it is not that page (a product option's page keeps the option). */
+  languageHref?: string;
   /** Open Graph type: 'product' on a product page. */
   ogType?: 'website' | 'product';
 }
@@ -30,24 +42,37 @@ const {
   description,
   seoTitle,
   image,
+  imageAlt,
   canonicalPath,
   noindex = false,
   alternatePath: alternateOverride,
+  languageHref,
   ogType = 'website',
 } = Astro.props;
-const otherLocale: Locale = locale === 'en' ? 'es' : 'en';
-// A coupon link (?cupon=) is for the visitor, not for the page's other-language address.
-const otherParams = new URLSearchParams(Astro.url.search);
-otherParams.delete('cupon');
-otherParams.delete('coupon');
-const otherSearch = otherParams.size ? `?${otherParams}` : '';
+const otherLocale = otherLocaleOf(locale);
 const alternateHref =
-  alternateOverride ?? `${alternatePath(Astro.url.pathname, otherLocale)}${otherSearch}`;
+  languageHref ?? alternateOverride ?? visitorAlternateHref(Astro.url.pathname, Astro.url.search, locale);
 const dict = t(locale);
 const siteTitle = seoTitle?.trim() || `${title} · ${dict.brand.name}`;
 const origin = Astro.site ?? 'https://petsdrawings.com';
 const canonical = new URL(canonicalPath ?? Astro.url.pathname, origin).href;
-const ogImage = image ? new URL(image, origin).href : null;
+const hreflang = hreflangLinks({
+  locale,
+  canonical,
+  alternate: alternateOverride ?? alternatePath(Astro.url.pathname, otherLocale),
+  origin,
+});
+// Pages without a picture of their own share Frankie's drawing (the commissions example).
+const [examples, logoUrl] = await Promise.all([getCommissionExamples(), getLogoUrl()]);
+const defaultImage = examples.find((e) => e.id === 'frankie-drawing')?.publicUrl ?? null;
+const previewSrc = image || defaultImage;
+const preview = previewSrc ? shareImage(new URL(previewSrc, origin).href) : null;
+const previewAlt = image
+  ? imageAlt?.trim() || title
+  : locale === 'es'
+    ? 'Retrato a lápiz de Frankie, de Meili Stringfellow'
+    : 'Pencil portrait of Frankie by Meili Stringfellow';
+const site = noindex ? null : siteJsonLd({ origin, locale, logoUrl });
 ---
 
 <!doctype html>
@@ -58,19 +83,32 @@ const ogImage = image ? new URL(image, origin).href : null;
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preload" href={bodyFont} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={displayFont} as="font" type="font/woff2" crossorigin />
     <title>{siteTitle}</title>
     {description && <meta name="description" content={description} />}
     {noindex && <meta name="robots" content="noindex,nofollow" />}
     <link rel="canonical" href={canonical} />
     <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content={dict.brand.name} />
+    <meta property="og:locale" content={OG_LOCALES[locale]} />
+    <meta property="og:locale:alternate" content={OG_LOCALES[otherLocale]} />
     <meta property="og:title" content={siteTitle} />
     {description && <meta property="og:description" content={description} />}
     <meta property="og:url" content={canonical} />
-    {ogImage && <meta property="og:image" content={ogImage} />}
-    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
-    <link rel="alternate" hreflang={locale} href={canonical} />
-    <link rel="alternate" hreflang={otherLocale} href={new URL(alternateHref, origin).href} />
+    {
+      preview && (
+        <>
+          <meta property="og:image" content={preview.url} />
+          {preview.width && <meta property="og:image:width" content={String(preview.width)} />}
+          {preview.height && <meta property="og:image:height" content={String(preview.height)} />}
+          <meta property="og:image:alt" content={previewAlt} />
+        </>
+      )
+    }
+    <meta name="twitter:card" content={preview ? 'summary_large_image' : 'summary'} />
+    {hreflang.map((link) => <link rel="alternate" hreflang={link.hreflang} href={link.href} />)}
+    {site && <script type="application/ld+json" set:html={jsonLdText(site)} />}
     <meta name="generator" content={Astro.generator} />
     <slot name="head" />
   </head>

@@ -3,6 +3,8 @@ import { loadWorks } from '@/lib/content/editorial';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath, workPath } from '@/i18n/routes';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { SECTION_META } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
@@ -25,7 +27,12 @@ const categories = [
 ] as const;
 ---
 
-<PublicLayout locale={locale} title={dict.nav.work}>
+<PublicLayout
+  locale={locale}
+  title={dict.nav.work}
+  seoTitle={SECTION_META.work[locale].title}
+  description={SECTION_META.work[locale].description}
+>
   <section class="section">
     <div class="site-shell">
       <h1 class="display h1-display">{dict.nav.work}</h1>
@@ -41,7 +48,7 @@ const categories = [
           categories.map((c) => (
             <a
               class:list={['chip', { 'chip--active': category === c.id }]}
-              href={`${localizedPath(locale, 'work')}?category=${c.id}`}
+              href={c.id === 'all' ? localizedPath(locale, 'work') : `${localizedPath(locale, 'work')}?category=${c.id}`}
             >
               {c.label}
             </a>
@@ -68,7 +75,7 @@ const categories = [
                     {
                       cover ? (
                         <img
-                          src={cover}
+                          {...responsiveImage(cover, WIDTHS.card, '(min-width: 64rem) 30vw, 46vw')}
                           alt={entry.data.title[locale]}
                           loading="lazy"
                           decoding="async"

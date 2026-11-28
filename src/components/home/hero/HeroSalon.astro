@@ -1,6 +1,7 @@
 ---
 import type { Locale } from '@/i18n';
 import type { HeroPicture, ResolvedHero } from '@/lib/content/homeHero';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
 
 /**
  * Design 5 · Salón: a wall hung salon-style, portraits of every size in
@@ -38,7 +39,12 @@ const finishes = ['ink', 'oak', 'white', 'oak', 'ink', 'white', 'ink', 'oak'];
         const inner = (
           <span class="salon__mat">
             <img
-              src={frame.src}
+              {...responsiveImage(
+                frame.src,
+                WIDTHS.half,
+                // The featured drawing hangs in the largest frame.
+                i === 0 ? '(min-width: 64rem) 30vw, 60vw' : '(min-width: 64rem) 16vw, 32vw',
+              )}
               alt={frame.alt}
               loading={i < 4 ? 'eager' : 'lazy'}
               fetchpriority={i === 0 ? 'high' : undefined}

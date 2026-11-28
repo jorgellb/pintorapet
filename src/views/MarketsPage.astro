@@ -11,6 +11,7 @@ import { countdown, marketDates, marketState } from '@/lib/domain/markets';
 import { jsonLdText } from '@/lib/catalog/productJsonLd';
 import { sizedImage } from '@/lib/catalog/imageSize';
 import { publicMarkets } from '@/lib/server/markets';
+import { marketEventJsonLd } from '@/lib/seo/structuredData';
 
 interface Props {
   locale: Locale;
@@ -28,22 +29,14 @@ const description = es
 
 // Google can list each market as an event.
 const origin = Astro.site ?? new URL('https://petsdrawings.com');
-const events = markets.map((m) => ({
-  '@context': 'https://schema.org',
-  '@type': 'Event',
-  name: `${m.name} · Pets Drawings`,
-  startDate: m.startsOn,
-  endDate: m.endsOn,
-  eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
-  eventStatus: 'https://schema.org/EventScheduled',
-  location: {
-    '@type': 'Place',
-    name: m.place || m.name,
-    address: { '@type': 'PostalAddress', addressLocality: m.city || undefined, addressCountry: 'ES' },
-  },
-  organizer: { '@type': 'Person', name: 'Meili Stringfellow', url: new URL(localizedPath(locale, 'home'), origin).href },
-  description: (es ? m.notesEs : m.notesEn) || description,
-}));
+const events = markets.map((m) =>
+  marketEventJsonLd(m, {
+    locale,
+    origin,
+    description,
+    images: (m.photos ?? []).slice(0, 3).map((ph) => sizedImage(ph.url, 1200)!),
+  }),
+);
 const tilts = [-5, 4, -3, 6, -6, 3];
 
 // Photos from the stall, as snapshots taped to the card; the rest open in the viewer.

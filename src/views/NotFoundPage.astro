@@ -11,7 +11,7 @@ const { locale } = Astro.props;
 const dict = t(locale);
 ---
 
-<PublicLayout locale={locale} title={dict.errors.notFoundTitle}>
+<PublicLayout locale={locale} title={dict.errors.notFoundTitle} noindex>
   <section class="section">
     <div class="site-shell">
       <h1 class="display h1-display">{dict.errors.notFoundTitle}</h1>

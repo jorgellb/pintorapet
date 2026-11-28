@@ -1,25 +1,25 @@
 ---
-import { loadWorks } from '@/lib/content/editorial';
+import type { WorkEntry } from '@/lib/content/editorial';
 import PublicLayout from '@/layouts/PublicLayout.astro';
 import PhotoDrawingCompare from '@/components/art/PhotoDrawingCompare.astro';
 import ImageLightbox from '@/components/art/ImageLightbox.astro';
 import { t, type Locale } from '@/i18n';
 import { localizedPath, workPath } from '@/i18n/routes';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { workMeta } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
-  slug: string;
+  /** Found by the route (src/pages/…/[slug].astro), which answers 404 for an unknown slug. */
+  works: WorkEntry[];
+  index: number;
 }
 
-const { locale, slug } = Astro.props;
+const { locale, works, index } = Astro.props;
 const es = locale === 'es';
 const dict = t(locale);
-const works = await loadWorks();
-const index = works.findIndex((w) => w.data.pathSlugs[locale] === slug);
-const entry = works[index];
-if (!entry) {
-  return Astro.redirect(localizedPath(locale, 'work'));
-}
+const entry = works[index]!;
+const meta = workMeta(entry, works, locale);
 
 const prev = works[(index - 1 + works.length) % works.length];
 const next = works[(index + 1) % works.length];
@@ -47,9 +47,10 @@ function roleLabel(role: string): string {
 <PublicLayout
   locale={locale}
   title={title}
-  seoTitle={entry.data.seo?.title[locale]}
-  description={entry.data.seo?.description[locale] ?? entry.data.summary?.[locale]}
+  seoTitle={meta.title}
+  description={meta.description}
   image={drawing?.src}
+  imageAlt={drawing?.alt?.[locale] || title}
   alternatePath={workPath(es ? 'en' : 'es', entry.data.pathSlugs[es ? 'en' : 'es'])}
 >
   <article>
@@ -75,10 +76,9 @@ function roleLabel(role: string): string {
                 data-lightbox-alt={drawing.alt?.[locale] ?? title}
               >
                 <img
-                  src={drawing.src}
+                  {...responsiveImage(drawing.src, WIDTHS.wide, '(min-width: 64rem) 60vw, 100vw')}
                   alt={drawing.alt?.[locale] ?? title}
                   loading="eager"
-                  fetchpriority="high"
                   decoding="async"
                   style={`view-transition-name: work-${entry.data.id}`}
                 />
@@ -120,7 +120,12 @@ function roleLabel(role: string): string {
                               data-lightbox-src={asset.src}
                               data-lightbox-alt={asset.alt?.[locale] ?? title}
                             >
-                              <img src={asset.src} alt={asset.alt?.[locale] ?? title} loading="lazy" decoding="async" />
+                              <img
+                                {...responsiveImage(asset.src!, WIDTHS.thumb, '9rem')}
+                                alt={asset.alt?.[locale] ?? title}
+                                loading="lazy"
+                                decoding="async"
+                              />
                             </button>
                           </li>
                         ))}
@@ -179,7 +184,7 @@ function roleLabel(role: string): string {
                   data-lightbox-alt={asset.alt?.[locale] ?? title}
                 >
                   <img
-                    src={asset.src}
+                    {...responsiveImage(asset.src!, WIDTHS.half, '(min-width: 64rem) 30vw, 50vw')}
                     alt={asset.alt?.[locale] ?? title}
                     loading="lazy"
                     decoding="async"

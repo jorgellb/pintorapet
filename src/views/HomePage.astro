@@ -17,6 +17,8 @@ import HeroReveal from '@/components/home/hero/HeroReveal.astro';
 import HeroWall from '@/components/home/hero/HeroWall.astro';
 import HeroSketchbook from '@/components/home/hero/HeroSketchbook.astro';
 import HeroSalon from '@/components/home/hero/HeroSalon.astro';
+import { fixedHeightImage, responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { SECTION_META } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
@@ -65,7 +67,15 @@ const drawnNames = [
 
 ---
 
-<PublicLayout locale={locale} title={dict.nav.home} description={hero.lead} noindex={Boolean(preview)}>
+<PublicLayout
+  locale={locale}
+  title={dict.nav.home}
+  seoTitle={SECTION_META.home[locale].title}
+  description={hero.lead}
+  image={hero.main?.src}
+  imageAlt={hero.main?.alt}
+  noindex={Boolean(preview)}
+>
   <Hero hero={hero} locale={locale} />
 
   {sections.latest && (
@@ -87,13 +97,13 @@ const drawnNames = [
           </p>
         </li>
         {
-          sections.latest.items.map((w) => (
+          sections.latest.items.map((w, i) => (
             <li class="corridor__item">
               <a href={w.href}>
                 <img
-                  src={w.src}
+                  {...fixedHeightImage(w.src, 480)}
                   alt={w.title}
-                  loading="eager"
+                  loading={i === 0 ? 'eager' : 'lazy'}
                   decoding="async"
                   style={`view-transition-name: work-${w.workId}`}
                 />
@@ -159,7 +169,16 @@ const drawnNames = [
               <li class={i === 0 ? 'boutique__item boutique__item--feature' : 'boutique__item'}>
                 <a href={localizedPath(locale, 'shop', p.slug)}>
                   {p.coverImageUrl ? (
-                    <img src={p.coverImageUrl} alt={p.title} loading="lazy" decoding="async" />
+                    <img
+                      {...responsiveImage(
+                        p.coverImageUrl,
+                        WIDTHS.half,
+                        i === 0 ? '(min-width: 48rem) 55vw, 100vw' : '(min-width: 48rem) 40vw, 100vw',
+                      )}
+                      alt={p.title}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <span class="boutique__ph" aria-hidden="true" />
                   )}
@@ -209,7 +228,12 @@ const drawnNames = [
         {
           sections.artist.desk && (
             <figure class="snap snap--back">
-              <img src={sections.artist.desk.src} alt={sections.artist.desk.alt} loading="lazy" decoding="async" />
+              <img
+                {...responsiveImage(sections.artist.desk.src, WIDTHS.card, '(min-width: 30rem) 18rem, 58vw')}
+                alt={sections.artist.desk.alt}
+                loading="lazy"
+                decoding="async"
+              />
             </figure>
           )
         }
@@ -218,7 +242,7 @@ const drawnNames = [
             <figure class="snap snap--front">
               <span class="snap__film">
                 <img
-                  src={sections.artist.portrait.src}
+                  {...responsiveImage(sections.artist.portrait.src, WIDTHS.card, '(min-width: 30rem) 23rem, 76vw')}
                   alt={sections.artist.portrait.alt}
                   loading="lazy"
                   decoding="async"
@@ -395,6 +419,8 @@ const drawnNames = [
   .corridor__item img {
     height: min(58svh, 30rem);
     width: auto;
+    /* A width before a lazy drawing arrives, so the walk's length is about right and the rest wait off screen. */
+    aspect-ratio: auto 3 / 4;
     max-width: 82vw;
     object-fit: contain;
     padding: clamp(0.45rem, 1vw, 0.8rem);

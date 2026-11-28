@@ -1,6 +1,7 @@
 ---
 import type { Locale } from '@/i18n';
 import type { ResolvedHero } from '@/lib/content/homeHero';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
 
 /**
  * Design 2 · Revelado: the original photo turns into the drawing. A pencil
@@ -16,6 +17,7 @@ const { hero, locale } = Astro.props;
 const es = locale === 'es';
 const photo = hero.photo;
 const main = hero.main;
+const stageSizes = '(min-width: 64rem) 50vw, 100vw';
 ---
 
 <section class="reveal">
@@ -47,10 +49,19 @@ const main = hero.main;
         <figure class:list={['reveal__stage', { 'reveal__stage--solo': !photo }]} data-reveal style="--cut: 54%">
           <div class="reveal__sheet">
             <div class="reveal__frame">
-              {photo && <img class="reveal__photo" src={photo.src} alt={photo.alt} fetchpriority="high" decoding="async" />}
+              {
+                photo && (
+                  <img
+                    class="reveal__photo"
+                    {...responsiveImage(photo.src, WIDTHS.half, stageSizes)}
+                    alt={photo.alt}
+                    decoding="async"
+                  />
+                )
+              }
               <img
                 class="reveal__drawing"
-                src={main.src}
+                {...responsiveImage(main.src, WIDTHS.half, stageSizes)}
                 alt={main.alt}
                 fetchpriority="high"
                 decoding="async"

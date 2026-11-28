@@ -1,12 +1,17 @@
 ---
 import ProductPage from '@/views/ProductPage.astro';
-import { localizedPath } from '@/i18n/routes';
-import { loadProductPage } from '@/lib/catalog/loadProducts';
+import NotFoundPage from '@/views/NotFoundPage.astro';
+import { catalogReadFailed, loadProductPage } from '@/lib/catalog/loadProducts';
+import { tryLaterResponse } from '@/lib/seo/status';
 
-// Looked up here, before anything is sent: an unknown product goes back to the
-// shop (a redirect from inside the view would come too late and leave a blank page).
+// Looked up here, before anything is sent (from inside the view it would be
+// too late): an unknown product answers 404 with the error page, or 503
+// while the database cannot be read.
 const page = await loadProductPage('es', Astro.params.slug ?? '');
-if (!page) return Astro.redirect(localizedPath('es', 'shop'));
+if (!page) {
+  if (await catalogReadFailed('es')) return tryLaterResponse('es');
+  Astro.response.status = 404;
+}
 ---
 
-<ProductPage locale="es" page={page} />
+{page ? <ProductPage locale="es" page={page} /> : <NotFoundPage locale="es" />}

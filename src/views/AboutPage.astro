@@ -6,6 +6,8 @@ import { getAboutImages, getCommissionExamples } from '@/lib/content/siteExtras'
 import type { Locale } from '@/i18n';
 import { localizedPath } from '@/i18n/routes';
 import { t } from '@/i18n';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+import { SECTION_META } from '@/lib/seo/pageMeta';
 
 interface Props {
   locale: Locale;
@@ -80,7 +82,14 @@ const childhoodParts =
 const leadWords = fallback.lead.split(' ');
 ---
 
-<PublicLayout locale={locale} title={title} description={fallback.lead} image={portrait}>
+<PublicLayout
+  locale={locale}
+  title={title}
+  seoTitle={SECTION_META.about[locale].title}
+  description={fallback.lead}
+  image={portrait}
+  imageAlt={alts.portrait}
+>
   <article class="about" data-about>
     <svg class="trail" data-trail aria-hidden="true" focusable="false">
       <path class="trail__line" data-trail-path></path>
@@ -119,11 +128,10 @@ const leadWords = fallback.lead.split(' ');
               <div class="hero__sheet">
                 <img
                   class="hero__photo"
-                  src={portrait}
+                  {...responsiveImage(portrait, WIDTHS.half, '(min-width: 32rem) 31rem, 95vw')}
                   alt={alts.portrait}
                   width="1007"
                   height="1080"
-                  fetchpriority="high"
                   decoding="async"
                 />
               </div>
@@ -155,7 +163,12 @@ const leadWords = fallback.lead.split(' ');
           closeUp && (
             <figure class="gaze__art" data-reveal>
               <div class="loupe-stage" data-loupe data-src={closeUp}>
-                <img src={closeUp} alt={alts.closeUp} loading="lazy" decoding="async" />
+                <img
+                  {...responsiveImage(closeUp, WIDTHS.half, '(min-width: 64rem) 45vw, 95vw')}
+                  alt={alts.closeUp}
+                  loading="lazy"
+                  decoding="async"
+                />
                 <span class="loupe" data-loupe-lens aria-hidden="true">
                   <span class="loupe__glass"></span>
                   <span class="loupe__handle"></span>
@@ -180,7 +193,14 @@ const leadWords = fallback.lead.split(' ');
           <div class="site-shell studio__grid">
             <figure class="about__figure studio__photo" data-reveal data-notes>
               <div class="studio__frame">
-                <img src={desk} alt={alts.desk} loading="lazy" decoding="async" width="1565" height="1080" />
+                <img
+                  {...responsiveImage(desk, WIDTHS.half, '(min-width: 64rem) 55vw, 95vw')}
+                  alt={alts.desk}
+                  loading="lazy"
+                  decoding="async"
+                  width="1565"
+                  height="1080"
+                />
                 <svg class="notes" viewBox="0 0 1000 690" preserveAspectRatio="none" aria-hidden="true">
                   <path pathLength="1" d="M100 180 C 60 300, 60 400, 110 530" />
                   <path pathLength="1" d="M110 530 l -22 -34 M110 530 l 32 -22" />
@@ -217,14 +237,24 @@ const leadWords = fallback.lead.split(' ');
           {
             market && (
               <figure class="about__figure snapshot snapshot--a" data-drift="-0.06">
-                <img src={market} alt={alts.market} loading="lazy" decoding="async" />
+                <img
+                  {...responsiveImage(market, WIDTHS.card, '(min-width: 64rem) 30vw, 60vw')}
+                  alt={alts.market}
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             )
           }
           {
             stall && (
               <figure class="about__figure snapshot snapshot--b" data-drift="0.08">
-                <img src={stall} alt={alts.stall} loading="lazy" decoding="async" />
+                <img
+                  {...responsiveImage(stall, WIDTHS.card, '(min-width: 64rem) 30vw, 60vw')}
+                  alt={alts.stall}
+                  loading="lazy"
+                  decoding="async"
+                />
               </figure>
             )
           }

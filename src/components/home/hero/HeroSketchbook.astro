@@ -1,6 +1,7 @@
 ---
 import type { Locale } from '@/i18n';
 import type { ResolvedHero } from '@/lib/content/homeHero';
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
 
 /**
  * Design 4 · Cuaderno: an open spiral sketchbook on the kraft desk. The left
@@ -45,7 +46,7 @@ const { hero } = Astro.props;
           hero.main && (
             <figure class="book__drawing">
               <img
-                src={hero.main.src}
+                {...responsiveImage(hero.main.src, WIDTHS.half, '(min-width: 64rem) 36rem, 90vw')}
                 alt={hero.main.alt}
                 fetchpriority="high"
                 decoding="async"
@@ -57,7 +58,11 @@ const { hero } = Astro.props;
         {
           hero.photo && (
             <figure class="book__photo">
-              <img src={hero.photo.src} alt={hero.photo.alt} decoding="async" />
+              <img
+                {...responsiveImage(hero.photo.src, WIDTHS.thumb, '(min-width: 64rem) 10rem, 26vw')}
+                alt={hero.photo.alt}
+                decoding="async"
+              />
               <figcaption>{hero.photo.caption}</figcaption>
             </figure>
           )

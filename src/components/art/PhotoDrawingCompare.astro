@@ -1,4 +1,6 @@
 ---
+import { responsiveImage, WIDTHS } from '@/lib/catalog/imageSize';
+
 interface Props {
   photoSrc: string;
   drawingSrc: string;
@@ -8,6 +10,8 @@ interface Props {
   drawingLabel: string;
   hint: string;
   compact?: boolean;
+  /** How wide the stage shows (the `sizes` of its two images). */
+  sizes?: string;
 }
 
 const {
@@ -20,14 +24,22 @@ const {
   hint,
   compact = false,
 } = Astro.props;
+// Compact: at most 26rem wide. Otherwise half the page on a desktop, the whole width on a phone.
+const sizes = Astro.props.sizes ?? (compact ? '(min-width: 30rem) 26rem, 100vw' : '(min-width: 64rem) 50vw, 100vw');
 ---
 
 <div class:list={['compare', { 'compare--compact': compact }]} data-compare>
   <div class="compare__stage">
-    <img class="compare__base" src={photoSrc} alt={photoAlt} loading="lazy" decoding="async" />
+    <img
+      class="compare__base"
+      {...responsiveImage(photoSrc, WIDTHS.half, sizes)}
+      alt={photoAlt}
+      loading="lazy"
+      decoding="async"
+    />
     <img
       class="compare__overlay"
-      src={drawingSrc}
+      {...responsiveImage(drawingSrc, WIDTHS.half, sizes)}
       alt={drawingAlt}
       loading="lazy"
       decoding="async"
