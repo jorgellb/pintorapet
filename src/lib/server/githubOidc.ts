@@ -46,11 +46,13 @@ async function loadKeys(fetchKeys: FetchKeys, now: number): Promise<Keys> {
 }
 
 async function keyFor(kid: string, fetchKeys: FetchKeys, now: number): Promise<KeyObject | null> {
-  if (cached && now - cached.at < KEYS_TTL_MS && cached.byKid.has(kid)) return cached.byKid.get(kid)!;
+  const fresh = cached && now - cached.at < KEYS_TTL_MS ? cached : null;
+  if (fresh?.byKid.has(kid)) return fresh.byKid.get(kid)!;
   // GitHub is asked at most once a minute, however many calls (or unknown key
-  // ids) come in: a caller cannot make this route fetch on its behalf.
+  // ids) come in: a caller cannot make this route fetch on its behalf. Keys
+  // older than an hour are never used, even while a failed fetch waits.
   if (!inFlight) {
-    if (now - lastFetch < REFETCH_MS) return cached?.byKid.get(kid) ?? null;
+    if (now - lastFetch < REFETCH_MS) return null;
     lastFetch = now;
     inFlight = loadKeys(fetchKeys, now).finally(() => {
       inFlight = null;

@@ -83,6 +83,21 @@ describe('GitHub-signed cron calls', () => {
     expect(await check(token())).toBe(true);
   });
 
+  it('never uses keys older than an hour, even while GitHub cannot be reached', async () => {
+    expect(await check(token())).toBe(true);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const down = vi.fn(async () => {
+      throw new Error('timeout');
+    });
+    const later = NOW + 61 * 60 * 1000;
+    const fresh = (now: number) =>
+      token({ iat: now / 1000 - 10, nbf: now / 1000 - 10, exp: now / 1000 + 300 });
+    expect(await isGithubCron(fresh(later), { fetchKeys: down, now: later })).toBe(false);
+    // A minute later the failed fetch is not retried yet: still no.
+    expect(await isGithubCron(fresh(later + 1000), { fetchKeys: down, now: later + 1000 })).toBe(false);
+    log.mockRestore();
+  });
+
   it('says no, and logs, when GitHub cannot be reached', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const down = vi.fn(async () => {
