@@ -1,6 +1,16 @@
 ---
 import SimplePage from '@/views/SimplePage.astro';
-import { getLegalDoc, type LegalPageKey } from '@/lib/content/legal';
+import {
+  analyticsChoiceCopy,
+  formatUpdated,
+  getLegalDoc,
+  identityLines,
+  withdrawalAddressee,
+  withdrawalForm,
+  type InlinePart,
+  type LegalPageKey,
+} from '@/lib/content/legal';
+import { sellerIdentity } from '@/lib/server/sellerIdentity';
 import type { Locale } from '@/i18n';
 
 interface Props {
@@ -9,23 +19,302 @@ interface Props {
 }
 
 const { locale, pageKey } = Astro.props;
+const es = locale === 'es';
 const doc = getLegalDoc(pageKey, locale);
+// Server-rendered on each request, so the identity follows Admin › Ajustes at once.
+const identity = doc.needsIdentity ? await sellerIdentity() : null;
+const lines = identity ? identityLines(identity, locale) : [];
+const addressee = identity ? withdrawalAddressee(identity, locale) : '';
+const form = withdrawalForm[locale];
+const choice = analyticsChoiceCopy[locale];
+const external = (part: InlinePart) => Boolean(part.href?.startsWith('http'));
 ---
 
-<SimplePage locale={locale} title={doc.title}>
+<SimplePage locale={locale} title={doc.title} description={doc.description}>
   <p class="updated">
-    {
-      locale === 'es'
-        ? `Actualizado: ${doc.updated} · Pendiente de revisión final de la titular.`
-        : `Updated: ${doc.updated} · Pending final owner review before live sales.`
-    }
+    {es ? 'Última actualización: ' : 'Last updated: '}<time datetime={doc.updated}>{formatUpdated(doc.updated, locale)}</time>
   </p>
-  {doc.paragraphs.map((p) => <p>{p}</p>)}
+
+  {
+    doc.intro.map((parts) => (
+      <p class="intro">
+        {parts.map((part) =>
+          part.href ? (
+            <a href={part.href} rel={external(part) ? 'noopener noreferrer' : undefined}>{part.text}</a>
+          ) : part.code ? (
+            <code>{part.text}</code>
+          ) : (
+            part.text
+          ),
+        )}
+      </p>
+    ))
+  }
+
+  {
+    doc.sections.length > 4 && (
+      <nav class="toc" aria-label={es ? 'En esta página' : 'On this page'}>
+        <p class="toc__title">{es ? 'En esta página' : 'On this page'}</p>
+        <ol>
+          {doc.sections.map((section) => (
+            <li>
+              <a href={`#${section.id}`}>{section.heading}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+    )
+  }
+
+  {
+    doc.sections.map((section) => (
+      <section class="legal-section" id={section.id} aria-labelledby={`${section.id}-h`}>
+        <h2 id={`${section.id}-h`}>{section.heading}</h2>
+        {section.blocks.map((block) =>
+          block.type === 'p' ? (
+            <p>
+              {block.parts.map((part) =>
+                part.href ? (
+                  <a href={part.href} rel={external(part) ? 'noopener noreferrer' : undefined}>{part.text}</a>
+                ) : part.code ? (
+                  <code>{part.text}</code>
+                ) : (
+                  part.text
+                ),
+              )}
+            </p>
+          ) : block.type === 'list' ? (
+            <ul>
+              {block.items.map((parts) => (
+                <li>
+                  {parts.map((part) =>
+                    part.href ? (
+                      <a href={part.href} rel={external(part) ? 'noopener noreferrer' : undefined}>{part.text}</a>
+                    ) : part.code ? (
+                      <code>{part.text}</code>
+                    ) : (
+                      part.text
+                    ),
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : block.type === 'h3' ? (
+            <h3>{block.text}</h3>
+          ) : block.type === 'identity' ? (
+            <dl class="identity">
+              {lines.map((line) => (
+                <div>
+                  <dt>{line.label}</dt>
+                  <dd>{line.href ? <a href={line.href}>{line.value}</a> : line.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : block.type === 'withdrawalForm' ? (
+            <>
+              <p>{form.before}</p>
+              <div class="model-form">
+                <p class="model-form__title">{form.title}</p>
+                <p class="model-form__note">{form.note}</p>
+                <ul>
+                  <li>
+                    {form.to} {addressee}
+                  </li>
+                  {form.lines.map((line) => (
+                    <li>{line}</li>
+                  ))}
+                </ul>
+                <p class="model-form__note">{form.footnote}</p>
+              </div>
+            </>
+          ) : (
+            <div
+              class="analytics-choice"
+              data-analytics-choice
+              data-yes={choice.yes}
+              data-no={choice.no}
+              data-none={choice.none}
+            >
+              <p data-analytics-state>{choice.none}</p>
+              <button type="button" class="btn btn--ghost" data-analytics-reset>
+                {choice.button}
+              </button>
+            </div>
+          ),
+        )}
+      </section>
+    ))
+  }
 </SimplePage>
 
 <style>
   .updated {
     font-size: 0.9rem;
-    font-style: italic;
+    margin-bottom: var(--space-6);
+  }
+
+  .intro {
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  .toc {
+    margin: var(--space-6) 0 var(--space-7);
+    padding: var(--space-4) var(--space-5);
+    border-left: 2px solid var(--line-strong);
+  }
+
+  .toc__title {
+    margin: 0 0 var(--space-2);
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .toc ol {
+    margin: 0;
+    padding-left: 1.2rem;
+    columns: 2 16rem;
+    column-gap: var(--space-6);
+  }
+
+  .toc li {
+    break-inside: avoid;
+    padding: 0.1rem 0;
+  }
+
+  .legal-section {
+    margin-top: var(--space-7);
+    scroll-margin-top: var(--space-7);
+  }
+
+  .legal-section h2 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: clamp(1.55rem, 2.6vw, 2rem);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0 0 var(--space-4);
+  }
+
+  .legal-section h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: var(--space-6) 0 var(--space-2);
+  }
+
+  .legal-section li {
+    margin-bottom: var(--space-2);
+  }
+
+  code {
+    font-size: 0.88em;
+    padding: 0.05em 0.3em;
+    background: var(--paper-deep);
+    border-radius: var(--radius);
+    overflow-wrap: anywhere;
+  }
+
+  .identity {
+    display: grid;
+    gap: var(--space-2);
+    margin: var(--space-4) 0;
+    padding: var(--space-4) var(--space-5);
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+
+  .identity div {
+    display: grid;
+    grid-template-columns: minmax(8rem, 11rem) 1fr;
+    gap: var(--space-3);
+  }
+
+  .identity dt {
+    color: var(--muted);
+  }
+
+  .identity dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 36rem) {
+    .identity div {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+  }
+
+  .model-form {
+    margin: var(--space-4) 0;
+    padding: var(--space-5);
+    background: var(--surface);
+    border: 1px dashed var(--line-strong);
+  }
+
+  .model-form__title {
+    margin-top: 0;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .model-form__note {
+    font-size: 0.92rem;
+  }
+
+  .analytics-choice {
+    display: grid;
+    gap: var(--space-3);
+    justify-items: start;
+    margin: var(--space-4) 0;
+    padding: var(--space-4) var(--space-5);
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+
+  .analytics-choice p {
+    margin: 0;
   }
 </style>
+
+<script>
+  // Same keys as components/analytics/VisitBeacon.astro.
+  const CHOICE_KEY = 'pd-analytics';
+  const VISIT_KEY = 'pd-visit';
+
+  const box = document.querySelector<HTMLElement>('[data-analytics-choice]');
+  if (box) {
+    const state = box.querySelector<HTMLElement>('[data-analytics-state]');
+    const paint = () => {
+      let choice: string | null = null;
+      try {
+        choice = localStorage.getItem(CHOICE_KEY);
+      } catch {
+        // Storage blocked: nothing was chosen in this browser.
+      }
+      if (state) state.textContent = (choice === 'yes' ? box.dataset.yes : choice === 'no' ? box.dataset.no : box.dataset.none) ?? '';
+    };
+    paint();
+
+    box.querySelector('[data-analytics-reset]')?.addEventListener('click', () => {
+      try {
+        localStorage.removeItem(CHOICE_KEY);
+        sessionStorage.removeItem(VISIT_KEY);
+      } catch {
+        // Storage blocked: the notice still opens.
+      }
+      document.querySelector('[data-analytics-note]')?.classList.add('is-open');
+      paint();
+    });
+
+    // The notice's own buttons store the new choice; show it once they have.
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-analytics-yes], [data-analytics-no]')) {
+        window.setTimeout(paint, 0);
+      }
+    });
+  }
+</script>

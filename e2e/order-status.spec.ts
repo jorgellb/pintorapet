@@ -13,9 +13,12 @@ test('order status form is noindex and accepts input', async ({ page }) => {
   await expect(page.locator('[data-order-message]')).toBeVisible();
 });
 
-test('legal privacy page has reviewed-pending copy', async ({ page }) => {
+test('legal privacy page is final and names the controller', async ({ page }) => {
   await page.goto('/en/privacy/');
-  await expect(page.locator('main')).toContainText('Pending final owner review');
+  await expect(page.locator('main')).toContainText('Data controller');
+  await expect(page.locator('main')).toContainText('Meili Stringfellow');
+  await expect(page.locator('main')).not.toContainText('Pending');
   await page.goto('/es/privacidad/');
-  await expect(page.locator('main')).toContainText('Pendiente de revisión final');
+  await expect(page.locator('main')).toContainText('Responsable del tratamiento');
+  await expect(page.locator('main')).not.toContainText('Pendiente de revisión');
 });
