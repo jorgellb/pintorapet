@@ -309,10 +309,18 @@ const labels = {
     const note = root.querySelector<HTMLElement>('[data-ship-note]')!;
     let run = 0;
 
-    const fill = (text: string, amount: string) => text.replace('{amount}', amount);
-    const esc = (text: string) =>
-      text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-    const teaser = (JSON.parse(root.dataset.teaser ?? '[]') as string[]).map(esc).join('<br />');
+    // The note is built from DOM nodes, never HTML: the delivery and holiday texts come from Admin.
+    type Line = Array<string | Node>;
+    const br = () => document.createElement('br');
+    /** Text as text, keeping its line breaks. */
+    const withBreaks = (text: string): Line => text.split(/\r?\n/).flatMap((part, i) => (i ? [br(), part] : [part]));
+    const el = (tag: string, className: string | null, ...children: Line) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      node.append(...children);
+      return node;
+    };
+    const teaser: Line[] = (JSON.parse(root.dataset.teaser ?? '[]') as string[]).map((text) => [text]);
 
     function setOpen(open: boolean) {
       if (expanded) return;
@@ -320,10 +328,10 @@ const labels = {
       toggle?.setAttribute('aria-expanded', String(open));
     }
 
-    function setNote(html: string, tone: 'info' | 'warn' = 'info') {
-      note.hidden = !html;
+    function setNote(lines: Line[], tone: 'info' | 'warn' = 'info') {
+      note.hidden = lines.length === 0;
       note.dataset.tone = tone;
-      note.innerHTML = html;
+      note.replaceChildren(...lines.flatMap((line, i) => (i ? [br(), ...line] : line)));
     }
 
     function emit(detail: { ready: boolean; cents?: number; destination?: Destination }) {
@@ -360,7 +368,7 @@ const labels = {
         delete value.dataset.free;
         delete value.dataset.pending;
         if (destText) destText.textContent = labels.choose;
-        setNote(items.length ? teaser : '');
+        setNote(items.length ? teaser : []);
         emit({ ready: false });
         return;
       }
@@ -384,7 +392,7 @@ const labels = {
               : estimate.reason === 'POSTAL_CODE_REQUIRED'
                 ? labels.postalRequired
                 : labels.unavailable;
-          setNote(reason, 'warn');
+          setNote([[reason]], 'warn');
           setOpen(true);
           emit({ ready: false });
           return;
@@ -395,26 +403,32 @@ const labels = {
         else delete value.dataset.free;
         if (destText) destText.textContent = destinationLabel(dest, estimate.zoneName);
 
-        const lines: string[] = [];
-        if (estimate.delivery) lines.push(labels.delivery.replace('{days}', estimate.delivery));
-        if (estimate.pickup) lines.push(esc(estimate.pickup));
-        if (estimate.freeReached) lines.push(`<span class="ship__ok">${labels.freeReached}</span>`);
+        const lines: Line[] = [];
+        if (estimate.delivery) {
+          const [before, after = ''] = labels.delivery.split('{days}');
+          lines.push([before ?? '', ...withBreaks(estimate.delivery), after]);
+        }
+        if (estimate.pickup) lines.push([estimate.pickup]);
+        if (estimate.freeReached) lines.push([el('span', 'ship__ok', labels.freeReached)]);
         if (estimate.holiday) {
-          lines.push(`<span class="ship__holiday${estimate.holiday.late ? ' ship__holiday--late' : ''}">${esc(estimate.holiday.text)}</span>`);
+          lines.push([el('span', `ship__holiday${estimate.holiday.late ? ' ship__holiday--late' : ''}`, estimate.holiday.text)]);
         }
         if (estimate.remainingForFreeFormatted && estimate.freeOverCents) {
           const done = Math.max(0, Math.min(1, 1 - (estimate.remainingForFreeCents ?? 0) / estimate.freeOverCents));
-          lines.push(
-            `${fill(labels.remaining, `<strong>${estimate.remainingForFreeFormatted}</strong>`)}<span class="ship__progress" aria-hidden="true"><i style="width:${Math.round(done * 100)}%"></i></span>`,
-          );
+          const [before, after = ''] = labels.remaining.split('{amount}');
+          const bar = el('i', null);
+          bar.style.width = `${Math.round(done * 100)}%`;
+          const progress = el('span', 'ship__progress', bar);
+          progress.setAttribute('aria-hidden', 'true');
+          lines.push([before ?? '', el('strong', null, estimate.remainingForFreeFormatted), after, progress]);
         }
-        setNote(lines.join('<br />'));
+        setNote(lines);
         emit({ ready: true, cents: estimate.shippingCents, destination: dest });
       } catch {
         if (id !== run) return;
         delete value.dataset.pending;
         value.textContent = '—';
-        setNote(labels.error, 'warn');
+        setNote([[labels.error]], 'warn');
         emit({ ready: false });
       }
     }
@@ -454,7 +468,7 @@ const labels = {
     });
 
     postal.addEventListener('blur', () => {
-      if (postal.value && postal.value.length < 5) setNote(labels.postalRequired, 'warn');
+      if (postal.value && postal.value.length < 5) setNote([[labels.postalRequired]], 'warn');
     });
 
     root.addEventListener('focusout', (event) => {
