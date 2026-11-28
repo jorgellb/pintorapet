@@ -72,6 +72,8 @@ The Python scripts read `.env` from the repo root (it may be empty) and take the
 
 `.github/workflows/ci.yml` runs the unit tests, `astro check` and the build on every push and pull request to `main`.
 
+The Content-Security-Policy (`security.csp` in `astro.config.mjs`) only applies to a build, never in `astro dev`. Astro hashes the scripts and styles it processes; a `<script>` with attributes (such as `is:inline`) is not hashed and is blocked unless its hash is added there, as `StallSketch.astro` does. `tests/csp.test.ts` fails when one appears.
+
 ## Other scripts
 
 `pnpm migration:*` are the one-time WooCommerce import tools that built `migration/` and `src/content/`. `scripts/aiven/copy-data.py` and `copy_passwords.py` are the one-time copy from Supabase to Aiven.

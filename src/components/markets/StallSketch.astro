@@ -4,6 +4,9 @@
  * when it comes into view, then its string of lights comes on. With reduced
  * motion (or without JavaScript) it is simply there, drawn.
  */
+// Inline, so it runs before the first paint; astro.config.mjs puts its hash in the CSP.
+import { STALL_DRAW_SCRIPT } from './stallDrawScript.mjs';
+
 interface Props {
   class?: string;
   /** Accessible description; decorative when omitted. */
@@ -90,10 +93,7 @@ const bulbs = [
   </g>
 </svg>
 
-<script is:inline>
-  // Armed before the first paint, so the stall is not seen drawn and then wiped.
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('js-draw');
-</script>
+<script is:inline set:html={STALL_DRAW_SCRIPT} />
 
 <style>
   .stall {
