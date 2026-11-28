@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
-"""Compare the public schema of Supabase (source) with a target built by
-apply-schema.py: columns, functions (by source), RLS policies, triggers,
-indexes, views, and table/function privileges for anon and authenticated.
+"""Compare the public schema of two PostgreSQL databases: columns, functions
+(by source), RLS policies, triggers, indexes, views, and table/function
+privileges for anon and authenticated. Read only.
 
-Usage: python3 scripts/aiven/compare-schema.py local|aiven
+Each side is a conn.py target (local, aiven) or, for a second throwaway
+database, a postgresql:// URL on localhost. The usual check is a fresh local
+build of the migrations against production:
+
+  scripts/aiven/local-db.sh up
+  LOCAL_PG_URL=... python3 scripts/aiven/apply-schema.py local
+  LOCAL_PG_URL=... python3 scripts/aiven/compare-schema.py local aiven
+
+Usage: python3 scripts/aiven/compare-schema.py <a> <b>
 Exit 1 when anything differs.
 """
-import hashlib
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from conn import connect  # noqa: E402
@@ -46,31 +56,48 @@ QUERIES = {
       WHERE n.nspname = 'public' AND r.rolname IN ('anon', 'authenticated')""",
 }
 
+LOOPBACK = {'localhost', '127.0.0.1', '::1'}
 
-def snapshot(target: str) -> dict:
-    with connect(target) as conn:
+
+def open_target(target: str) -> tuple[str, psycopg.Connection]:
+    """A connection and a printable name (never the password)."""
+    if '://' not in target:
+        return target, connect(target)
+    url = urlsplit(target)
+    if url.hostname not in LOOPBACK:
+        raise SystemExit('only localhost URLs are accepted; use the aiven target for production')
+    return f'{url.hostname}:{url.port or 5432}{url.path}', psycopg.connect(target)
+
+
+def snapshot(target: str) -> tuple[str, dict]:
+    name, conn = open_target(target)
+    with conn:
         conn.read_only = True
-        return {name: dict(conn.execute(sql).fetchall()) for name, sql in QUERIES.items()}
+        return name, {query: dict(conn.execute(sql).fetchall()) for query, sql in QUERIES.items()}
 
 
 def main() -> None:
-    target = sys.argv[1]
-    source, dest = snapshot('supabase'), snapshot(target)
+    if len(sys.argv) != 3:
+        raise SystemExit(__doc__)
+    (name_a, a_all), (name_b, b_all) = snapshot(sys.argv[1]), snapshot(sys.argv[2])
+    if name_a == name_b:
+        name_a, name_b = f'{name_a} (a)', f'{name_b} (b)'
     differences = 0
-    for name in QUERIES:
-        a, b = source[name], dest[name]
+    for query in QUERIES:
+        a, b = a_all[query], b_all[query]
         only_a = sorted(set(a) - set(b))
         only_b = sorted(set(b) - set(a))
         changed = sorted(k for k in set(a) & set(b) if a[k] != b[k])
         status = 'same' if not (only_a or only_b or changed) else 'DIFFERENT'
-        print(f'{name:16} {len(a):4} vs {len(b):4}  {status}')
+        print(f'{query:16} {len(a):4} vs {len(b):4}  {status}')
         for key in only_a[:8]:
-            print(f'    only in supabase: {key}')
+            print(f'    only in {name_a}: {key}')
         for key in only_b[:8]:
-            print(f'    only in {target}: {key}')
+            print(f'    only in {name_b}: {key}')
         for key in changed[:8]:
-            print(f'    changed: {key}\n      supabase: {a[key][:160]}\n      {target}: {b[key][:160]}')
+            print(f'    changed: {key}\n      {name_a}: {a[key][:160]}\n      {name_b}: {b[key][:160]}')
         differences += len(only_a) + len(only_b) + len(changed)
+    print(f'{name_a} vs {name_b}: {"no differences" if not differences else f"{differences} differences"}')
     sys.exit(1 if differences else 0)
 
 
